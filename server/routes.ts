@@ -73,19 +73,21 @@ async function geocodeUserLocationPoints(userId: string, datasetId: string) {
   }
 }
 
-// Background geocoding function for daily centroids (analytics pipeline) - FIXED: Drains entire queue
+// Background geocoding function for daily centroids (analytics pipeline) - Enhanced with progress tracking
 async function geocodeDailyCentroids(userId: string) {
   try {
     let totalProcessed = 0;
     let batchNumber = 1;
-    const BATCH_SIZE = 50; // Process in smaller batches to avoid overwhelming geocoding service
+    const BATCH_SIZE = 25; // Reduced batch size for better performance and user experience
+    const startTime = Date.now();
     
     while (true) {
       // Get remaining ungeocoded centroids count for progress tracking
       const remainingCount = await storage.getUngeocodedCentroidsCount(userId);
       
       if (remainingCount === 0) {
-        console.log(`✅ Geocoding queue drained for user ${userId}. Total processed: ${totalProcessed}`);
+        const totalTime = (Date.now() - startTime) / 1000;
+        console.log(`✅ Geocoding queue drained for user ${userId}. Total processed: ${totalProcessed} in ${totalTime.toFixed(1)}s`);
         break;
       }
       
@@ -97,8 +99,21 @@ async function geocodeDailyCentroids(userId: string) {
         break;
       }
 
-      console.log(`🔄 Batch ${batchNumber}: Geocoding ${ungeocoded.length} centroids for user ${userId} (${remainingCount} remaining)`);
+      // Calculate time estimates
+      const elapsedTime = (Date.now() - startTime) / 1000;
+      const averageTimePerBatch = totalProcessed > 0 ? elapsedTime / (batchNumber - 1) : 0;
+      const remainingBatches = Math.ceil(remainingCount / BATCH_SIZE);
+      const estimatedTimeRemaining = averageTimePerBatch * remainingBatches;
       
+      const progressPercent = totalProcessed > 0 ? ((totalProcessed / (totalProcessed + remainingCount)) * 100).toFixed(1) : '0.0';
+      
+      console.log(`🔄 Batch ${batchNumber}: Geocoding ${ungeocoded.length} centroids for user ${userId}`);
+      console.log(`   📊 Progress: ${totalProcessed} completed, ${remainingCount} remaining (${progressPercent}%)`);
+      if (averageTimePerBatch > 0) {
+        console.log(`   ⏱️  Estimated time remaining: ${Math.ceil(estimatedTimeRemaining)}s (avg: ${averageTimePerBatch.toFixed(1)}s/batch)`);
+      }
+      
+      const batchStartTime = Date.now();
       try {
         // Batch geocode the centroids
         const coordinates = ungeocoded.map(centroid => ({ lat: centroid.lat, lng: centroid.lng }));
@@ -119,7 +134,8 @@ async function geocodeDailyCentroids(userId: string) {
         }
         
         totalProcessed += ungeocoded.length;
-        console.log(`✅ Batch ${batchNumber} completed: ${ungeocoded.length} centroids geocoded (${totalProcessed} total processed)`);
+        const batchTime = (Date.now() - batchStartTime) / 1000;
+        console.log(`✅ Batch ${batchNumber} completed: ${ungeocoded.length} centroids geocoded in ${batchTime.toFixed(1)}s`);
         
       } catch (batchError) {
         console.error(`❌ Batch ${batchNumber} failed for user ${userId}:`, batchError);
@@ -136,6 +152,121 @@ async function geocodeDailyCentroids(userId: string) {
     
   } catch (error) {
     console.error(`💥 Daily centroid geocoding pipeline failed for user ${userId}:`, error);
+  }
+}
+
+// Enhanced geocoding function with date range filtering and better progress tracking
+async function geocodeDailyCentroidsByDateRange(
+  userId: string, 
+  startDate: Date, 
+  endDate: Date,
+  progressCallback?: (progress: { processed: number; total: number; percent: number; estimatedTimeRemaining?: number }) => void
+) {
+  try {
+    let totalProcessed = 0;
+    let batchNumber = 1;
+    const BATCH_SIZE = 25; // Consistent with global batch size
+    const startTime = Date.now();
+    
+    // Get total count for the date range
+    const totalCount = await storage.getUngeocodedCentroidsCountByDateRange(userId, startDate, endDate);
+    
+    if (totalCount === 0) {
+      console.log(`✅ No ungeocoded centroids found for user ${userId} in date range ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
+      return { processed: 0, total: 0, timeElapsed: 0 };
+    }
+    
+    console.log(`🚀 Starting date-range geocoding for user ${userId}: ${totalCount} centroids from ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
+    
+    while (true) {
+      // Get next batch of ungeocoded centroids within date range
+      const ungeocoded = await storage.getUngeocodedDailyCentroidsByDateRange(userId, startDate, endDate, BATCH_SIZE);
+      
+      if (ungeocoded.length === 0) {
+        break;
+      }
+
+      // Calculate progress and time estimates
+      const elapsedTime = (Date.now() - startTime) / 1000;
+      const progressPercent = (totalProcessed / totalCount) * 100;
+      const averageTimePerItem = totalProcessed > 0 ? elapsedTime / totalProcessed : 0;
+      const remainingItems = totalCount - totalProcessed;
+      const estimatedTimeRemaining = averageTimePerItem * remainingItems;
+      
+      console.log(`🔄 Batch ${batchNumber}: Geocoding ${ungeocoded.length} centroids (${totalProcessed}/${totalCount}, ${progressPercent.toFixed(1)}%)`);
+      if (averageTimePerItem > 0) {
+        console.log(`   ⏱️  Estimated time remaining: ${Math.ceil(estimatedTimeRemaining)}s`);
+      }
+      
+      // Call progress callback if provided
+      if (progressCallback) {
+        progressCallback({
+          processed: totalProcessed,
+          total: totalCount,
+          percent: progressPercent,
+          estimatedTimeRemaining: estimatedTimeRemaining
+        });
+      }
+      
+      const batchStartTime = Date.now();
+      try {
+        // Batch geocode the centroids
+        const coordinates = ungeocoded.map(centroid => ({ lat: centroid.lat, lng: centroid.lng }));
+        const geocodeResults = await batchReverseGeocode(coordinates);
+        
+        // Update daily centroids with geocoding results
+        for (let i = 0; i < ungeocoded.length; i++) {
+          const centroid = ungeocoded[i];
+          const geocodeResult = geocodeResults[i];
+          
+          await storage.updateDailyCentroidGeocoding(
+            centroid.id,
+            geocodeResult.address || '',
+            geocodeResult.city || undefined,
+            geocodeResult.state || undefined,
+            geocodeResult.country || undefined
+          );
+        }
+        
+        totalProcessed += ungeocoded.length;
+        const batchTime = (Date.now() - batchStartTime) / 1000;
+        console.log(`✅ Batch ${batchNumber} completed: ${ungeocoded.length} centroids geocoded in ${batchTime.toFixed(1)}s`);
+        
+      } catch (batchError) {
+        console.error(`❌ Batch ${batchNumber} failed for user ${userId}:`, batchError);
+        // Continue with next batch even if one fails
+      }
+      
+      batchNumber++;
+      
+      // Small delay between batches to be respectful to geocoding service
+      if (ungeocoded.length === BATCH_SIZE) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+    
+    const totalTime = (Date.now() - startTime) / 1000;
+    console.log(`✅ Date-range geocoding completed for user ${userId}: ${totalProcessed}/${totalCount} processed in ${totalTime.toFixed(1)}s`);
+    
+    // Final progress callback
+    if (progressCallback) {
+      progressCallback({
+        processed: totalProcessed,
+        total: totalCount,
+        percent: 100,
+        estimatedTimeRemaining: 0
+      });
+    }
+    
+    return {
+      processed: totalProcessed,
+      total: totalCount,
+      timeElapsed: totalTime
+    };
+    
+  } catch (error) {
+    console.error(`💥 Date-range geocoding pipeline failed for user ${userId}:`, error);
+    throw error;
   }
 }
 
@@ -505,6 +636,115 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error getting geocoding status:", error);
       res.status(500).json({ error: "Failed to get geocoding status" });
+    }
+  });
+
+  // NEW: Date-range specific geocoding endpoint for better user experience
+  app.post("/api/analytics/geocode-date-range", isAuthenticated, async (req, res) => {
+    try {
+      const { claims } = getAuthenticatedUser(req);
+      const userId = claims.sub;
+      
+      const { startDate, endDate } = req.body;
+      
+      // Validate date parameters
+      if (!startDate || !endDate) {
+        return res.status(400).json({ 
+          error: "Both startDate and endDate are required (format: YYYY-MM-DD or ISO string)" 
+        });
+      }
+      
+      let start: Date, end: Date;
+      try {
+        start = new Date(startDate);
+        end = new Date(endDate);
+        
+        // Ensure valid dates
+        if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+          throw new Error("Invalid date format");
+        }
+        
+        // Ensure start is before end
+        if (start > end) {
+          return res.status(400).json({ 
+            error: "startDate must be before or equal to endDate" 
+          });
+        }
+        
+        // Prevent excessively large date ranges (> 2 years)
+        const daysDiff = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
+        if (daysDiff > 730) {
+          return res.status(400).json({ 
+            error: "Date range too large. Maximum allowed range is 2 years (730 days)" 
+          });
+        }
+        
+      } catch (dateError) {
+        return res.status(400).json({ 
+          error: "Invalid date format. Use YYYY-MM-DD or ISO 8601 format" 
+        });
+      }
+      
+      // Get count for this date range
+      const ungeocodedCount = await storage.getUngeocodedCentroidsCountByDateRange(userId, start, end);
+      
+      if (ungeocodedCount === 0) {
+        return res.json({ 
+          success: true, 
+          message: `No ungeocoded centroids found for date range ${start.toISOString().split('T')[0]} to ${end.toISOString().split('T')[0]}`,
+          processed: 0,
+          total: 0,
+          timeElapsed: 0
+        });
+      }
+      
+      // Limit processing to reasonable batch sizes for API responses
+      if (ungeocodedCount > 500) {
+        return res.status(400).json({
+          error: `Date range contains ${ungeocodedCount} ungeocoded centroids. Please use a smaller date range (max 500 centroids per request).`,
+          suggestion: "Try processing one month at a time for large datasets."
+        });
+      }
+      
+      // Start geocoding process and track progress
+      let progressData: any = {};
+      
+      try {
+        const result = await geocodeDailyCentroidsByDateRange(
+          userId, 
+          start, 
+          end,
+          (progress) => {
+            progressData = progress;
+            // In a real-world scenario, you might emit progress via WebSocket
+            console.log(`📊 Progress update: ${progress.processed}/${progress.total} (${progress.percent.toFixed(1)}%)`);
+          }
+        );
+        
+        res.json({ 
+          success: true, 
+          message: `Successfully processed ${result.processed}/${result.total} centroids for date range ${start.toISOString().split('T')[0]} to ${end.toISOString().split('T')[0]}`,
+          processed: result.processed,
+          total: result.total,
+          timeElapsed: result.timeElapsed,
+          dateRange: {
+            start: start.toISOString().split('T')[0],
+            end: end.toISOString().split('T')[0]
+          }
+        });
+        
+      } catch (geocodingError: any) {
+        console.error(`Date-range geocoding failed for user ${userId}:`, geocodingError);
+        res.status(500).json({ 
+          error: "Geocoding process failed", 
+          details: geocodingError?.message || 'Unknown error',
+          partialProgress: progressData
+        });
+      }
+      
+    } catch (error) {
+      console.error("Error in date-range geocoding endpoint:", error);
+      res.status(500).json({ error: "Failed to process date-range geocoding request" });
     }
   });
 

@@ -47,6 +47,9 @@ export interface IStorage {
   computeDailyCentroidsForAllDatasets(userId: string): Promise<number>;
   getUngeocodedDailyCentroids(userId: string, limit?: number): Promise<DailyGeocode[]>;
   getUngeocodedCentroidsCount(userId: string): Promise<number>;
+  // Date range filtering versions for better user experience
+  getUngeocodedDailyCentroidsByDateRange(userId: string, startDate: Date, endDate: Date, limit?: number): Promise<DailyGeocode[]>;
+  getUngeocodedCentroidsCountByDateRange(userId: string, startDate: Date, endDate: Date): Promise<number>;
   updateDailyCentroidGeocoding(id: string, address: string, city?: string, state?: string, country?: string): Promise<void>;
   getLocationStatsByDateRange(userId: string, startDate: Date, endDate: Date): Promise<{
     totalDays: number;
@@ -332,6 +335,46 @@ export class DatabaseStorage implements IStorage {
     return await query;
   }
 
+  async getUngeocodedDailyCentroidsByDateRange(
+    userId: string, 
+    startDate: Date, 
+    endDate: Date, 
+    limit?: number
+  ): Promise<DailyGeocode[]> {
+    const query = db
+      .select()
+      .from(dailyGeocodes)
+      .where(and(
+        eq(dailyGeocodes.userId, userId),
+        eq(dailyGeocodes.geocoded, false),
+        sql`${dailyGeocodes.date} >= ${startDate}`,
+        sql`${dailyGeocodes.date} <= ${endDate}`
+      ))
+      .orderBy(desc(dailyGeocodes.date));
+    
+    if (limit) {
+      return await query.limit(limit);
+    }
+    return await query;
+  }
+
+  async getUngeocodedCentroidsCountByDateRange(
+    userId: string, 
+    startDate: Date, 
+    endDate: Date
+  ): Promise<number> {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(dailyGeocodes)
+      .where(and(
+        eq(dailyGeocodes.userId, userId),
+        eq(dailyGeocodes.geocoded, false),
+        sql`${dailyGeocodes.date} >= ${startDate}`,
+        sql`${dailyGeocodes.date} <= ${endDate}`
+      ));
+    return result[0]?.count || 0;
+  }
+
   async updateDailyCentroidGeocoding(
     id: string,
     address: string,
@@ -585,6 +628,24 @@ export class MemStorage implements IStorage {
     state?: string,
     country?: string
   ): Promise<void> {}
+
+  // Stub implementations for new date range methods (not used in memory storage)
+  async getUngeocodedDailyCentroidsByDateRange(
+    userId: string, 
+    startDate: Date, 
+    endDate: Date, 
+    limit?: number
+  ): Promise<DailyGeocode[]> {
+    return [];
+  }
+
+  async getUngeocodedCentroidsCountByDateRange(
+    userId: string, 
+    startDate: Date, 
+    endDate: Date
+  ): Promise<number> {
+    return 0;
+  }
 
   async getLocationStatsByDateRange(
     userId: string,
