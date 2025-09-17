@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +25,41 @@ export default function LocationHistoryApp() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('upload');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Check for existing user data on component mount
+  useEffect(() => {
+    const loadExistingData = async () => {
+      try {
+        const response = await fetch('/api/locations');
+        if (response.ok) {
+          const locations = await response.json();
+          
+          if (locations.length > 0) {
+            // Convert timestamps to Date objects
+            const processedData = locations.map((loc: any) => ({
+              ...loc,
+              timestamp: new Date(loc.timestamp)
+            }));
+            
+            setLocationData(processedData);
+            setViewMode('map'); // Switch to map view since they have data
+            
+            // Set selected date to the most recent date with data
+            const dates = processedData.map(loc => loc.timestamp.getTime());
+            const mostRecentDate = new Date(Math.max(...dates));
+            setSelectedDate(mostRecentDate);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading existing location data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadExistingData();
+  }, []);
 
   const handleFileUpload = async (result: any) => {
     setIsProcessing(true);
@@ -106,34 +141,17 @@ export default function LocationHistoryApp() {
   );
 
   return (
-    <div className="h-screen bg-background">
-      {/* Header */}
-      <header className="border-b bg-card/50">
-        <div className="flex items-center justify-between p-4">
-          <div className="flex items-center gap-3">
-            <MapPin className="w-6 h-6 text-primary" />
-            <h1 className="text-xl font-semibold">Location History Analyzer</h1>
-            {locationData.length > 0 && (
-              <Badge variant="secondary" data-testid="text-total-points">
-                {totalLocations.toLocaleString()} points
-              </Badge>
-            )}
-          </div>
-          
-          <div className="flex items-center gap-2">
-            {locationData.length > 0 && (
-              <div className="hidden sm:flex gap-1">
-                {getViewModeButton('map', <MapPin className="w-4 h-4" />, 'Map')}
-                {getViewModeButton('analytics', <BarChart3 className="w-4 h-4" />, 'Analytics')}
-              </div>
-            )}
-          </div>
-        </div>
-      </header>
-
+    <div className="h-full bg-background">
       {/* Main Content */}
-      <main className="h-[calc(100vh-73px)]">
-        {viewMode === 'upload' ? (
+      <main className="h-full">
+        {isLoading ? (
+          <div className="h-full flex items-center justify-center">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+              <p className="text-muted-foreground">Loading your location data...</p>
+            </div>
+          </div>
+        ) : viewMode === 'upload' ? (
           <div className="h-full flex items-center justify-center p-6">
             <div className="w-full max-w-2xl">
               <div className="text-center mb-6">
@@ -149,22 +167,47 @@ export default function LocationHistoryApp() {
             </div>
           </div>
         ) : (
-          <div className="h-full grid grid-cols-1 lg:grid-cols-4 gap-4 p-4">
+          <div className="h-full flex flex-col">
+            {/* Toolbar */}
+            <div className="border-b bg-card/30 px-4 py-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Badge variant="secondary" data-testid="text-total-points">
+                    {totalLocations.toLocaleString()} points
+                  </Badge>
+                </div>
+                <div className="flex gap-1">
+                  {getViewModeButton('map', <MapPin className="w-4 h-4" />, 'Map')}
+                  {getViewModeButton('analytics', <BarChart3 className="w-4 h-4" />, 'Analytics')}
+                </div>
+              </div>
+            </div>
+            
+            {/* Content */}
+            <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 p-4">
             {/* Left Sidebar - Timeline & Analytics */}
             <div className="lg:col-span-1 space-y-4 order-2 lg:order-1">
               {viewMode === 'map' && (
-                <TimelineViewer
-                  events={dayLocations.map(loc => ({
-                    timestamp: loc.timestamp,
-                    location: {
-                      lat: loc.lat,
-                      lng: loc.lng,
-                    },
-                    activity: loc.activity,
-                    accuracy: loc.accuracy
-                  }))}
-                  selectedDate={selectedDate}
-                />
+                <>
+                  <DateNavigator
+                    selectedDate={selectedDate}
+                    onDateChange={setSelectedDate}
+                    availableDates={availableDates}
+                    locationCount={dayLocations.length}
+                  />
+                  <TimelineViewer
+                    events={dayLocations.map(loc => ({
+                      timestamp: loc.timestamp,
+                      location: {
+                        lat: loc.lat,
+                        lng: loc.lng,
+                      },
+                      activity: loc.activity,
+                      accuracy: loc.accuracy
+                    }))}
+                    selectedDate={selectedDate}
+                  />
+                </>
               )}
               
               {viewMode === 'analytics' && (
@@ -201,6 +244,7 @@ export default function LocationHistoryApp() {
                   dateRange={dateRange}
                 />
               )}
+            </div>
             </div>
           </div>
         )}
