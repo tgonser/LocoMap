@@ -258,8 +258,8 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
         </h1>
         <div className="flex gap-2">
           {analytics && (
-            <Button onClick={exportData} variant="outline" data-testid="button-export-data">
-              Export Data
+            <Button onClick={exportData} variant="outline" data-testid="button-export-analytics">
+              Export Analytics
             </Button>
           )}
           <Button onClick={onBack} data-testid="button-back-to-map">

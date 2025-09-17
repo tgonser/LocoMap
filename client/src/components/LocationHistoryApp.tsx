@@ -85,26 +85,6 @@ export default function LocationHistoryApp() {
     }
   };
 
-  // Get available dates with location data
-  const availableDates = Array.from(
-    new Set(locationData.map(loc => loc.timestamp.toDateString()))
-  ).map(dateStr => new Date(dateStr));
-
-  // Get locations for selected date
-  const dayLocations = locationData.filter(loc => 
-    loc.timestamp.toDateString() === selectedDate.toDateString()
-  );
-
-  // Calculate location count by date for calendar overlay
-  const locationCountByDate = locationData.reduce((acc, loc) => {
-    const dateKey = loc.timestamp.toDateString();
-    acc[dateKey] = (acc[dateKey] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-
-  // Analytics calculations
-  const totalLocations = locationData.length;
-  
   // Filter out unrealistic future dates (beyond next month) and very old dates for sidebar display
   const now = new Date();
   const maxReasonableDate = new Date(now.getTime() + (30 * 24 * 60 * 60 * 1000)); // Next month
@@ -113,13 +93,33 @@ export default function LocationHistoryApp() {
   const validLocationData = locationData.filter(l => 
     l.timestamp >= minReasonableDate && l.timestamp <= maxReasonableDate
   );
+
+  // Get available dates with location data (using filtered data)
+  const availableDates = Array.from(
+    new Set(validLocationData.map(loc => loc.timestamp.toDateString()))
+  ).map(dateStr => new Date(dateStr));
+
+  // Get locations for selected date (using filtered data)
+  const dayLocations = validLocationData.filter(loc => 
+    loc.timestamp.toDateString() === selectedDate.toDateString()
+  );
+
+  // Calculate location count by date for calendar overlay (using filtered data)
+  const locationCountByDate = validLocationData.reduce((acc, loc) => {
+    const dateKey = loc.timestamp.toDateString();
+    acc[dateKey] = (acc[dateKey] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  // Analytics calculations (using filtered data)
+  const totalLocations = validLocationData.length;
   
   const dateRange = validLocationData.length > 0 ? {
     start: new Date(Math.min(...validLocationData.map(l => l.timestamp.getTime()))),
     end: new Date(Math.max(...validLocationData.map(l => l.timestamp.getTime())))
   } : { start: new Date(), end: new Date() };
 
-  const activities = locationData.reduce((acc, loc) => {
+  const activities = validLocationData.reduce((acc, loc) => {
     if (loc.activity) {
       acc[loc.activity] = (acc[loc.activity] || 0) + 1;
     }
@@ -132,8 +132,8 @@ export default function LocationHistoryApp() {
     percentage: Math.round((count / totalLocations) * 100)
   })).sort((a, b) => b.count - a.count);
 
-  const averageAccuracy = locationData.length > 0 
-    ? Math.round(locationData.reduce((sum, loc) => sum + (loc.accuracy || 0), 0) / locationData.length)
+  const averageAccuracy = validLocationData.length > 0 
+    ? Math.round(validLocationData.reduce((sum, loc) => sum + (loc.accuracy || 0), 0) / validLocationData.length)
     : 0;
 
   const getViewModeButton = (mode: ViewMode, icon: React.ReactNode, label: string) => (

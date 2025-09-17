@@ -22,6 +22,56 @@ interface CacheCheckResult {
   uncached: Array<CoordinateKey>;
 }
 
+// Normalize country names to standardized versions to avoid duplicates in analytics
+function normalizeCountryName(country?: string): string | undefined {
+  if (!country) return undefined;
+  
+  const normalized = country.trim();
+  
+  // Map common country name variations to standardized names
+  const countryMappings: Record<string, string> = {
+    // United States variations
+    'United States of America': 'United States',
+    'USA': 'United States',
+    'US': 'United States',
+    'U.S.': 'United States',
+    'U.S.A.': 'United States',
+    
+    // United Kingdom variations  
+    'United Kingdom of Great Britain and Northern Ireland': 'United Kingdom',
+    'UK': 'United Kingdom',
+    'Britain': 'United Kingdom',
+    'Great Britain': 'United Kingdom',
+    'England': 'United Kingdom',
+    'Scotland': 'United Kingdom',
+    'Wales': 'United Kingdom',
+    'Northern Ireland': 'United Kingdom',
+    
+    // Other common variations
+    'Russia': 'Russian Federation',
+    'South Korea': 'Republic of Korea',
+    'North Korea': 'Democratic People\'s Republic of Korea',
+    'Taiwan': 'Taiwan, Province of China',
+    'Palestine': 'State of Palestine',
+    'Vatican': 'Holy See',
+    'Iran': 'Islamic Republic of Iran',
+    'Syria': 'Syrian Arab Republic',
+    'Moldova': 'Republic of Moldova',
+    'Macedonia': 'North Macedonia',
+    'Congo': 'Democratic Republic of the Congo',
+    'Czech Republic': 'Czechia',
+    'Myanmar': 'Myanmar',
+    'Burma': 'Myanmar',
+    'East Timor': 'Timor-Leste',
+    'Ivory Coast': 'Côte d\'Ivoire',
+    'Cape Verde': 'Cabo Verde',
+    'Swaziland': 'Eswatini',
+  };
+  
+  // Return mapped name if exists, otherwise return original normalized name
+  return countryMappings[normalized] || normalized;
+}
+
 // Reverse geocoding using GeoApify API - more reliable than Nominatim
 export async function reverseGeocode(lat: number, lng: number): Promise<GeocodeResult> {
   const apiKey = process.env.GEOAPIFY_API_KEY;
@@ -55,7 +105,7 @@ export async function reverseGeocode(lat: number, lng: number): Promise<GeocodeR
     return {
       city: result.city || result.town || result.village,
       state: result.state,
-      country: result.country,
+      country: normalizeCountryName(result.country),
       address: result.formatted
     };
   } catch (error) {
@@ -94,7 +144,7 @@ export async function reverseGeocodeNominatim(lat: number, lng: number): Promise
     return {
       city: address.city || address.town || address.village || address.hamlet,
       state: address.state,
-      country: address.country,
+      country: normalizeCountryName(address.country),
       address: data.display_name
     };
   } catch (error) {
