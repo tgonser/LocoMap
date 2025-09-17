@@ -6,7 +6,7 @@ import { MapPin, Calendar, BarChart3, List, Upload } from 'lucide-react';
 import FileUploader from './FileUploader';
 import MapDisplay from './MapDisplay';
 import DateNavigator from './DateNavigator';
-import LocationStats from './LocationStats';
+import AnalyticsPanel from './AnalyticsPanel';
 import LocationSummary from './LocationSummary';
 import TimelineViewer from './TimelineViewer';
 import ThemeToggle from './ThemeToggle';
