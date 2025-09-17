@@ -1,221 +1,222 @@
-import { type User, type InsertUser, type LocationPoint, type InsertLocationPoint } from "@shared/schema";
-import { randomUUID } from "crypto";
+// Storage layer implementing user-specific location data with authentication
+import {
+  users,
+  locationPoints,
+  locationDatasets,
+  uniqueLocations,
+  type User,
+  type UpsertUser,
+  type LocationPoint,
+  type InsertLocationPoint,
+  type LocationDataset,
+  type InsertLocationDataset,
+  type UniqueLocation,
+  type InsertUniqueLocation,
+} from "@shared/schema";
+import { db } from "./db";
+import { eq, and, desc } from "drizzle-orm";
 
-// modify the interface with any CRUD methods
-// you might need
-
+// Interface for storage operations
 export interface IStorage {
-  // User methods
+  // User operations - MANDATORY for Replit Auth
   getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  upsertUser(user: UpsertUser): Promise<User>;
   
-  // Location methods
-  createLocationPoints(locations: InsertLocationPoint[]): Promise<LocationPoint[]>;
-  getLocationPoints(userId?: string): Promise<LocationPoint[]>;
-  getLocationPointsByDateRange(startDate: Date, endDate: Date, userId?: string): Promise<LocationPoint[]>;
-  updateLocationPoint(id: string, updates: Partial<LocationPoint>): Promise<void>;
-  clearLocationPoints(userId?: string): Promise<void>;
-  getLocationStats(userId?: string): Promise<{
-    totalPoints: number;
-    dateRange: { start: Date; end: Date } | null;
-    cities: Array<{ name: string; count: number; state?: string; country?: string }>;
-    states: Array<{ name: string; count: number; country?: string }>;
-    countries: Array<{ name: string; count: number }>;
-    activities: Array<{ name: string; count: number }>;
-    dailyStats: Array<{ date: string; points: number; cities: number }>;
-  }>;
+  // Location dataset operations (user-specific)
+  createLocationDataset(dataset: InsertLocationDataset): Promise<LocationDataset>;
+  getUserLocationDatasets(userId: string): Promise<LocationDataset[]>;
+  getLocationDataset(id: string, userId: string): Promise<LocationDataset | undefined>;
+  updateDatasetProcessed(id: string, deduplicatedPoints: number): Promise<void>;
+  
+  // Location point operations (user-specific)
+  insertLocationPoints(points: InsertLocationPoint[]): Promise<LocationPoint[]>;
+  getUserLocationPoints(userId: string, datasetId?: string): Promise<LocationPoint[]>;
+  getUserLocationPointsCount(userId: string): Promise<number>;
+  clearUserLocationData(userId: string): Promise<void>;
+  
+  // Unique location operations (user-specific)
+  insertUniqueLocations(locations: InsertUniqueLocation[]): Promise<UniqueLocation[]>;
+  getUserUniqueLocations(userId: string): Promise<UniqueLocation[]>;
+  updateLocationGeocoding(id: string, address: string, city?: string, state?: string, country?: string): Promise<void>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-  private locationPoints: Map<string, LocationPoint>;
-
-  constructor() {
-    this.users = new Map();
-    this.locationPoints = new Map();
-  }
-
-  // User methods
+export class DatabaseStorage implements IStorage {
+  // User operations - MANDATORY for Replit Auth
   async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
-  }
-
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
-  }
-
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
   }
 
-  // Location methods
-  async createLocationPoints(locations: InsertLocationPoint[]): Promise<LocationPoint[]> {
-    const results: LocationPoint[] = [];
-    
-    for (const location of locations) {
-      const id = randomUUID();
-      const locationPoint: LocationPoint = {
-        ...location,
-        id,
-        timestamp: location.timestamp,
-        userId: location.userId || null,
-        accuracy: location.accuracy ?? null,
-        activity: location.activity ?? null,
-        address: location.address ?? null,
-        city: location.city ?? null,
-        state: location.state ?? null,
-        country: location.country ?? null,
-      };
-      this.locationPoints.set(id, locationPoint);
-      results.push(locationPoint);
+  async upsertUser(userData: UpsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(userData)
+      .onConflictDoUpdate({
+        target: users.id,
+        set: {
+          ...userData,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return user;
+  }
+
+  // Location dataset operations
+  async createLocationDataset(dataset: InsertLocationDataset): Promise<LocationDataset> {
+    const [created] = await db.insert(locationDatasets).values(dataset).returning();
+    return created;
+  }
+
+  async getUserLocationDatasets(userId: string): Promise<LocationDataset[]> {
+    return await db
+      .select()
+      .from(locationDatasets)
+      .where(eq(locationDatasets.userId, userId))
+      .orderBy(desc(locationDatasets.uploadedAt));
+  }
+
+  async getLocationDataset(id: string, userId: string): Promise<LocationDataset | undefined> {
+    const [dataset] = await db
+      .select()
+      .from(locationDatasets)
+      .where(and(eq(locationDatasets.id, id), eq(locationDatasets.userId, userId)));
+    return dataset;
+  }
+
+  async updateDatasetProcessed(id: string, deduplicatedPoints: number): Promise<void> {
+    await db
+      .update(locationDatasets)
+      .set({
+        deduplicatedPoints,
+        processedAt: new Date(),
+      })
+      .where(eq(locationDatasets.id, id));
+  }
+
+  // Location point operations
+  async insertLocationPoints(points: InsertLocationPoint[]): Promise<LocationPoint[]> {
+    if (points.length === 0) return [];
+    return await db.insert(locationPoints).values(points).returning();
+  }
+
+  async getUserLocationPoints(userId: string, datasetId?: string): Promise<LocationPoint[]> {
+    const conditions = [eq(locationPoints.userId, userId)];
+    if (datasetId) {
+      conditions.push(eq(locationPoints.datasetId, datasetId));
     }
     
-    return results;
+    return await db
+      .select()
+      .from(locationPoints)
+      .where(and(...conditions))
+      .orderBy(desc(locationPoints.timestamp));
   }
 
-  async getLocationPoints(userId?: string): Promise<LocationPoint[]> {
-    const allPoints = Array.from(this.locationPoints.values());
-    if (userId) {
-      return allPoints.filter(point => point.userId === userId);
-    }
-    return allPoints;
+  async getUserLocationPointsCount(userId: string): Promise<number> {
+    const result = await db
+      .select({ count: locationPoints.id })
+      .from(locationPoints)
+      .where(eq(locationPoints.userId, userId));
+    return result.length;
   }
 
-  async getLocationPointsByDateRange(startDate: Date, endDate: Date, userId?: string): Promise<LocationPoint[]> {
-    const points = await this.getLocationPoints(userId);
-    return points.filter(point => 
-      point.timestamp >= startDate && point.timestamp <= endDate
-    );
+  async clearUserLocationData(userId: string): Promise<void> {
+    // Clear in proper order due to foreign key constraints
+    await db.delete(locationPoints).where(eq(locationPoints.userId, userId));
+    await db.delete(uniqueLocations).where(eq(uniqueLocations.userId, userId));
+    await db.delete(locationDatasets).where(eq(locationDatasets.userId, userId));
   }
 
-  async updateLocationPoint(id: string, updates: Partial<LocationPoint>): Promise<void> {
-    const existing = this.locationPoints.get(id);
-    if (existing) {
-      this.locationPoints.set(id, { ...existing, ...updates });
-    }
+  // Unique location operations
+  async insertUniqueLocations(locations: InsertUniqueLocation[]): Promise<UniqueLocation[]> {
+    if (locations.length === 0) return [];
+    return await db.insert(uniqueLocations).values(locations).returning();
   }
 
-  async clearLocationPoints(userId?: string): Promise<void> {
-    if (userId) {
-      const toDelete = Array.from(this.locationPoints.entries())
-        .filter(([_, point]) => point.userId === userId)
-        .map(([id, _]) => id);
-      toDelete.forEach(id => this.locationPoints.delete(id));
-    } else {
-      this.locationPoints.clear();
-    }
+  async getUserUniqueLocations(userId: string): Promise<UniqueLocation[]> {
+    return await db
+      .select()
+      .from(uniqueLocations)
+      .where(eq(uniqueLocations.userId, userId))
+      .orderBy(desc(uniqueLocations.visitCount));
   }
 
-  async getLocationStats(userId?: string): Promise<{
-    totalPoints: number;
-    dateRange: { start: Date; end: Date } | null;
-    cities: Array<{ name: string; count: number; state?: string; country?: string }>;
-    states: Array<{ name: string; count: number; country?: string }>;
-    countries: Array<{ name: string; count: number }>;
-    activities: Array<{ name: string; count: number }>;
-    dailyStats: Array<{ date: string; points: number; cities: number }>;
-  }> {
-    const points = await this.getLocationPoints(userId);
-    
-    if (points.length === 0) {
-      return {
-        totalPoints: 0,
-        dateRange: null,
-        cities: [],
-        states: [],
-        countries: [],
-        activities: [],
-        dailyStats: []
-      };
-    }
-
-    // Calculate date range
-    const timestamps = points.map(p => p.timestamp.getTime());
-    const dateRange = {
-      start: new Date(Math.min(...timestamps)),
-      end: new Date(Math.max(...timestamps))
-    };
-
-    // Calculate city counts with state and country info
-    const cityData = new Map<string, { count: number; state?: string; country?: string }>();
-    points.forEach(point => {
-      if (point.city) {
-        const key = point.city;
-        if (!cityData.has(key)) {
-          cityData.set(key, { count: 0, state: point.state || undefined, country: point.country || undefined });
-        }
-        cityData.get(key)!.count++;
-      }
-    });
-
-    // Calculate state counts with country info
-    const stateData = new Map<string, { count: number; country?: string }>();
-    points.forEach(point => {
-      if (point.state) {
-        const key = point.state;
-        if (!stateData.has(key)) {
-          stateData.set(key, { count: 0, country: point.country || undefined });
-        }
-        stateData.get(key)!.count++;
-      }
-    });
-
-    // Calculate country counts
-    const countryCounts = new Map<string, number>();
-    points.forEach(point => {
-      if (point.country) {
-        countryCounts.set(point.country, (countryCounts.get(point.country) || 0) + 1);
-      }
-    });
-
-    // Calculate activity counts
-    const activityCounts = new Map<string, number>();
-    points.forEach(point => {
-      if (point.activity) {
-        activityCounts.set(point.activity, (activityCounts.get(point.activity) || 0) + 1);
-      }
-    });
-
-    // Calculate daily statistics
-    const dailyData = new Map<string, { points: number; citiesSet: Set<string> }>();
-    points.forEach(point => {
-      const dateKey = point.timestamp.toDateString();
-      if (!dailyData.has(dateKey)) {
-        dailyData.set(dateKey, { points: 0, citiesSet: new Set() });
-      }
-      const dayData = dailyData.get(dateKey)!;
-      dayData.points++;
-      if (point.city) {
-        dayData.citiesSet.add(point.city);
-      }
-    });
-
-    return {
-      totalPoints: points.length,
-      dateRange,
-      cities: Array.from(cityData.entries())
-        .map(([name, data]) => ({ name, count: data.count, state: data.state, country: data.country }))
-        .sort((a, b) => b.count - a.count),
-      states: Array.from(stateData.entries())
-        .map(([name, data]) => ({ name, count: data.count, country: data.country }))
-        .sort((a, b) => b.count - a.count),
-      countries: Array.from(countryCounts.entries())
-        .map(([name, count]) => ({ name, count }))
-        .sort((a, b) => b.count - a.count),
-      activities: Array.from(activityCounts.entries())
-        .map(([name, count]) => ({ name, count }))
-        .sort((a, b) => b.count - a.count),
-      dailyStats: Array.from(dailyData.entries())
-        .map(([date, data]) => ({ date, points: data.points, cities: data.citiesSet.size }))
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-    };
+  async updateLocationGeocoding(
+    id: string,
+    address: string,
+    city?: string,
+    state?: string,
+    country?: string
+  ): Promise<void> {
+    await db
+      .update(uniqueLocations)
+      .set({
+        geocoded: true,
+        ...(city && { city }),
+        ...(state && { state }),
+        ...(country && { country }),
+      })
+      .where(eq(uniqueLocations.id, id));
   }
 }
 
-export const storage = new MemStorage();
+// Legacy in-memory storage for comparison (not used with authentication)
+export class MemStorage implements IStorage {
+  // Not implementing user authentication methods for memory storage
+  async getUser(id: string): Promise<User | undefined> {
+    throw new Error("Memory storage does not support user authentication");
+  }
+
+  async upsertUser(userData: UpsertUser): Promise<User> {
+    throw new Error("Memory storage does not support user authentication");
+  }
+
+  // Stub implementations for memory storage (not used)
+  async createLocationDataset(dataset: InsertLocationDataset): Promise<LocationDataset> {
+    throw new Error("Use DatabaseStorage for persistent user data");
+  }
+
+  async getUserLocationDatasets(userId: string): Promise<LocationDataset[]> {
+    return [];
+  }
+
+  async getLocationDataset(id: string, userId: string): Promise<LocationDataset | undefined> {
+    return undefined;
+  }
+
+  async updateDatasetProcessed(id: string, deduplicatedPoints: number): Promise<void> {}
+
+  async insertLocationPoints(points: InsertLocationPoint[]): Promise<LocationPoint[]> {
+    return [];
+  }
+
+  async getUserLocationPoints(userId: string, datasetId?: string): Promise<LocationPoint[]> {
+    return [];
+  }
+
+  async getUserLocationPointsCount(userId: string): Promise<number> {
+    return 0;
+  }
+
+  async clearUserLocationData(userId: string): Promise<void> {}
+
+  async insertUniqueLocations(locations: InsertUniqueLocation[]): Promise<UniqueLocation[]> {
+    return [];
+  }
+
+  async getUserUniqueLocations(userId: string): Promise<UniqueLocation[]> {
+    return [];
+  }
+
+  async updateLocationGeocoding(
+    id: string,
+    address: string,
+    city?: string,
+    state?: string,
+    country?: string
+  ): Promise<void> {}
+}
+
+// Use database storage for user authentication and persistent data
+export const storage = new DatabaseStorage();
