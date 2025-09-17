@@ -365,9 +365,23 @@ export class DatabaseStorage implements IStorage {
       ))
       .groupBy(dailyGeocodes.date, dailyGeocodes.country, dailyGeocodes.state);
 
-    const totalDays = deduplicatedCentroids.length;
+    // Get true total days from location_points (not just geocoded ones) - moved up first
+    const actualDaysResult = await db
+      .select({
+        date: sql<Date>`date_trunc('day', ${locationPoints.timestamp})`,
+      })
+      .from(locationPoints)
+      .where(and(
+        eq(locationPoints.userId, userId),
+        sql`${locationPoints.timestamp} >= ${startDate}`,
+        sql`${locationPoints.timestamp} <= ${endDate}`
+      ))
+      .groupBy(sql`date_trunc('day', ${locationPoints.timestamp})`);
     
-    if (totalDays === 0) {
+    const actualTotalDays = actualDaysResult.length;
+    const geocodedDays = deduplicatedCentroids.length;
+    
+    if (actualTotalDays === 0) {
       return {
         totalDays: 0,
         geocodedDays: 0,
@@ -393,12 +407,12 @@ export class DatabaseStorage implements IStorage {
       }
     });
 
-    // Convert to sorted arrays with percentages
+    // Convert to sorted arrays with percentages - FIXED: Use actualTotalDays for proper percentages
     const countries = Array.from(countryMap.entries())
       .map(([country, days]) => ({
         country,
         days,
-        percent: Math.round((days / totalDays) * 100 * 100) / 100, // Round to 2 decimal places
+        percent: Math.round((days / actualTotalDays) * 100 * 100) / 100, // Fixed: Use actualTotalDays
       }))
       .sort((a, b) => b.days - a.days);
 
@@ -406,25 +420,9 @@ export class DatabaseStorage implements IStorage {
       .map(([state, days]) => ({
         state,
         days,
-        percent: Math.round((days / totalDays) * 100 * 100) / 100, // Round to 2 decimal places
+        percent: Math.round((days / actualTotalDays) * 100 * 100) / 100, // Fixed: Use actualTotalDays
       }))
       .sort((a, b) => b.days - a.days);
-
-    // Get true total days from location_points (not just geocoded ones)
-    const actualDaysResult = await db
-      .select({
-        date: sql<Date>`date_trunc('day', ${locationPoints.timestamp})`,
-      })
-      .from(locationPoints)
-      .where(and(
-        eq(locationPoints.userId, userId),
-        sql`${locationPoints.timestamp} >= ${startDate}`,
-        sql`${locationPoints.timestamp} <= ${endDate}`
-      ))
-      .groupBy(sql`date_trunc('day', ${locationPoints.timestamp})`);
-    
-    const actualTotalDays = actualDaysResult.length;
-    const geocodedDays = totalDays;
     const geocodingCoverage = actualTotalDays > 0 ? Math.round((geocodedDays / actualTotalDays) * 100 * 100) / 100 : 0;
 
     return {

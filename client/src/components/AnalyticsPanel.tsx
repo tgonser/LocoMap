@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CalendarDays, MapPin, Globe, Users, BarChart3, Calendar } from "lucide-react";
+import { CalendarDays, MapPin, Globe, Users, BarChart3, Calendar, RefreshCw, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
 
 interface AnalyticsData {
   totalDays: number;
@@ -21,6 +22,9 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [backfillLoading, setBackfillLoading] = useState(false);
+  const [geocodingLoading, setGeocodingLoading] = useState(false);
+  const { toast } = useToast();
   
   // Set default date range to last calendar year
   const getDefaultDateRange = () => {
@@ -85,6 +89,70 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
       month: 'short',
       day: 'numeric'
     });
+  };
+
+  const handleBackfillCentroids = async () => {
+    try {
+      setBackfillLoading(true);
+      const response = await fetch('/api/analytics/backfill-centroids', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to backfill centroids');
+      }
+      
+      const result = await response.json();
+      toast({
+        title: "Success",
+        description: `Backfilled ${result.centroidsCreated} daily centroids`
+      });
+      
+      // Refresh analytics after backfill
+      await fetchAnalytics();
+    } catch (err) {
+      console.error('Backfill error:', err);
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : 'Failed to backfill centroids',
+        variant: "destructive"
+      });
+    } finally {
+      setBackfillLoading(false);
+    }
+  };
+
+  const handleProcessGeocoding = async () => {
+    try {
+      setGeocodingLoading(true);
+      const response = await fetch('/api/analytics/process-geocoding-queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to process geocoding queue');
+      }
+      
+      const result = await response.json();
+      toast({
+        title: "Success", 
+        description: `Processed ${result.processed} geocoding requests`
+      });
+      
+      // Refresh analytics after geocoding
+      await fetchAnalytics();
+    } catch (err) {
+      console.error('Geocoding error:', err);
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : 'Failed to process geocoding',
+        variant: "destructive"
+      });
+    } finally {
+      setGeocodingLoading(false);
+    }
   };
 
   const exportData = () => {
@@ -197,6 +265,43 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
           {!isDateRangeValid() && (
             <p className="text-sm text-red-600 mt-2">Please ensure start date is before end date.</p>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Data Processing Tools */}
+      <Card data-testid="card-data-processing">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Database className="h-5 w-5" />
+            Data Processing Tools
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Button 
+              onClick={handleBackfillCentroids}
+              disabled={backfillLoading}
+              variant="outline"
+              className="flex items-center gap-2"
+              data-testid="button-backfill-centroids"
+            >
+              <Database className="h-4 w-4" />
+              {backfillLoading ? 'Computing...' : 'Compute Daily Centroids'}
+            </Button>
+            <Button 
+              onClick={handleProcessGeocoding}
+              disabled={geocodingLoading}
+              variant="outline"
+              className="flex items-center gap-2"
+              data-testid="button-process-geocoding"
+            >
+              <RefreshCw className="h-4 w-4" />
+              {geocodingLoading ? 'Geocoding...' : 'Process Geocoding Queue'}
+            </Button>
+          </div>
+          <p className="text-sm text-muted-foreground mt-2">
+            Use these tools if analytics shows limited countries/states data. First compute centroids, then process geocoding.
+          </p>
         </CardContent>
       </Card>
 
