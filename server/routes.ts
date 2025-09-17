@@ -29,7 +29,6 @@ function getAuthenticatedUser(req: Request) {
 // Background geocoding function for user-specific location data (restored analytics pipeline)
 async function geocodeUserLocationPoints(userId: string, datasetId: string) {
   try {
-    console.log(`Starting background geocoding for user ${userId}, dataset ${datasetId}`);
     
     const locations = await storage.getUserLocationPoints(userId, datasetId);
     
@@ -37,17 +36,14 @@ async function geocodeUserLocationPoints(userId: string, datasetId: string) {
     const locationsToGeocode = locations.filter(loc => !loc.city);
     
     if (locationsToGeocode.length === 0) {
-      console.log(`All locations for user ${userId} already have city information`);
       return;
     }
     
-    console.log(`Starting geocoding for ${locationsToGeocode.length} user locations`);
     
     // Deduplicate coordinates to reduce API calls
     const coordinates = locationsToGeocode.map(loc => ({ lat: loc.lat, lng: loc.lng }));
     const uniqueCoords = deduplicateCoordinates(coordinates);
     
-    console.log(`Reduced ${coordinates.length} coordinates to ${uniqueCoords.length} unique locations for user ${userId}`);
     
     // Batch geocode the unique coordinates
     const geocodeResults = await batchReverseGeocode(
@@ -72,7 +68,6 @@ async function geocodeUserLocationPoints(userId: string, datasetId: string) {
       }
     }
     
-    console.log(`Geocoding completed successfully for user ${userId}`);
   } catch (error) {
     console.error(`Geocoding process failed for user ${userId}:`, error);
   }
@@ -97,20 +92,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Protected route: Upload and parse Google location history (user-specific)
   app.post("/api/upload-location-history", isAuthenticated, upload.single("file"), async (req: Request & { file?: Express.Multer.File }, res) => {
     const { claims } = getAuthenticatedUser(req);
-    console.log("Upload request received from user:", claims.sub);
     try {
       if (!req.file) {
-        console.log("No file in request");
         return res.status(400).json({ error: "No file uploaded" });
       }
 
       const userId = claims.sub;
-      console.log("File received, size:", req.file.buffer.length);
       
       let fileContent: string;
       try {
         fileContent = req.file.buffer.toString("utf8");
-        console.log("File converted to string successfully");
       } catch (stringError) {
         console.error("Error converting file to string:", stringError);
         return res.status(400).json({ error: "File conversion failed" });
@@ -118,16 +109,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       let jsonData;
       
-      console.log("File info:", {
-        size: req.file.buffer.length,
-        sizeInMB: Math.round(req.file.buffer.length / (1024 * 1024)),
-        filename: req.file.originalname,
-        user: userId
-      });
       
       try {
         jsonData = JSON.parse(fileContent);
-        console.log("JSON parsing successful");
       } catch (parseError: any) {
         console.error("JSON parse error:", parseError);
         return res.status(400).json({ 
@@ -135,16 +119,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      console.log("About to validate with validateGoogleLocationHistory...");
       const isValid = validateGoogleLocationHistory(jsonData);
-      console.log("Validation result:", isValid);
 
       if (!isValid) {
         const errorMsg = Array.isArray(jsonData) 
           ? `Invalid Google location history format. Array with ${jsonData.length} elements detected, but validation failed.`
           : `Invalid Google location history format. Found keys: ${Object.keys(jsonData).join(', ')}. Expected 'timelineObjects', 'locations', or mobile array format.`;
         
-        console.log("Validation failed, returning error:", errorMsg);
         return res.status(400).json({ error: errorMsg });
       }
 

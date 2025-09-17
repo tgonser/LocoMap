@@ -122,26 +122,19 @@ function parseMobileArrayFormat(jsonData: GoogleLocationHistoryMobileArray): Par
   const results: ParsedLocationPoint[] = [];
   let lastKnownTimestamp: Date | null = null;
   
-  console.log(`Parsing ${jsonData.length} mobile timeline elements`);
   
   for (let i = 0; i < jsonData.length; i++) {
     const element = jsonData[i];
     
-    // Debug first few elements to understand the structure
-    if (i < 3) {
-      console.log(`Element ${i}:`, JSON.stringify(element, null, 2));
-    }
     
     // Handle visit elements with start/end times (independent of activity parsing)
     if (element.visit && (element.startTime || element.endTime)) {
       // Look for placeLocation in topCandidate or visit directly
       const placeLocation = element.visit.topCandidate?.placeLocation || element.visit.placeLocation;
       
-      if (i < 5) console.log(`Visit ${i}: placeLocation="${placeLocation}"`);
       
       if (placeLocation) {
         const coords = parseGeoString(placeLocation);
-        if (i < 5) console.log(`Visit ${i}: parsed coords=`, coords);
         
         if (coords) {
           // Add start point
@@ -154,7 +147,6 @@ function parseMobileArrayFormat(jsonData: GoogleLocationHistoryMobileArray): Par
               activity: 'still' // Visits are typically stationary
             });
             lastKnownTimestamp = timestamp;
-            if (i < 5) console.log(`Visit ${i}: Added start point`);
           }
           
           // Add end point if different
@@ -167,7 +159,6 @@ function parseMobileArrayFormat(jsonData: GoogleLocationHistoryMobileArray): Par
               activity: 'still'
             });
             lastKnownTimestamp = timestamp;
-            if (i < 5) console.log(`Visit ${i}: Added end point`);
           }
         }
       }
