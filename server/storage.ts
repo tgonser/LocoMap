@@ -14,7 +14,7 @@ import {
   type InsertUniqueLocation,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 
 // Interface for storage operations
 export interface IStorage {
@@ -115,10 +115,10 @@ export class DatabaseStorage implements IStorage {
 
   async getUserLocationPointsCount(userId: string): Promise<number> {
     const result = await db
-      .select({ count: locationPoints.id })
+      .select({ count: sql<number>`count(*)` })
       .from(locationPoints)
       .where(eq(locationPoints.userId, userId));
-    return result.length;
+    return result[0]?.count || 0;
   }
 
   async clearUserLocationData(userId: string): Promise<void> {
@@ -150,14 +150,14 @@ export class DatabaseStorage implements IStorage {
     country?: string
   ): Promise<void> {
     await db
-      .update(uniqueLocations)
+      .update(locationPoints)  // Fixed: Update location points, not unique locations
       .set({
-        geocoded: true,
+        address,  // Fixed: Actually persist the address parameter
         ...(city && { city }),
         ...(state && { state }),
         ...(country && { country }),
       })
-      .where(eq(uniqueLocations.id, id));
+      .where(eq(locationPoints.id, id));
   }
 }
 
