@@ -639,6 +639,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get ungeocoded summary grouped by month/year for quick testing
+  app.get("/api/analytics/ungeocoded-summary", isAuthenticated, async (req, res) => {
+    try {
+      const { claims } = getAuthenticatedUser(req);
+      const userId = claims.sub;
+      
+      const summary = await storage.getUngeocodedSummary(userId);
+      
+      res.json({
+        success: true,
+        ranges: summary,
+        totalRanges: summary.length,
+        message: summary.length === 0 
+          ? "All data is geocoded ✅" 
+          : `Found ${summary.length} date ranges with ungeocoded data`
+      });
+    } catch (error) {
+      console.error("Error getting ungeocoded summary:", error);
+      res.status(500).json({ error: "Failed to get ungeocoded summary" });
+    }
+  });
+
   // NEW: Date-range specific geocoding endpoint for better user experience
   app.post("/api/analytics/geocode-date-range", isAuthenticated, async (req, res) => {
     try {

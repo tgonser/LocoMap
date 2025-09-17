@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CalendarDays, MapPin, Globe, Users, BarChart3, Calendar, RefreshCw, Database } from "lucide-react";
+import { CalendarDays, MapPin, Globe, Users, BarChart3, Calendar, RefreshCw, Database, ChevronDown, TestTube } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
 
 interface AnalyticsData {
@@ -12,6 +13,14 @@ interface AnalyticsData {
   dateRange: { start: string; end: string };
   countries: Array<{ name: string; days: number; percentage: number }>;
   usStates: Array<{ name: string; days: number; percentage: number }>;
+}
+
+interface UngeocodedRange {
+  year: number;
+  month: number;
+  monthName: string;
+  count: number;
+  dateRange: string;
 }
 
 interface AnalyticsPanelProps {
@@ -24,6 +33,9 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [backfillLoading, setBackfillLoading] = useState(false);
   const [geocodingLoading, setGeocodingLoading] = useState(false);
+  const [ungeocodedRanges, setUngeocodedRanges] = useState<UngeocodedRange[]>([]);
+  const [ungeocodedLoading, setUngeocodedLoading] = useState(false);
+  const [isQuickRangesOpen, setIsQuickRangesOpen] = useState(false);
   const { toast } = useToast();
   
   // Set default date range to last calendar year
@@ -42,6 +54,7 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
 
   useEffect(() => {
     fetchAnalytics();
+    fetchUngeocodedSummary();
   }, []);
 
   const fetchAnalytics = async () => {
@@ -89,6 +102,32 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
       month: 'short',
       day: 'numeric'
     });
+  };
+
+  const fetchUngeocodedSummary = async () => {
+    try {
+      setUngeocodedLoading(true);
+      
+      console.log('AnalyticsPanel: Fetching ungeocoded summary from /api/analytics/ungeocoded-summary');
+      
+      const response = await fetch('/api/analytics/ungeocoded-summary');
+      console.log('AnalyticsPanel: Ungeocoded summary response status:', response.status);
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('AnalyticsPanel: Ungeocoded summary error:', errorData);
+        throw new Error(errorData.error || 'Failed to fetch ungeocoded summary');
+      }
+      
+      const data = await response.json();
+      console.log('AnalyticsPanel: Received ungeocoded summary data:', data);
+      setUngeocodedRanges(data.ranges || []);
+    } catch (err) {
+      console.error('AnalyticsPanel: Ungeocoded summary fetch error:', err);
+      // Don't show error toast for this since it's not critical
+    } finally {
+      setUngeocodedLoading(false);
+    }
   };
 
   const handleBackfillCentroids = async () => {
@@ -371,6 +410,103 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
             </div>
           </div>
         </CardContent>
+      </Card>
+
+      {/* Quick Test Ranges - Ungeocoded Data Summary */}
+      <Card data-testid="card-quick-test-ranges">
+        <Collapsible 
+          open={isQuickRangesOpen} 
+          onOpenChange={setIsQuickRangesOpen}
+        >
+          <CollapsibleTrigger asChild>
+            <CardHeader className="hover-elevate cursor-pointer">
+              <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <TestTube className="h-5 w-5" />
+                  Quick Test Ranges
+                </div>
+                <div className="flex items-center gap-2">
+                  {ungeocodedRanges.length > 0 && (
+                    <Badge variant="secondary" data-testid="badge-ungeocoded-ranges-count">
+                      {ungeocodedRanges.length} ranges
+                    </Badge>
+                  )}
+                  <ChevronDown className={`h-4 w-4 transition-transform ${isQuickRangesOpen ? 'rotate-180' : ''}`} />
+                </div>
+              </CardTitle>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent>
+              {ungeocodedLoading ? (
+                <div className="flex items-center justify-center py-4" data-testid="loading-ungeocoded-ranges">
+                  <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                  <span>Loading ungeocoded ranges...</span>
+                </div>
+              ) : ungeocodedRanges.length === 0 ? (
+                <div className="text-center py-6" data-testid="no-ungeocoded-ranges">
+                  <div className="text-green-600 dark:text-green-400 mb-2">
+                    <svg className="h-8 w-8 mx-auto" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <p className="text-lg font-medium text-green-600 dark:text-green-400">All data is geocoded!</p>
+                  <p className="text-sm text-muted-foreground">No ungeocoded date ranges found.</p>
+                </div>
+              ) : (
+                <div>
+                  <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
+                    <div className="flex items-start gap-2">
+                      <div className="text-blue-600 dark:text-blue-400 mt-0.5">
+                        <TestTube className="h-4 w-4" />
+                      </div>
+                      <div className="text-sm">
+                        <p className="font-medium text-blue-800 dark:text-blue-200 mb-1">Fast Testing</p>
+                        <p className="text-blue-700 dark:text-blue-300">
+                          These date ranges have ungeocoded data. Use them for quick testing of geocoding functionality. 
+                          Smaller counts will process faster.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    {ungeocodedRanges.map((range, index) => (
+                      <div
+                        key={`${range.year}-${range.month}`}
+                        className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md border hover-elevate cursor-pointer"
+                        onClick={() => {
+                          const startOfMonth = `${range.year}-${range.month.toString().padStart(2, '0')}-01`;
+                          const endOfMonth = new Date(range.year, range.month, 0).toISOString().split('T')[0];
+                          setStartDate(startOfMonth);
+                          setEndDate(endOfMonth);
+                        }}
+                        data-testid={`row-ungeocoded-range-${index}`}
+                      >
+                        <div className="text-base" data-testid={`text-ungeocoded-range-details-${index}`}>
+                          <span className="font-medium">{range.dateRange}</span>
+                          <span className="text-muted-foreground ml-2">
+                            {range.count} ungeocoded centroid{range.count !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                        <Badge 
+                          variant={range.count <= 50 ? "default" : range.count <= 200 ? "secondary" : "outline"}
+                          data-testid={`badge-ungeocoded-count-${index}`}
+                        >
+                          {range.count}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <div className="mt-4 text-sm text-muted-foreground">
+                    <p>💡 Click any range to set it as your date filter above.</p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </CollapsibleContent>
+        </Collapsible>
       </Card>
 
       {/* Analytics Results */}

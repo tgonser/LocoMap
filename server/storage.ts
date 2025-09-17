@@ -65,6 +65,13 @@ export interface IStorage {
     coverage: number;
     ungeocodedCount: number;
   }>;
+  getUngeocodedSummary(userId: string): Promise<Array<{
+    year: number;
+    month: number;
+    monthName: string;
+    count: number;
+    dateRange: string;
+  }>>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -546,6 +553,49 @@ export class DatabaseStorage implements IStorage {
       ungeocodedCount,
     };
   }
+
+  async getUngeocodedSummary(userId: string): Promise<Array<{
+    year: number;
+    month: number;
+    monthName: string;
+    count: number;
+    dateRange: string;
+  }>> {
+    // SQL query to group ungeocoded centroids by year and month
+    const results = await db
+      .select({
+        year: sql<number>`EXTRACT(YEAR FROM ${dailyGeocodes.date})`,
+        month: sql<number>`EXTRACT(MONTH FROM ${dailyGeocodes.date})`,
+        count: sql<number>`count(*)`
+      })
+      .from(dailyGeocodes)
+      .where(and(
+        eq(dailyGeocodes.userId, userId),
+        eq(dailyGeocodes.geocoded, false)
+      ))
+      .groupBy(
+        sql`EXTRACT(YEAR FROM ${dailyGeocodes.date})`,
+        sql`EXTRACT(MONTH FROM ${dailyGeocodes.date})`
+      )
+      .orderBy(
+        sql`EXTRACT(YEAR FROM ${dailyGeocodes.date}) DESC`,
+        sql`EXTRACT(MONTH FROM ${dailyGeocodes.date}) DESC`
+      );
+
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+
+    // Transform results to include month names and formatted date ranges
+    return results.map(result => ({
+      year: result.year,
+      month: result.month,
+      monthName: monthNames[result.month - 1], // month is 1-indexed
+      count: result.count,
+      dateRange: `${monthNames[result.month - 1]} ${result.year}`
+    }));
+  }
 }
 
 // Legacy in-memory storage for comparison (not used with authentication)
@@ -681,6 +731,16 @@ export class MemStorage implements IStorage {
       coverage: 0,
       ungeocodedCount: 0,
     };
+  }
+
+  async getUngeocodedSummary(userId: string): Promise<Array<{
+    year: number;
+    month: number;
+    monthName: string;
+    count: number;
+    dateRange: string;
+  }>> {
+    return [];
   }
 }
 
