@@ -9,7 +9,6 @@ import DateNavigator from './DateNavigator';
 import AnalyticsPanel from './AnalyticsPanel';
 import LocationSummary from './LocationSummary';
 import TimelineViewer from './TimelineViewer';
-import ThemeToggle from './ThemeToggle';
 
 interface LocationData {
   lat: number;
