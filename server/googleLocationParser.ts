@@ -1,4 +1,4 @@
-// Mobile format is an array of timeline elements
+// Mobile format is an array of timeline elements - flexible interface for various structures
 interface GoogleLocationHistoryMobileArray extends Array<{
   endTime?: string;
   startTime?: string;
@@ -10,11 +10,22 @@ interface GoogleLocationHistoryMobileArray extends Array<{
       location?: {
         lat?: number;
         lng?: number;
+        latitudeE7?: number;
+        longitudeE7?: number;
       };
+      lat?: number;
+      lng?: number;
+      latitudeE7?: number;
+      longitudeE7?: number;
     };
+    lat?: number;
+    lng?: number;
+    latitudeE7?: number;
+    longitudeE7?: number;
   };
   point?: string; // Format: "geo:lat,lng"
   durationMinutesOffsetFromStartTime?: string;
+  [key: string]: any; // Allow for other unknown properties
 }> {}
 
 interface GoogleLocationHistoryNew {
@@ -86,32 +97,77 @@ function normalizeTimestamp(timestamp: string): Date {
 // Parse the actual mobile format (array of timeline objects)
 function parseMobileArrayFormat(jsonData: GoogleLocationHistoryMobileArray): ParsedLocationPoint[] {
   const results: ParsedLocationPoint[] = [];
+  let lastKnownTimestamp: Date | null = null;
   
   console.log(`Parsing ${jsonData.length} mobile timeline elements`);
   
-  for (const element of jsonData) {
+  for (let i = 0; i < jsonData.length; i++) {
+    const element = jsonData[i];
+    
+    // Debug first few elements to understand the structure
+    if (i < 5) {
+      console.log(`Element ${i}:`, JSON.stringify(element, null, 2));
+    }
+    
     // Handle visit elements with start/end times
-    if (element.visit && element.visit.topCandidate?.location && (element.startTime || element.endTime)) {
-      const location = element.visit.topCandidate.location;
+    if (element.visit && (element.startTime || element.endTime)) {
+      // Look for location data in various possible places
+      let location: any = null;
       
-      // Add start point
-      if (element.startTime && location.lat && location.lng) {
-        results.push({
-          lat: location.lat,
-          lng: location.lng,
-          timestamp: normalizeTimestamp(element.startTime),
-          activity: 'still' // Visits are typically stationary
-        });
+      // Check topCandidate.location
+      if (element.visit.topCandidate?.location) {
+        location = element.visit.topCandidate.location;
+      }
+      // Check if coordinates are stored differently
+      else if (element.visit.topCandidate && (element.visit.topCandidate.lat || element.visit.topCandidate.latitudeE7)) {
+        location = element.visit.topCandidate;
+      }
+      // Check visit directly
+      else if (element.visit.lat || element.visit.latitudeE7) {
+        location = element.visit;
       }
       
-      // Add end point if different
-      if (element.endTime && location.lat && location.lng && element.endTime !== element.startTime) {
-        results.push({
-          lat: location.lat,
-          lng: location.lng,
-          timestamp: normalizeTimestamp(element.endTime),
-          activity: 'still'
-        });
+      if (location) {
+        // Handle different coordinate formats
+        let lat: number | null = null;
+        let lng: number | null = null;
+        
+        // Standard lat/lng (use proper type checks to handle 0 coordinates)
+        if (typeof location.lat === 'number' && typeof location.lng === 'number') {
+          lat = location.lat;
+          lng = location.lng;
+        }
+        // E7 format (Google's standard)
+        else if (typeof location.latitudeE7 === 'number' && typeof location.longitudeE7 === 'number') {
+          lat = location.latitudeE7 / 1e7;
+          lng = location.longitudeE7 / 1e7;
+        }
+        
+        if (lat !== null && lng !== null) {
+          // Add start point
+          if (element.startTime) {
+            const timestamp = normalizeTimestamp(element.startTime);
+            results.push({
+              lat: lat,
+              lng: lng,
+              timestamp: timestamp,
+              activity: 'still' // Visits are typically stationary
+            });
+            lastKnownTimestamp = timestamp;
+          }
+          
+          // Add end point if different
+          if (element.endTime && element.endTime !== element.startTime) {
+            const timestamp = normalizeTimestamp(element.endTime);
+            results.push({
+              lat: lat,
+              lng: lng,
+              timestamp: timestamp,
+              activity: 'still'
+            });
+            lastKnownTimestamp = timestamp;
+          }
+        }
       }
     }
     
@@ -124,12 +180,24 @@ function parseMobileArrayFormat(jsonData: GoogleLocationHistoryMobileArray): Par
           const lng = parseFloat(coords[1]);
           
           if (!isNaN(lat) && !isNaN(lng)) {
-            // For path points, we need to calculate timestamp based on duration offset
-            // This is tricky without a base timestamp, so we'll use a placeholder for now
+            // Calculate timestamp based on duration offset from previous element
+            let timestamp: Date;
+            if (lastKnownTimestamp && element.durationMinutesOffsetFromStartTime) {
+              const offsetMinutes = parseInt(element.durationMinutesOffsetFromStartTime);
+              if (!isNaN(offsetMinutes)) {
+                timestamp = new Date(lastKnownTimestamp.getTime() + offsetMinutes * 60 * 1000);
+              } else {
+                timestamp = lastKnownTimestamp;
+              }
+            } else {
+              // Fallback to current time if no base timestamp available
+              timestamp = new Date();
+            }
+            
             results.push({
               lat: lat,
               lng: lng,
-              timestamp: new Date(), // TODO: Calculate based on offset
+              timestamp: timestamp,
               activity: 'walking'
             });
           }
@@ -138,8 +206,14 @@ function parseMobileArrayFormat(jsonData: GoogleLocationHistoryMobileArray): Par
         console.warn('Failed to parse geo point:', element.point, error);
       }
     }
+    
+    // Handle any other location formats we might have missed
+    else if (i < 10) {
+      console.log(`Unhandled element type ${i}:`, Object.keys(element));
+    }
   }
   
+  console.log(`Successfully parsed ${results.length} location points from mobile format`);
   return results;
 }
 
