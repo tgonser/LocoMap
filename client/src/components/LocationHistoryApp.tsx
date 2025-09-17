@@ -27,37 +27,28 @@ export default function LocationHistoryApp() {
   const [viewMode, setViewMode] = useState<ViewMode>('upload');
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // //todo: remove mock functionality when real parser is implemented
-  const generateMockData = () => {
-    const mockData: LocationData[] = [];
-    const startDate = new Date('2024-01-10');
-    
-    for (let day = 0; day < 8; day++) {
-      for (let hour = 8; hour < 20; hour += 2) {
-        mockData.push({
-          lat: 37.7749 + (Math.random() - 0.5) * 0.1,
-          lng: -122.4194 + (Math.random() - 0.5) * 0.1,
-          timestamp: new Date(startDate.getTime() + day * 24 * 60 * 60 * 1000 + hour * 60 * 60 * 1000),
-          accuracy: Math.floor(Math.random() * 30) + 10,
-          activity: ['still', 'walking', 'in_vehicle', 'on_bicycle'][Math.floor(Math.random() * 4)]
-        });
-      }
-    }
-    return mockData;
-  };
-
-  const handleFileUpload = (data: any) => {
+  const handleFileUpload = async (result: any) => {
     setIsProcessing(true);
     
-    // Simulate processing time
-    setTimeout(() => {
-      // //todo: remove mock functionality - In real implementation, parse actual Google location history JSON
-      const mockData = generateMockData();
-      setLocationData(mockData);
+    try {
+      // Fetch the uploaded location data
+      const response = await fetch('/api/locations');
+      const locations = await response.json();
+      
+      // Convert timestamps to Date objects
+      const processedData = locations.map((loc: any) => ({
+        ...loc,
+        timestamp: new Date(loc.timestamp)
+      }));
+      
+      setLocationData(processedData);
       setViewMode('map');
+      console.log('Location data loaded:', processedData.length, 'points');
+    } catch (error) {
+      console.error('Error loading location data:', error);
+    } finally {
       setIsProcessing(false);
-      console.log('Location data processed:', mockData.length, 'points');
-    }, 2000);
+    }
   };
 
   // Get available dates with location data

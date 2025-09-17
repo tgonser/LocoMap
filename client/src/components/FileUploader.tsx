@@ -21,19 +21,25 @@ export default function FileUploader({ onFileUpload, isProcessing = false }: Fil
     setUploadStatus('processing');
 
     try {
-      const text = await file.text();
-      const jsonData = JSON.parse(text);
-      
-      // Validate it's Google location history format
-      if (!jsonData.locations && !jsonData.timelineObjects) {
-        throw new Error('Invalid Google location history format');
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/upload-location-history', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Upload failed');
       }
 
       setUploadStatus('success');
-      onFileUpload(jsonData);
-      console.log('File uploaded successfully:', file.name);
+      onFileUpload(result);
+      console.log('File uploaded successfully:', result.message);
     } catch (error) {
-      console.error('Error parsing JSON:', error);
+      console.error('Error uploading file:', error);
       setUploadStatus('error');
     }
   };
