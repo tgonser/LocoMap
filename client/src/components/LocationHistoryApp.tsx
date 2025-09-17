@@ -117,7 +117,7 @@ export default function LocationHistoryApp() {
   const dateRange = validLocationData.length > 0 ? {
     start: new Date(Math.min(...validLocationData.map(l => l.timestamp.getTime()))),
     end: new Date(Math.max(...validLocationData.map(l => l.timestamp.getTime())))
-  } : { start: new Date(), end: new Date() };
+  } : { start: new Date('2024-01-01'), end: new Date('2024-12-31') };
 
   const activities = validLocationData.reduce((acc, loc) => {
     if (loc.activity) {
@@ -224,7 +224,28 @@ export default function LocationHistoryApp() {
                 <LocationSummary
                   locations={[]}
                   dateRange={dateRange}
-                  onExport={() => console.log('Export functionality')}
+                  onExport={() => {
+                    // Export location summary data
+                    const exportData = {
+                      summary: 'Location Summary Export',
+                      dateRange: {
+                        start: dateRange.start.toISOString().split('T')[0],
+                        end: dateRange.end.toISOString().split('T')[0]
+                      },
+                      totalLocations,
+                      exportedAt: new Date().toISOString()
+                    };
+                    
+                    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `location-summary-${dateRange.start.toISOString().split('T')[0]}-to-${dateRange.end.toISOString().split('T')[0]}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                  }}
                 />
               )}
             </div>

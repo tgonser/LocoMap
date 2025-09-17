@@ -73,9 +73,26 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
       console.log('AnalyticsPanel: Response status:', response.status);
       
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         console.error('AnalyticsPanel: API error:', errorData);
-        throw new Error(errorData.error || 'Failed to fetch analytics');
+        
+        // Handle authentication failures more clearly
+        if (response.status === 401) {
+          toast({
+            title: "Authentication Expired",
+            description: "Your session has expired. Refreshing the page...",
+            variant: "destructive",
+          });
+          
+          // Auto-refresh the page after a short delay
+          setTimeout(() => {
+            window.location.reload();
+          }, 2000);
+          
+          throw new Error('Authentication expired. Page will refresh automatically.');
+        }
+        
+        throw new Error(errorData.error || `API request failed (${response.status})`);
       }
       const data = await response.json();
       console.log('AnalyticsPanel: Received analytics data:', data);
@@ -116,7 +133,24 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         console.error('AnalyticsPanel: Ungeocoded summary error:', errorData);
-        throw new Error(errorData.error || 'Failed to fetch ungeocoded summary');
+        
+        // Handle authentication failures more clearly
+        if (response.status === 401) {
+          toast({
+            title: "Authentication Expired", 
+            description: "Your session has expired. Refreshing the page...",
+            variant: "destructive",
+          });
+          
+          // Auto-refresh the page after a short delay
+          setTimeout(() => {
+            window.location.reload();
+          }, 2000);
+          
+          throw new Error('Authentication expired. Page will refresh automatically.');
+        }
+        
+        throw new Error(errorData.error || `Failed to fetch ungeocoded summary (${response.status})`);
       }
       
       const data = await response.json();
