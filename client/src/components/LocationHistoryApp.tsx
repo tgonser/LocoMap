@@ -104,9 +104,19 @@ export default function LocationHistoryApp() {
 
   // Analytics calculations
   const totalLocations = locationData.length;
-  const dateRange = locationData.length > 0 ? {
-    start: new Date(Math.min(...locationData.map(l => l.timestamp.getTime()))),
-    end: new Date(Math.max(...locationData.map(l => l.timestamp.getTime())))
+  
+  // Filter out unrealistic future dates (beyond next month) and very old dates for sidebar display
+  const now = new Date();
+  const maxReasonableDate = new Date(now.getTime() + (30 * 24 * 60 * 60 * 1000)); // Next month
+  const minReasonableDate = new Date('2005-01-01'); // Google started around this time
+  
+  const validLocationData = locationData.filter(l => 
+    l.timestamp >= minReasonableDate && l.timestamp <= maxReasonableDate
+  );
+  
+  const dateRange = validLocationData.length > 0 ? {
+    start: new Date(Math.min(...validLocationData.map(l => l.timestamp.getTime()))),
+    end: new Date(Math.max(...validLocationData.map(l => l.timestamp.getTime())))
   } : { start: new Date(), end: new Date() };
 
   const activities = locationData.reduce((acc, loc) => {

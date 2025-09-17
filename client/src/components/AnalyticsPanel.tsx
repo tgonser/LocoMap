@@ -96,17 +96,20 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
       setBackfillLoading(true);
       const response = await fetch('/api/analytics/backfill-centroids', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include' // Include cookies for authentication
       });
       
       if (!response.ok) {
-        throw new Error('Failed to backfill centroids');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Request failed: ${response.status}`);
       }
       
       const result = await response.json();
+      const centroidsCreated = result.centroidsCreated || 0;
       toast({
         title: "Success",
-        description: `Backfilled ${result.centroidsCreated} daily centroids`
+        description: `Backfilled ${centroidsCreated} daily centroids`
       });
       
       // Refresh analytics after backfill
@@ -128,17 +131,20 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
       setGeocodingLoading(true);
       const response = await fetch('/api/analytics/process-geocoding-queue', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include' // Include cookies for authentication
       });
       
       if (!response.ok) {
-        throw new Error('Failed to process geocoding queue');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Request failed: ${response.status}`);
       }
       
       const result = await response.json();
+      const processed = result.processed || 0;
       toast({
         title: "Success", 
-        description: `Processed ${result.processed} geocoding requests`
+        description: `Processed ${processed} geocoding requests`
       });
       
       // Refresh analytics after geocoding
