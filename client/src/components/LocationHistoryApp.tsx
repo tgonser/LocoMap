@@ -194,7 +194,7 @@ export default function LocationHistoryApp() {
                   className="h-full"
                 />
               ) : (
-                <LocationStats
+                <AnalyticsPanel
                   totalLocations={totalLocations}
                   timeSpent={`${Math.ceil((dateRange.end.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24))} days`}
                   mostVisitedCity="San Francisco, CA"
