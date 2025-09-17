@@ -5,23 +5,30 @@ interface GoogleLocationHistoryMobileArray extends Array<{
   visit?: {
     hierarchyLevel?: string;
     topCandidate?: {
-      probability?: number;
-      placeId?: string;
-      location?: {
-        lat?: number;
-        lng?: number;
-        latitudeE7?: number;
-        longitudeE7?: number;
-      };
-      lat?: number;
-      lng?: number;
-      latitudeE7?: number;
-      longitudeE7?: number;
+      probability?: string;
+      placeID?: string;
+      placeLocation?: string; // "geo:lat,lng" format
     };
-    lat?: number;
-    lng?: number;
-    latitudeE7?: number;
-    longitudeE7?: number;
+    placeLocation?: string;
+    timelinePath?: {
+      points?: Array<{
+        point?: string;
+        durationMinutesOffsetFromStartTime?: string;
+      }>;
+    };
+    points?: Array<{
+      point?: string;
+      durationMinutesOffsetFromStartTime?: string;
+    }>;
+  };
+  activity?: {
+    start?: string; // "geo:lat,lng" format
+    end?: string; // "geo:lat,lng" format
+    topCandidate?: {
+      type?: string;
+      probability?: string;
+    };
+    distanceMeters?: string;
   };
   point?: string; // Format: "geo:lat,lng"
   durationMinutesOffsetFromStartTime?: string;
@@ -94,6 +101,24 @@ function normalizeTimestamp(timestamp: string): Date {
   }
 }
 
+// Helper function to parse "geo:lat,lng" strings into coordinates
+function parseGeoString(geoString: string): {lat: number, lng: number} | null {
+  if (!geoString || typeof geoString !== 'string') return null;
+  
+  const trimmed = geoString.trim();
+  if (!trimmed.startsWith('geo:')) return null;
+  
+  const coords = trimmed.replace('geo:', '').split(',');
+  if (coords.length !== 2) return null;
+  
+  const lat = parseFloat(coords[0]);
+  const lng = parseFloat(coords[1]);
+  
+  if (isNaN(lat) || isNaN(lng)) return null;
+  
+  return { lat, lng };
+}
+
 // Parse the actual mobile format (array of timeline objects)
 function parseMobileArrayFormat(jsonData: GoogleLocationHistoryMobileArray): ParsedLocationPoint[] {
   const results: ParsedLocationPoint[] = [];
@@ -105,51 +130,24 @@ function parseMobileArrayFormat(jsonData: GoogleLocationHistoryMobileArray): Par
     const element = jsonData[i];
     
     // Debug first few elements to understand the structure
-    if (i < 5) {
+    if (i < 3) {
       console.log(`Element ${i}:`, JSON.stringify(element, null, 2));
     }
     
     // Handle visit elements with start/end times
     if (element.visit && (element.startTime || element.endTime)) {
-      // Look for location data in various possible places
-      let location: any = null;
+      // Look for placeLocation in topCandidate or visit directly
+      const placeLocation = element.visit.topCandidate?.placeLocation || element.visit.placeLocation;
       
-      // Check topCandidate.location
-      if (element.visit.topCandidate?.location) {
-        location = element.visit.topCandidate.location;
-      }
-      // Check if coordinates are stored differently
-      else if (element.visit.topCandidate && (element.visit.topCandidate.lat || element.visit.topCandidate.latitudeE7)) {
-        location = element.visit.topCandidate;
-      }
-      // Check visit directly
-      else if (element.visit.lat || element.visit.latitudeE7) {
-        location = element.visit;
-      }
-      
-      if (location) {
-        // Handle different coordinate formats
-        let lat: number | null = null;
-        let lng: number | null = null;
-        
-        // Standard lat/lng (use proper type checks to handle 0 coordinates)
-        if (typeof location.lat === 'number' && typeof location.lng === 'number') {
-          lat = location.lat;
-          lng = location.lng;
-        }
-        // E7 format (Google's standard)
-        else if (typeof location.latitudeE7 === 'number' && typeof location.longitudeE7 === 'number') {
-          lat = location.latitudeE7 / 1e7;
-          lng = location.longitudeE7 / 1e7;
-        }
-        
-        if (lat !== null && lng !== null) {
+      if (placeLocation) {
+        const coords = parseGeoString(placeLocation);
+        if (coords) {
           // Add start point
           if (element.startTime) {
             const timestamp = normalizeTimestamp(element.startTime);
             results.push({
-              lat: lat,
-              lng: lng,
+              lat: coords.lat,
+              lng: coords.lng,
               timestamp: timestamp,
               activity: 'still' // Visits are typically stationary
             });
@@ -160,13 +158,79 @@ function parseMobileArrayFormat(jsonData: GoogleLocationHistoryMobileArray): Par
           if (element.endTime && element.endTime !== element.startTime) {
             const timestamp = normalizeTimestamp(element.endTime);
             results.push({
-              lat: lat,
-              lng: lng,
+              lat: coords.lat,
+              lng: coords.lng,
               timestamp: timestamp,
               activity: 'still'
             });
             lastKnownTimestamp = timestamp;
           }
+        }
+      }
+      
+      // Look for nested path points in visit (timelinePath.points or just points)
+      const nestedPoints = element.visit.timelinePath?.points || element.visit.points;
+      if (Array.isArray(nestedPoints) && element.startTime) {
+        const baseTimestamp = normalizeTimestamp(element.startTime);
+        
+        for (const pathPoint of nestedPoints) {
+          if (pathPoint.point) {
+            const coords = parseGeoString(pathPoint.point);
+            if (coords) {
+              let timestamp = baseTimestamp;
+              
+              // Calculate timestamp based on duration offset
+              if (pathPoint.durationMinutesOffsetFromStartTime) {
+                const offsetMinutes = parseInt(pathPoint.durationMinutesOffsetFromStartTime);
+                if (!isNaN(offsetMinutes)) {
+                  timestamp = new Date(baseTimestamp.getTime() + offsetMinutes * 60 * 1000);
+                }
+              }
+              
+              results.push({
+                lat: coords.lat,
+                lng: coords.lng,
+                timestamp: timestamp,
+                activity: 'walking'
+              });
+            }
+          }
+        }
+      }
+    }
+    
+    // Handle activity elements with start/end geo coordinates
+    else if (element.activity && (element.startTime || element.endTime)) {
+      const activity = element.activity;
+      const activityType = activity.topCandidate?.type?.toLowerCase() || 'unknown';
+      
+      // Add start point
+      if (element.startTime && activity.start) {
+        const coords = parseGeoString(activity.start);
+        if (coords) {
+          const timestamp = normalizeTimestamp(element.startTime);
+          results.push({
+            lat: coords.lat,
+            lng: coords.lng,
+            timestamp: timestamp,
+            activity: activityType
+          });
+          lastKnownTimestamp = timestamp;
+        }
+      }
+      
+      // Add end point
+      if (element.endTime && activity.end) {
+        const coords = parseGeoString(activity.end);
+        if (coords) {
+          const timestamp = normalizeTimestamp(element.endTime);
+          results.push({
+            lat: coords.lat,
+            lng: coords.lng,
+            timestamp: timestamp,
+            activity: activityType
+          });
+          lastKnownTimestamp = timestamp;
         }
       }
     }
@@ -208,7 +272,7 @@ function parseMobileArrayFormat(jsonData: GoogleLocationHistoryMobileArray): Par
     }
     
     // Handle any other location formats we might have missed
-    else if (i < 10) {
+    else if (i < 3) {
       console.log(`Unhandled element type ${i}:`, Object.keys(element));
     }
   }
