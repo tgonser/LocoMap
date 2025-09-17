@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import multer from "multer";
 import { storage } from "./storage";
 import { parseGoogleLocationHistory, validateGoogleLocationHistory } from "./googleLocationParser";
+import { batchReverseGeocode, deduplicateCoordinates } from "./geocodingService";
 import { insertLocationPointSchema } from "@shared/schema";
 import { z } from "zod";
 
@@ -11,6 +12,55 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
 });
+
+// Background geocoding function
+async function geocodeLocationPoints() {
+  try {
+    const locations = await storage.getLocationPoints();
+    
+    // Filter locations that don't have city information yet
+    const locationsToGeocode = locations.filter(loc => !loc.city);
+    
+    if (locationsToGeocode.length === 0) {
+      console.log('All locations already have city information');
+      return;
+    }
+    
+    console.log(`Starting geocoding for ${locationsToGeocode.length} locations`);
+    
+    // Deduplicate coordinates to reduce API calls
+    const coordinates = locationsToGeocode.map(loc => ({ lat: loc.lat, lng: loc.lng }));
+    const uniqueCoords = deduplicateCoordinates(coordinates);
+    
+    console.log(`Reduced ${coordinates.length} coordinates to ${uniqueCoords.length} unique locations`);
+    
+    // Batch geocode the unique coordinates
+    const geocodeResults = await batchReverseGeocode(
+      uniqueCoords.map(coord => ({ lat: coord.lat, lng: coord.lng }))
+    );
+    
+    // Update locations with geocoded information
+    for (let i = 0; i < uniqueCoords.length; i++) {
+      const uniqueCoord = uniqueCoords[i];
+      const geocodeResult = geocodeResults[i];
+      
+      // Update all locations that match this coordinate
+      for (const index of uniqueCoord.indices) {
+        const location = locationsToGeocode[index];
+        await storage.updateLocationPoint(location.id, {
+          city: geocodeResult.city || null,
+          state: geocodeResult.state || null,
+          country: geocodeResult.country || null,
+          address: geocodeResult.address || null
+        });
+      }
+    }
+    
+    console.log('Geocoding completed successfully');
+  } catch (error) {
+    console.error('Geocoding process failed:', error);
+  }
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Upload and parse Google location history
@@ -61,7 +111,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId: null
       }));
 
-      // Store in database
+      // Store in database first
       const savedPoints = await storage.createLocationPoints(locationPoints);
 
       res.json({
@@ -72,6 +122,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           start: new Date(Math.min(...parsedLocations.map(l => l.timestamp.getTime()))),
           end: new Date(Math.max(...parsedLocations.map(l => l.timestamp.getTime())))
         }
+      });
+
+      // Start geocoding in background (don't wait for response)
+      geocodeLocationPoints().catch(error => {
+        console.error('Background geocoding failed:', error);
       });
 
     } catch (error) {

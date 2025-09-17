@@ -14,6 +14,7 @@ export interface IStorage {
   createLocationPoints(locations: InsertLocationPoint[]): Promise<LocationPoint[]>;
   getLocationPoints(userId?: string): Promise<LocationPoint[]>;
   getLocationPointsByDateRange(startDate: Date, endDate: Date, userId?: string): Promise<LocationPoint[]>;
+  updateLocationPoint(id: string, updates: Partial<LocationPoint>): Promise<void>;
   clearLocationPoints(userId?: string): Promise<void>;
   getLocationStats(userId?: string): Promise<{
     totalPoints: number;
@@ -88,6 +89,13 @@ export class MemStorage implements IStorage {
     return points.filter(point => 
       point.timestamp >= startDate && point.timestamp <= endDate
     );
+  }
+
+  async updateLocationPoint(id: string, updates: Partial<LocationPoint>): Promise<void> {
+    const existing = this.locationPoints.get(id);
+    if (existing) {
+      this.locationPoints.set(id, { ...existing, ...updates });
+    }
   }
 
   async clearLocationPoints(userId?: string): Promise<void> {
