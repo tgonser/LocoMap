@@ -105,19 +105,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Debug: log the structure of the uploaded file
       console.log("File structure:", {
+        isArray: Array.isArray(jsonData),
+        arrayLength: Array.isArray(jsonData) ? jsonData.length : 'not array',
+        firstElement: Array.isArray(jsonData) && jsonData.length > 0 ? {
+          hasVisit: jsonData[0].visit !== undefined,
+          hasPoint: jsonData[0].point !== undefined,
+          hasEndTime: jsonData[0].endTime !== undefined,
+          hasStartTime: jsonData[0].startTime !== undefined,
+          keys: Object.keys(jsonData[0])
+        } : 'no first element',
         hasTimelineObjects: jsonData.timelineObjects !== undefined,
         timelineObjectsIsArray: Array.isArray(jsonData.timelineObjects),
         timelineObjectsLength: jsonData.timelineObjects?.length,
         hasLocations: jsonData.locations !== undefined,
         locationsIsArray: Array.isArray(jsonData.locations),
         locationsLength: jsonData.locations?.length,
-        topLevelKeys: Object.keys(jsonData)
+        topLevelKeys: Array.isArray(jsonData) ? 'array' : Object.keys(jsonData)
       });
 
-      if (!validateGoogleLocationHistory(jsonData)) {
-        return res.status(400).json({ 
-          error: `Invalid Google location history format. Found keys: ${Object.keys(jsonData).join(', ')}. Expected 'timelineObjects' or 'locations' array.` 
-        });
+      console.log("About to validate with validateGoogleLocationHistory...");
+      const isValid = validateGoogleLocationHistory(jsonData);
+      console.log("Validation result:", isValid);
+
+      if (!isValid) {
+        const errorMsg = Array.isArray(jsonData) 
+          ? `Invalid Google location history format. Array with ${jsonData.length} elements detected, but validation failed.`
+          : `Invalid Google location history format. Found keys: ${Object.keys(jsonData).join(', ')}. Expected 'timelineObjects', 'locations', or mobile array format.`;
+        
+        console.log("Validation failed, returning error:", errorMsg);
+        return res.status(400).json({ error: errorMsg });
       }
 
       // Parse the location data
