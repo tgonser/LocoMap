@@ -236,12 +236,7 @@ export default function LocationHistoryApp() {
                 />
               ) : (
                 <AnalyticsPanel
-                  totalLocations={totalLocations}
-                  timeSpent={`${Math.ceil((dateRange.end.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24))} days`}
-                  mostVisitedCity="San Francisco, CA"
-                  averageAccuracy={averageAccuracy}
-                  activities={activityStats}
-                  dateRange={dateRange}
+                  onBack={() => setViewMode('map')}
                 />
               )}
             </div>

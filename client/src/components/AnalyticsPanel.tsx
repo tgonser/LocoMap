@@ -1,17 +1,16 @@
 import { useState, useEffect } from "react";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CalendarDays, MapPin, Globe, Users, BarChart3 } from "lucide-react";
+import { CalendarDays, MapPin, Globe, Users, BarChart3, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 interface AnalyticsData {
-  totalPoints: number;
-  dateRange: { start: string; end: string } | null;
-  cities: Array<{ name: string; count: number; state?: string; country?: string }>;
-  states: Array<{ name: string; count: number; country?: string }>;
-  countries: Array<{ name: string; count: number }>;
-  activities: Array<{ name: string; count: number }>;
-  dailyStats: Array<{ date: string; points: number; cities: number }>;
+  totalDays: number;
+  dateRange: { start: string; end: string };
+  countries: Array<{ name: string; days: number; percentage: number }>;
+  usStates: Array<{ name: string; days: number; percentage: number }>;
 }
 
 interface AnalyticsPanelProps {
@@ -20,8 +19,22 @@ interface AnalyticsPanelProps {
 
 export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Set default date range to last calendar year
+  const getDefaultDateRange = () => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const lastYear = currentYear - 1;
+    return {
+      start: `${lastYear}-01-01`,
+      end: `${lastYear}-12-31`
+    };
+  };
+  
+  const [startDate, setStartDate] = useState(getDefaultDateRange().start);
+  const [endDate, setEndDate] = useState(getDefaultDateRange().end);
 
   useEffect(() => {
     fetchAnalytics();
@@ -30,17 +43,40 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
   const fetchAnalytics = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/locations/stats');
+      setError(null);
+      
+      const params = new URLSearchParams({
+        start: startDate,
+        end: endDate
+      });
+      
+      console.log('AnalyticsPanel: Fetching analytics data from /api/locations/stats with params:', { start: startDate, end: endDate });
+      
+      const response = await fetch(`/api/locations/stats?${params}`);
+      console.log('AnalyticsPanel: Response status:', response.status);
+      
       if (!response.ok) {
-        throw new Error('Failed to fetch analytics');
+        const errorData = await response.json();
+        console.error('AnalyticsPanel: API error:', errorData);
+        throw new Error(errorData.error || 'Failed to fetch analytics');
       }
       const data = await response.json();
+      console.log('AnalyticsPanel: Received analytics data:', data);
       setAnalytics(data);
     } catch (err) {
+      console.error('AnalyticsPanel: Fetch error:', err);
       setError(err instanceof Error ? err.message : 'Failed to load analytics');
     } finally {
       setLoading(false);
     }
+  };
+  
+  const handleApplyDateRange = () => {
+    fetchAnalytics();
+  };
+  
+  const isDateRangeValid = () => {
+    return startDate && endDate && new Date(startDate) <= new Date(endDate);
   };
 
   const formatDate = (dateString: string) => {
@@ -56,17 +92,14 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
     
     const exportData = {
       summary: {
-        totalLocationPoints: analytics.totalPoints,
+        totalDays: analytics.totalDays,
         dateRange: analytics.dateRange,
-        uniqueCities: analytics.cities.length,
-        uniqueStates: analytics.states.length,
-        uniqueCountries: analytics.countries.length
+        uniqueCountries: analytics.countries.length,
+        uniqueUsStates: analytics.usStates.length
       },
-      topCities: analytics.cities.slice(0, 10),
-      topStates: analytics.states.slice(0, 10),
       countries: analytics.countries,
-      activities: analytics.activities,
-      dailyStatistics: analytics.dailyStats
+      usStates: analytics.usStates,
+      generatedAt: new Date().toISOString()
     };
     
     const blob = new Blob([JSON.stringify(exportData, null, 2)], { 
@@ -75,7 +108,7 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'location-analytics.json';
+    a.download = `location-analytics-${startDate}-to-${endDate}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -110,197 +143,184 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
           Location Analytics
         </h1>
         <div className="flex gap-2">
-          <Button onClick={exportData} variant="outline" data-testid="button-export-data">
-            Export Data
-          </Button>
+          {analytics && (
+            <Button onClick={exportData} variant="outline" data-testid="button-export-data">
+              Export Data
+            </Button>
+          )}
           <Button onClick={onBack} data-testid="button-back-to-map">
             Back to Map
           </Button>
         </div>
       </div>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card data-testid="card-total-points">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Points</CardTitle>
-            <MapPin className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-total-points">
-              {analytics.totalPoints.toLocaleString()}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card data-testid="card-unique-cities">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Unique Cities</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-unique-cities">
-              {analytics.cities.length}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card data-testid="card-unique-states">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">States/Regions</CardTitle>
-            <MapPin className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-unique-states">
-              {analytics.states.length}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card data-testid="card-countries">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Countries</CardTitle>
-            <Globe className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-countries">
-              {analytics.countries.length}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Date Range */}
-      {analytics.dateRange && (
-        <Card data-testid="card-date-range">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CalendarDays className="h-5 w-5" />
-              Date Range
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-lg">
-              <span className="font-semibold" data-testid="text-start-date">
-                {formatDate(analytics.dateRange.start)}
-              </span>
-              {' to '}
-              <span className="font-semibold" data-testid="text-end-date">
-                {formatDate(analytics.dateRange.end)}
-              </span>
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Top Cities */}
-      <Card data-testid="card-top-cities">
+      
+      {/* Date Range Picker */}
+      <Card data-testid="card-date-range-picker">
         <CardHeader>
-          <CardTitle>Top Cities by Visit Count</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Calendar className="h-5 w-5" />
+            Select Date Range
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-2">
-            {analytics.cities.slice(0, 10).map((city, index) => (
-              <div
-                key={`${city.name}-${index}`}
-                className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0"
-                data-testid={`row-city-${index}`}
-              >
-                <div>
-                  <span className="font-medium" data-testid={`text-city-name-${index}`}>
-                    {city.name}
-                  </span>
-                  {city.state && city.country && (
-                    <span className="text-sm text-gray-600 ml-2" data-testid={`text-city-location-${index}`}>
-                      {city.state}, {city.country}
-                    </span>
-                  )}
-                </div>
-                <Badge variant="secondary" data-testid={`badge-city-count-${index}`}>
-                  {city.count}
-                </Badge>
-              </div>
-            ))}
+          <div className="flex flex-col sm:flex-row gap-4 items-end">
+            <div className="flex-1">
+              <Label htmlFor="start-date">Start Date</Label>
+              <Input
+                id="start-date"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="mt-1"
+                data-testid="input-start-date"
+              />
+            </div>
+            <div className="flex-1">
+              <Label htmlFor="end-date">End Date</Label>
+              <Input
+                id="end-date"
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="mt-1"
+                data-testid="input-end-date"
+              />
+            </div>
+            <Button 
+              onClick={handleApplyDateRange}
+              disabled={loading || !isDateRangeValid()}
+              data-testid="button-apply-date-range"
+            >
+              {loading ? 'Loading...' : 'Update Analytics'}
+            </Button>
           </div>
+          {!isDateRangeValid() && (
+            <p className="text-sm text-red-600 mt-2">Please ensure start date is before end date.</p>
+          )}
         </CardContent>
       </Card>
 
-      {/* Top States */}
-      {analytics.states.length > 0 && (
-        <Card data-testid="card-top-states">
-          <CardHeader>
-            <CardTitle>Top States/Regions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {analytics.states.slice(0, 10).map((state, index) => (
-                <div
-                  key={`${state.name}-${index}`}
-                  className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0"
-                  data-testid={`row-state-${index}`}
-                >
-                  <div>
-                    <span className="font-medium" data-testid={`text-state-name-${index}`}>
-                      {state.name}
-                    </span>
-                    {state.country && (
-                      <span className="text-sm text-gray-600 ml-2" data-testid={`text-state-country-${index}`}>
-                        {state.country}
+      {/* Analytics Results */}
+      {analytics && (
+        <>
+          {/* Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Card data-testid="card-total-days">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Days</CardTitle>
+                <CalendarDays className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold" data-testid="text-total-days">
+                  {analytics.totalDays.toLocaleString()}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card data-testid="card-countries-count">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Countries Visited</CardTitle>
+                <Globe className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold" data-testid="text-countries-count">
+                  {analytics.countries.length}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card data-testid="card-us-states-count">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">US States Visited</CardTitle>
+                <MapPin className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold" data-testid="text-us-states-count">
+                  {analytics.usStates.length}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Date Range Summary */}
+          <Card data-testid="card-analyzed-date-range">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CalendarDays className="h-5 w-5" />
+                Analyzed Date Range
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-lg">
+                <span className="font-semibold" data-testid="text-analyzed-start-date">
+                  {formatDate(analytics.dateRange.start)}
+                </span>
+                {' to '}
+                <span className="font-semibold" data-testid="text-analyzed-end-date">
+                  {formatDate(analytics.dateRange.end)}
+                </span>
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* US States */}
+          {analytics.usStates.length > 0 && (
+            <Card data-testid="card-us-states">
+              <CardHeader>
+                <CardTitle>US States Visited</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {analytics.usStates.map((state, index) => (
+                    <div
+                      key={`${state.name}-${index}`}
+                      className="flex items-center justify-between py-2 border-b border-muted last:border-b-0"
+                      data-testid={`row-us-state-${index}`}
+                    >
+                      <div className="text-base" data-testid={`text-us-state-details-${index}`}>
+                        <span className="font-medium">{state.name}</span>
+                        <span className="text-muted-foreground ml-2">
+                          {state.days} day{state.days !== 1 ? 's' : ''} ({state.percentage.toFixed(1)}%)
+                        </span>
+                      </div>
+                      <Badge variant="secondary" data-testid={`badge-us-state-days-${index}`}>
+                        {state.days} day{state.days !== 1 ? 's' : ''}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Countries */}
+          <Card data-testid="card-countries">
+            <CardHeader>
+              <CardTitle>Countries Visited</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {analytics.countries.map((country, index) => (
+                  <div
+                    key={`${country.name}-${index}`}
+                    className="flex items-center justify-between py-2 border-b border-muted last:border-b-0"
+                    data-testid={`row-country-${index}`}
+                  >
+                    <div className="text-base" data-testid={`text-country-details-${index}`}>
+                      <span className="font-medium">{country.name}</span>
+                      <span className="text-muted-foreground ml-2">
+                        {country.days} day{country.days !== 1 ? 's' : ''} ({country.percentage.toFixed(1)}%)
                       </span>
-                    )}
+                    </div>
+                    <Badge variant="outline" data-testid={`badge-country-days-${index}`}>
+                      {country.days} day{country.days !== 1 ? 's' : ''}
+                    </Badge>
                   </div>
-                  <Badge variant="secondary" data-testid={`badge-state-count-${index}`}>
-                    {state.count}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Countries */}
-      <Card data-testid="card-countries-list">
-        <CardHeader>
-          <CardTitle>Countries Visited</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-2">
-            {analytics.countries.map((country, index) => (
-              <Badge
-                key={`${country.name}-${index}`}
-                variant="outline"
-                className="text-sm"
-                data-testid={`badge-country-${index}`}
-              >
-                {country.name} ({country.count})
-              </Badge>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Activities */}
-      {analytics.activities.length > 0 && (
-        <Card data-testid="card-activities">
-          <CardHeader>
-            <CardTitle>Activity Breakdown</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {analytics.activities.map((activity, index) => (
-                <Badge
-                  key={`${activity.name}-${index}`}
-                  variant="secondary"
-                  className="text-sm"
-                  data-testid={`badge-activity-${index}`}
-                >
-                  {activity.name.replace('_', ' ')} ({activity.count})
-                </Badge>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </>
       )}
     </div>
   );

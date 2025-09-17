@@ -322,7 +322,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Use the analytics pipeline to get date-range statistics
       const stats = await storage.getLocationStatsByDateRange(userId, startDate, endDate);
       
-      res.json(stats);
+      // Transform the response to match frontend API contract
+      // Backend returns: {country/state, days, percent}
+      // Frontend expects: {name, days, percentage}
+      const transformedStats = {
+        totalDays: stats.totalDays,
+        dateRange: {
+          start: stats.dateRange.start.toISOString().split('T')[0], // Convert Date to YYYY-MM-DD string
+          end: stats.dateRange.end.toISOString().split('T')[0]      // Convert Date to YYYY-MM-DD string
+        },
+        countries: stats.countries.map(country => ({
+          name: country.country,
+          days: country.days,
+          percentage: country.percent
+        })),
+        usStates: stats.usStates.map(state => ({
+          name: state.state,
+          days: state.days,
+          percentage: state.percent
+        }))
+      };
+      
+      res.json(transformedStats);
     } catch (error) {
       console.error("Error fetching location stats:", error);
       res.status(500).json({ error: "Failed to fetch location statistics" });
