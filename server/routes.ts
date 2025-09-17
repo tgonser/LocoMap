@@ -65,12 +65,24 @@ async function geocodeLocationPoints() {
 export async function registerRoutes(app: Express): Promise<Server> {
   // Upload and parse Google location history
   app.post("/api/upload-location-history", upload.single("file"), async (req: Request & { file?: Express.Multer.File }, res) => {
+    console.log("Upload request received");
     try {
       if (!req.file) {
+        console.log("No file in request");
         return res.status(400).json({ error: "No file uploaded" });
       }
 
-      const fileContent = req.file.buffer.toString("utf8");
+      console.log("File received, size:", req.file.buffer.length);
+      
+      let fileContent: string;
+      try {
+        fileContent = req.file.buffer.toString("utf8");
+        console.log("File converted to string successfully");
+      } catch (stringError) {
+        console.error("Error converting file to string:", stringError);
+        return res.status(400).json({ error: "File conversion failed" });
+      }
+      
       let jsonData;
       
       console.log("File info:", {
