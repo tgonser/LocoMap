@@ -1,0 +1,60 @@
+# Google Location History Analyzer
+
+## Overview
+
+A comprehensive web application designed to analyze and visualize Google location history data. The application allows users to upload their Google location data exports and provides interactive map visualization, detailed analytics, and timeline views. Built with a focus on data privacy and efficient processing of large location datasets, it features a dark-mode-first design optimized for data exploration.
+
+## User Preferences
+
+Preferred communication style: Simple, everyday language.
+
+## System Architecture
+
+### Frontend Architecture
+- **Framework**: React with TypeScript for type safety and component-based development
+- **Build System**: Vite for fast development and optimized production builds
+- **UI Components**: Shadcn/ui component library built on Radix UI primitives
+- **Styling**: Tailwind CSS with custom design system supporting dark/light themes
+- **State Management**: TanStack Query for server state management and caching
+- **Maps**: Leaflet with React-Leaflet for interactive map visualization
+- **File Handling**: React-dropzone for drag-and-drop file uploads
+
+### Backend Architecture
+- **Runtime**: Node.js with Express.js server framework
+- **Language**: TypeScript with ES modules for modern JavaScript features
+- **API Design**: RESTful API with structured error handling and logging middleware
+- **File Processing**: Multer for handling large file uploads (up to 200MB)
+- **Data Parsing**: Custom Google location history parser supporting multiple format versions
+
+### Data Storage Solutions
+- **Database**: PostgreSQL with Drizzle ORM for type-safe database operations
+- **Schema Design**: Optimized location points table with spatial data support
+- **Connection**: Neon serverless PostgreSQL for scalable cloud database
+- **Migrations**: Drizzle Kit for database schema management and migrations
+
+### Authentication and Authorization
+- **Current State**: Single-user application with user schema prepared for future multi-user support
+- **Session Management**: Express sessions with PostgreSQL session store
+- **Security**: Environment-based configuration with secure defaults
+
+### External Service Integrations
+- **Geocoding**: OpenStreetMap Nominatim API for reverse geocoding location coordinates to addresses
+- **Rate Limiting**: Built-in request throttling to respect API limits
+- **Batch Processing**: Coordinate deduplication and batch geocoding for efficiency
+- **Fonts**: Google Fonts integration (Inter and JetBrains Mono)
+- **Maps**: OpenStreetMap tiles via Leaflet for offline-capable mapping
+
+### Key Design Patterns
+- **Component Composition**: Reusable UI components with consistent prop interfaces
+- **Server-Side Rendering**: Vite middleware integration for development hot reloading
+- **Error Boundaries**: Comprehensive error handling with user-friendly error states
+- **Progressive Enhancement**: Mobile-responsive design with touch-friendly interactions
+- **Data Processing Pipeline**: Stream processing for large location history files
+- **Theme System**: CSS custom properties with automatic dark/light mode switching
+
+### Performance Optimizations
+- **Code Splitting**: Vite-based chunking for optimal loading performance
+- **Image Optimization**: Leaflet marker icon optimization and CDN delivery
+- **Database Indexing**: Spatial and temporal indexing for location queries
+- **Memory Management**: Streaming file processing to handle large datasets
+- **Query Optimization**: React Query caching with background refetching disabled
