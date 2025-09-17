@@ -3,6 +3,7 @@ import { Icon } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import CalendarOverlay from './CalendarOverlay';
 
 // Fix for default markers in react-leaflet
 delete (Icon.Default.prototype as any)._getIconUrl;
@@ -23,6 +24,9 @@ interface LocationPoint {
 interface MapDisplayProps {
   locations: LocationPoint[];
   selectedDate?: Date;
+  onDateChange?: (date: Date) => void;
+  availableDates?: Date[];
+  locationCountByDate?: Record<string, number>;
   center?: [number, number];
   zoom?: number;
   className?: string;
@@ -31,6 +35,9 @@ interface MapDisplayProps {
 export default function MapDisplay({ 
   locations, 
   selectedDate, 
+  onDateChange,
+  availableDates = [],
+  locationCountByDate = {},
   center = [37.7749, -122.4194], // San Francisco default
   zoom = 13,
   className 
@@ -53,7 +60,7 @@ export default function MapDisplay({
     : center;
 
   return (
-    <Card className={`h-full ${className}`}>
+    <Card className={`h-full relative ${className}`}>
       <div className="h-full rounded-lg overflow-hidden">
         <MapContainer
           center={mapCenter}
@@ -66,51 +73,86 @@ export default function MapDisplay({
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           />
           
-          {/* Draw path line */}
+          {/* Draw path line connecting locations in chronological sequence */}
           {pathCoords.length > 1 && (
             <Polyline 
               positions={pathCoords} 
               color="#3b82f6" 
-              weight={3}
-              opacity={0.7}
+              weight={4}
+              opacity={0.8}
+              dashArray="5, 5"
             />
           )}
           
-          {/* Show markers */}
-          {filteredLocations.slice(0, 50).map((location, index) => (
-            <Marker 
-              key={index} 
-              position={[location.lat, location.lng]}
-            >
-              <Popup>
-                <div className="space-y-2">
-                  <div className="font-medium">
-                    {location.timestamp.toLocaleTimeString()}
+          {/* Show markers with start/end indicators */}
+          {filteredLocations.slice(0, 100).map((location, index) => {
+            const isFirst = index === 0;
+            const isLast = index === filteredLocations.length - 1;
+            
+            return (
+              <Marker 
+                key={index} 
+                position={[location.lat, location.lng]}
+                icon={new Icon({
+                  iconUrl: isFirst ? 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png' 
+                    : isLast ? 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png'
+                    : 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+                  iconRetinaUrl: isFirst ? 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png' 
+                    : isLast ? 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png'
+                    : 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+                  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+                  iconSize: [25, 41],
+                  iconAnchor: [12, 41],
+                  popupAnchor: [1, -34],
+                  shadowSize: [41, 41]
+                })}
+              >
+                <Popup>
+                  <div className="space-y-2">
+                    <div className="font-medium">
+                      {location.timestamp.toLocaleTimeString()}
+                      {isFirst && <Badge variant="default" className="ml-2 text-xs">Start</Badge>}
+                      {isLast && <Badge variant="destructive" className="ml-2 text-xs">End</Badge>}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
+                    </div>
+                    {location.accuracy && (
+                      <Badge variant="secondary" className="text-xs">
+                        ±{location.accuracy}m accuracy
+                      </Badge>
+                    )}
+                    {location.activity && (
+                      <Badge variant="outline" className="text-xs">
+                        {location.activity.replace('_', ' ')}
+                      </Badge>
+                    )}
+                    <div className="text-xs text-muted-foreground">
+                      Point {index + 1} of {filteredLocations.length}
+                    </div>
                   </div>
-                  <div className="text-sm text-muted-foreground">
-                    {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
-                  </div>
-                  {location.accuracy && (
-                    <Badge variant="secondary" className="text-xs">
-                      ±{location.accuracy}m accuracy
-                    </Badge>
-                  )}
-                  {location.activity && (
-                    <Badge variant="outline" className="text-xs">
-                      {location.activity}
-                    </Badge>
-                  )}
-                </div>
-              </Popup>
-            </Marker>
-          ))}
+                </Popup>
+              </Marker>
+            );
+          })}
         </MapContainer>
       </div>
+
+      {/* Calendar Overlay */}
+      {onDateChange && selectedDate && (
+        <CalendarOverlay
+          selectedDate={selectedDate}
+          onDateChange={onDateChange}
+          availableDates={availableDates}
+          locationCountByDate={locationCountByDate}
+        />
+      )}
       
-      {filteredLocations.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center bg-muted/50 rounded-lg">
+      {filteredLocations.length === 0 && selectedDate && (
+        <div className="absolute inset-0 flex items-center justify-center bg-muted/50 rounded-lg z-[5]">
           <div className="text-center">
-            <p className="text-muted-foreground">No locations for selected date</p>
+            <p className="text-muted-foreground">No locations for {selectedDate.toLocaleDateString()}</p>
+            <p className="text-sm text-muted-foreground mt-1">Try selecting a different date from the calendar</p>
           </div>
         </div>
       )}

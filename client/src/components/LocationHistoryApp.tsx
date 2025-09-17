@@ -70,6 +70,13 @@ export default function LocationHistoryApp() {
     loc.timestamp.toDateString() === selectedDate.toDateString()
   );
 
+  // Calculate location count by date for calendar overlay
+  const locationCountByDate = locationData.reduce((acc, loc) => {
+    const dateKey = loc.timestamp.toDateString();
+    acc[dateKey] = (acc[dateKey] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
   // Analytics calculations
   const totalLocations = locationData.length;
   const dateRange = locationData.length > 0 ? {
@@ -154,15 +161,8 @@ export default function LocationHistoryApp() {
           </div>
         ) : (
           <div className="h-full grid grid-cols-1 lg:grid-cols-4 gap-4 p-4">
-            {/* Left Sidebar - Controls & Info */}
+            {/* Left Sidebar - Timeline & Analytics */}
             <div className="lg:col-span-1 space-y-4 order-2 lg:order-1">
-              <DateNavigator
-                selectedDate={selectedDate}
-                onDateChange={setSelectedDate}
-                availableDates={availableDates}
-                locationCount={dayLocations.length}
-              />
-              
               {viewMode === 'map' && (
                 <TimelineViewer
                   events={dayLocations.map(loc => ({
@@ -197,6 +197,9 @@ export default function LocationHistoryApp() {
                 <MapDisplay
                   locations={dayLocations}
                   selectedDate={selectedDate}
+                  onDateChange={setSelectedDate}
+                  availableDates={availableDates}
+                  locationCountByDate={locationCountByDate}
                   className="h-full"
                 />
               ) : (
