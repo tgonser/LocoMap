@@ -10,7 +10,7 @@ import { z } from "zod";
 // Configure multer for file uploads
 const upload = multer({ 
   storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
+  limits: { fileSize: 200 * 1024 * 1024 } // 200MB limit for large Google location history files
 });
 
 // Background geocoding function
