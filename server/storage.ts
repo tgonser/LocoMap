@@ -97,7 +97,25 @@ export class DatabaseStorage implements IStorage {
   // Location point operations
   async insertLocationPoints(points: InsertLocationPoint[]): Promise<LocationPoint[]> {
     if (points.length === 0) return [];
-    return await db.insert(locationPoints).values(points).returning();
+    
+    // Use batch insertion for large datasets to avoid stack overflow
+    const BATCH_SIZE = 2500; // Optimal batch size for PostgreSQL
+    const allResults: LocationPoint[] = [];
+    
+    for (let i = 0; i < points.length; i += BATCH_SIZE) {
+      const batch = points.slice(i, i + BATCH_SIZE);
+      const batchResults = await db.insert(locationPoints).values(batch).returning();
+      allResults.push(...batchResults);
+      
+      // Log progress for large uploads
+      if (points.length > BATCH_SIZE) {
+        const progress = Math.min(i + BATCH_SIZE, points.length);
+        console.log(`Inserted batch ${Math.floor(i / BATCH_SIZE) + 1}: ${progress}/${points.length} location points`);
+      }
+    }
+    
+    console.log(`Successfully inserted ${allResults.length} location points in ${Math.ceil(points.length / BATCH_SIZE)} batches`);
+    return allResults;
   }
 
   async getUserLocationPoints(userId: string, datasetId?: string): Promise<LocationPoint[]> {

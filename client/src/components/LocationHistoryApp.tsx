@@ -127,7 +127,6 @@ export default function LocationHistoryApp() {
                 {getViewModeButton('analytics', <BarChart3 className="w-4 h-4" />, 'Analytics')}
               </div>
             )}
-            <ThemeToggle />
           </div>
         </div>
       </header>

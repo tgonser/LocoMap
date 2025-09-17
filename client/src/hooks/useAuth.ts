@@ -21,9 +21,8 @@ export function useAuth() {
 
   const logout = async () => {
     try {
-      await fetch('/auth/logout', { method: 'POST' });
-      queryClient.clear();
-      window.location.href = '/';
+      // Use GET request to match server implementation
+      window.location.href = '/api/logout';
     } catch (error) {
       console.error('Logout error:', error);
       // Force logout even if request fails

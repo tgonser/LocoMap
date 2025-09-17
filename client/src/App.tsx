@@ -41,7 +41,7 @@ function AuthenticatedApp() {
 
 function LoginScreen() {
   const handleLogin = () => {
-    window.location.href = '/auth/login';
+    window.location.href = '/api/login';
   };
 
   return (
