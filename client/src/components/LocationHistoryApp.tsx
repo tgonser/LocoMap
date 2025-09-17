@@ -222,11 +222,7 @@ export default function LocationHistoryApp() {
               
               {viewMode === 'analytics' && (
                 <LocationSummary
-                  locations={[
-                    // //todo: remove mock functionality - Generate from real geocoded data
-                    { city: 'San Francisco', state: 'California', country: 'United States', visitCount: 45, firstVisit: dateRange.start, lastVisit: dateRange.end },
-                    { city: 'Oakland', state: 'California', country: 'United States', visitCount: 23, firstVisit: dateRange.start, lastVisit: dateRange.end }
-                  ]}
+                  locations={[]}
                   dateRange={dateRange}
                   onExport={() => console.log('Export functionality')}
                 />
