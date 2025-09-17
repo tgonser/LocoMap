@@ -83,11 +83,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         jsonData = JSON.parse(fileContent);
         console.log("JSON parsing successful");
-      } catch (parseError) {
+      } catch (parseError: any) {
         console.error("JSON parse error:", parseError);
-        console.error("Error at position:", parseError.message);
+        console.error("Error at position:", parseError?.message);
         return res.status(400).json({ 
-          error: `JSON parsing failed: ${parseError.message}. File size: ${Math.round(req.file.buffer.length / (1024 * 1024))}MB` 
+          error: `JSON parsing failed: ${parseError?.message || 'Unknown error'}. File size: ${Math.round(req.file.buffer.length / (1024 * 1024))}MB` 
         });
       }
 
