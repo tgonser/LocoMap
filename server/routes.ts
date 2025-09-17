@@ -73,11 +73,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const fileContent = req.file.buffer.toString("utf8");
       let jsonData;
       
+      console.log("File info:", {
+        size: req.file.buffer.length,
+        sizeInMB: Math.round(req.file.buffer.length / (1024 * 1024)),
+        firstChars: fileContent.substring(0, 200),
+        lastChars: fileContent.substring(fileContent.length - 200)
+      });
+      
       try {
         jsonData = JSON.parse(fileContent);
+        console.log("JSON parsing successful");
       } catch (parseError) {
         console.error("JSON parse error:", parseError);
-        return res.status(400).json({ error: "Invalid JSON file - parsing failed" });
+        console.error("Error at position:", parseError.message);
+        return res.status(400).json({ 
+          error: `JSON parsing failed: ${parseError.message}. File size: ${Math.round(req.file.buffer.length / (1024 * 1024))}MB` 
+        });
       }
 
       // Debug: log the structure of the uploaded file
