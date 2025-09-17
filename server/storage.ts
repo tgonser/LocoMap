@@ -209,7 +209,7 @@ export class DatabaseStorage implements IStorage {
       .select({
         userId: sql<string>`${locationPoints.userId}`,
         datasetId: sql<string>`${locationPoints.datasetId}`,
-        date: sql<Date>`date_trunc('day', ${locationPoints.timestamp})`,
+        date: sql<string>`date_trunc('day', ${locationPoints.timestamp})::text`,
         lat: sql<number>`avg(${locationPoints.lat})`,
         lng: sql<number>`avg(${locationPoints.lng})`,
         pointCount: sql<number>`count(*)`,
@@ -229,38 +229,54 @@ export class DatabaseStorage implements IStorage {
       return 0;
     }
 
-    // Upsert daily centroids with conflict resolution
-    const insertData = dailyCentroids.map((centroid: { userId: string; datasetId: string; date: Date; lat: number; lng: number; pointCount: number }) => ({
+    // Convert string dates to proper Date objects and prepare for batch upsert
+    const insertData = dailyCentroids.map((centroid: { userId: string; datasetId: string; date: string; lat: number; lng: number; pointCount: number }) => ({
       userId: centroid.userId,
       datasetId: centroid.datasetId,
-      date: centroid.date,
+      date: new Date(centroid.date), // Convert string to proper Date object
       lat: centroid.lat,
       lng: centroid.lng,
       pointCount: centroid.pointCount,
       geocoded: false,
     }));
 
-    const upserted = await db
-      .insert(dailyGeocodes)
-      .values(insertData)
-      .onConflictDoUpdate({
-        target: [dailyGeocodes.userId, dailyGeocodes.datasetId, dailyGeocodes.date],
-        set: {
-          lat: sql`EXCLUDED.lat`,
-          lng: sql`EXCLUDED.lng`,
-          pointCount: sql`EXCLUDED.point_count`,
-          // Only update geocoded status if new pointCount is higher (better data)
-          geocoded: sql`CASE WHEN EXCLUDED.point_count > daily_geocodes.point_count THEN false ELSE daily_geocodes.geocoded END`,
-          city: sql`CASE WHEN EXCLUDED.point_count > daily_geocodes.point_count THEN null ELSE daily_geocodes.city END`,
-          state: sql`CASE WHEN EXCLUDED.point_count > daily_geocodes.point_count THEN null ELSE daily_geocodes.state END`,
-          country: sql`CASE WHEN EXCLUDED.point_count > daily_geocodes.point_count THEN null ELSE daily_geocodes.country END`,
-          address: sql`CASE WHEN EXCLUDED.point_count > daily_geocodes.point_count THEN null ELSE daily_geocodes.address END`,
-        },
-      })
-      .returning();
+    // Use batch processing to avoid "value too large to transmit" errors
+    const BATCH_SIZE = 100; // Smaller batch size for upsert operations with conflict resolution
+    let totalUpserted = 0;
+    
+    for (let i = 0; i < insertData.length; i += BATCH_SIZE) {
+      const batch = insertData.slice(i, i + BATCH_SIZE);
+      
+      const upserted = await db
+        .insert(dailyGeocodes)
+        .values(batch)
+        .onConflictDoUpdate({
+          target: [dailyGeocodes.userId, dailyGeocodes.datasetId, dailyGeocodes.date],
+          set: {
+            lat: sql`EXCLUDED.lat`,
+            lng: sql`EXCLUDED.lng`,
+            pointCount: sql`EXCLUDED.point_count`,
+            // Only update geocoded status if new pointCount is higher (better data)
+            geocoded: sql`CASE WHEN EXCLUDED.point_count > daily_geocodes.point_count THEN false ELSE daily_geocodes.geocoded END`,
+            city: sql`CASE WHEN EXCLUDED.point_count > daily_geocodes.point_count THEN null ELSE daily_geocodes.city END`,
+            state: sql`CASE WHEN EXCLUDED.point_count > daily_geocodes.point_count THEN null ELSE daily_geocodes.state END`,
+            country: sql`CASE WHEN EXCLUDED.point_count > daily_geocodes.point_count THEN null ELSE daily_geocodes.country END`,
+            address: sql`CASE WHEN EXCLUDED.point_count > daily_geocodes.point_count THEN null ELSE daily_geocodes.address END`,
+          },
+        })
+        .returning();
+        
+      totalUpserted += upserted.length;
+      
+      // Log progress for large batches
+      if (insertData.length > BATCH_SIZE) {
+        const progress = Math.min(i + BATCH_SIZE, insertData.length);
+        console.log(`Upserted batch ${Math.floor(i / BATCH_SIZE) + 1}: ${progress}/${insertData.length} daily centroids`);
+      }
+    }
 
-    console.log(`Upserted ${upserted.length} daily centroids for user ${userId}, dataset ${datasetId}`);
-    return upserted.length;
+    console.log(`Successfully upserted ${totalUpserted} daily centroids for user ${userId}, dataset ${datasetId} in ${Math.ceil(insertData.length / BATCH_SIZE)} batches`);
+    return totalUpserted;
   }
 
   async computeDailyCentroidsForAllDatasets(userId: string): Promise<number> {
