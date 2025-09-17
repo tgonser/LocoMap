@@ -8,7 +8,8 @@ import {
   jsonb,
   varchar,
   real,
-  integer
+  integer,
+  unique
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -103,6 +104,53 @@ export const insertUniqueLocationSchema = createInsertSchema(uniqueLocations).om
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
 
+// Daily geocoded centroids for efficient analytics (user-specific)
+export const dailyGeocodes = pgTable('daily_geocodes', {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar('user_id').references(() => users.id).notNull(),
+  datasetId: varchar('dataset_id').references(() => locationDatasets.id).notNull(),
+  date: timestamp('date').notNull(), // Date for the centroid (YYYY-MM-DD)
+  lat: real('lat').notNull(), // Daily centroid latitude
+  lng: real('lng').notNull(), // Daily centroid longitude
+  pointCount: integer('point_count').notNull(), // Number of points for this day
+  city: text('city'),
+  state: text('state'),
+  country: text('country'),
+  address: text('address'),
+  geocoded: boolean('geocoded').default(false),
+  geocodedAt: timestamp('geocoded_at'),
+  createdAt: timestamp('created_at').defaultNow(),
+}, (table) => [
+  index('idx_daily_geocodes_user_date').on(table.userId, table.date),
+  index('idx_daily_geocodes_dataset').on(table.datasetId)
+]);
+
+// Geocoding cache table to avoid duplicate API calls
+export const geocodeCache = pgTable('geocode_cache', {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  latRounded: real('lat_rounded').notNull(), // Rounded to 3-4 decimals
+  lngRounded: real('lng_rounded').notNull(), // Rounded to 3-4 decimals
+  city: text('city'),
+  state: text('state'),
+  country: text('country'),
+  address: text('address'),
+  cachedAt: timestamp('cached_at').defaultNow(),
+}, (table) => [
+  index('idx_geocode_cache_coords').on(table.latRounded, table.lngRounded),
+  unique('unique_geocode_coords').on(table.latRounded, table.lngRounded)
+]);
+
+// Zod schemas for new tables
+export const insertDailyGeocodeSchema = createInsertSchema(dailyGeocodes).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertGeocodeCacheSchema = createInsertSchema(geocodeCache).omit({
+  id: true,
+  cachedAt: true,
+});
+
 // TypeScript types for location data
 export type LocationDataset = typeof locationDatasets.$inferSelect;
 export type InsertLocationDataset = z.infer<typeof insertLocationDatasetSchema>;
@@ -110,3 +158,7 @@ export type LocationPoint = typeof locationPoints.$inferSelect;
 export type InsertLocationPoint = z.infer<typeof insertLocationPointSchema>;
 export type UniqueLocation = typeof uniqueLocations.$inferSelect;
 export type InsertUniqueLocation = z.infer<typeof insertUniqueLocationSchema>;
+export type DailyGeocode = typeof dailyGeocodes.$inferSelect;
+export type InsertDailyGeocode = z.infer<typeof insertDailyGeocodeSchema>;
+export type GeocodeCache = typeof geocodeCache.$inferSelect;
+export type InsertGeocodeCache = z.infer<typeof insertGeocodeCacheSchema>;
