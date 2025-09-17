@@ -73,6 +73,41 @@ async function geocodeUserLocationPoints(userId: string, datasetId: string) {
   }
 }
 
+// Background geocoding function for daily centroids (analytics pipeline)
+async function geocodeDailyCentroids(userId: string) {
+  try {
+    const ungeocoded = await storage.getUngeocodedDailyCentroids(userId);
+    
+    if (ungeocoded.length === 0) {
+      return;
+    }
+
+    console.log(`Geocoding ${ungeocoded.length} daily centroids for user ${userId}`);
+    
+    // Batch geocode the centroids
+    const coordinates = ungeocoded.map(centroid => ({ lat: centroid.lat, lng: centroid.lng }));
+    const geocodeResults = await batchReverseGeocode(coordinates);
+    
+    // Update daily centroids with geocoding results
+    for (let i = 0; i < ungeocoded.length; i++) {
+      const centroid = ungeocoded[i];
+      const geocodeResult = geocodeResults[i];
+      
+      await storage.updateDailyCentroidGeocoding(
+        centroid.id,
+        geocodeResult.address || '',
+        geocodeResult.city || undefined,
+        geocodeResult.state || undefined,
+        geocodeResult.country || undefined
+      );
+    }
+    
+    console.log(`Geocoded ${ungeocoded.length} daily centroids for user ${userId}`);
+  } catch (error) {
+    console.error(`Daily centroid geocoding failed for user ${userId}:`, error);
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication - MANDATORY for Replit Auth
   await setupAuth(app);
@@ -187,6 +222,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error(`Background geocoding failed for user ${userId}:`, error);
       });
 
+      // Start daily centroid computation and geocoding (analytics pipeline)
+      setTimeout(async () => {
+        try {
+          const centroidsCreated = await storage.computeAndUpsertDailyCentroids(userId, dataset.id);
+          console.log(`Computed ${centroidsCreated} daily centroids for user ${userId}, dataset ${dataset.id}`);
+          
+          // Geocode daily centroids after computation
+          await geocodeDailyCentroids(userId);
+        } catch (error) {
+          console.error(`Daily centroid pipeline failed for user ${userId}:`, error);
+        }
+      }, 5000); // Delay to let initial geocoding start first
+
       console.log(`Successfully imported ${savedPoints.length} points for user ${userId}`);
 
     } catch (error) {
@@ -235,98 +283,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Protected route: Get user's location statistics 
+  // Protected route: Get user's location statistics by date range (analytics pipeline)
   app.get("/api/locations/stats", isAuthenticated, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
-      const locations = await storage.getUserLocationPoints(userId);
       
-      if (locations.length === 0) {
-        return res.json({
-          totalPoints: 0,
-          dateRange: null,
-          cities: [],
-          states: [],
-          countries: [],
-          activities: [],
-          dailyStats: []
+      // Parse start and end date parameters
+      const startDateParam = req.query.start as string;
+      const endDateParam = req.query.end as string;
+      
+      if (!startDateParam || !endDateParam) {
+        return res.status(400).json({ 
+          error: "Missing required parameters: start and end date (YYYY-MM-DD format)" 
         });
       }
-
-      // Calculate statistics from user's location data
-      const timestamps = locations.map(p => p.timestamp.getTime());
-      const dateRange = {
-        start: new Date(Math.min(...timestamps)),
-        end: new Date(Math.max(...timestamps))
-      };
-
-      // Calculate city, state, country counts
-      const cityData = new Map<string, { count: number; state?: string; country?: string }>();
-      const stateData = new Map<string, { count: number; country?: string }>();
-      const countryCounts = new Map<string, number>();
-      const activityCounts = new Map<string, number>();
-
-      locations.forEach(point => {
-        if (point.city) {
-          const key = point.city;
-          if (!cityData.has(key)) {
-            cityData.set(key, { count: 0, state: point.state || undefined, country: point.country || undefined });
-          }
-          cityData.get(key)!.count++;
+      
+      let startDate: Date;
+      let endDate: Date;
+      
+      try {
+        startDate = new Date(startDateParam);
+        endDate = new Date(endDateParam);
+        
+        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+          throw new Error("Invalid date format");
         }
-
-        if (point.state) {
-          const key = point.state;
-          if (!stateData.has(key)) {
-            stateData.set(key, { count: 0, country: point.country || undefined });
-          }
-          stateData.get(key)!.count++;
+        
+        if (startDate > endDate) {
+          throw new Error("Start date must be before end date");
         }
-
-        if (point.country) {
-          countryCounts.set(point.country, (countryCounts.get(point.country) || 0) + 1);
-        }
-
-        if (point.activity) {
-          activityCounts.set(point.activity, (activityCounts.get(point.activity) || 0) + 1);
-        }
-      });
-
-      // Calculate daily statistics
-      const dailyData = new Map<string, { points: number; citiesSet: Set<string> }>();
-      locations.forEach(point => {
-        const dateKey = point.timestamp.toDateString();
-        if (!dailyData.has(dateKey)) {
-          dailyData.set(dateKey, { points: 0, citiesSet: new Set() });
-        }
-        const dayData = dailyData.get(dateKey)!;
-        dayData.points++;
-        if (point.city) {
-          dayData.citiesSet.add(point.city);
-        }
-      });
-
-      const stats = {
-        totalPoints: locations.length,
-        dateRange,
-        cities: Array.from(cityData.entries())
-          .map(([name, data]) => ({ name, count: data.count, state: data.state, country: data.country }))
-          .sort((a, b) => b.count - a.count),
-        states: Array.from(stateData.entries())
-          .map(([name, data]) => ({ name, count: data.count, country: data.country }))
-          .sort((a, b) => b.count - a.count),
-        countries: Array.from(countryCounts.entries())
-          .map(([name, count]) => ({ name, count }))
-          .sort((a, b) => b.count - a.count),
-        activities: Array.from(activityCounts.entries())
-          .map(([name, count]) => ({ name, count }))
-          .sort((a, b) => b.count - a.count),
-        dailyStats: Array.from(dailyData.entries())
-          .map(([date, data]) => ({ date, points: data.points, cities: data.citiesSet.size }))
-          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-      };
-
+      } catch (dateError) {
+        return res.status(400).json({ 
+          error: "Invalid date format. Use YYYY-MM-DD format for start and end parameters" 
+        });
+      }
+      
+      // Use the analytics pipeline to get date-range statistics
+      const stats = await storage.getLocationStatsByDateRange(userId, startDate, endDate);
+      
       res.json(stats);
     } catch (error) {
       console.error("Error fetching location stats:", error);

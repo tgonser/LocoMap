@@ -122,7 +122,8 @@ export const dailyGeocodes = pgTable('daily_geocodes', {
   createdAt: timestamp('created_at').defaultNow(),
 }, (table) => [
   index('idx_daily_geocodes_user_date').on(table.userId, table.date),
-  index('idx_daily_geocodes_dataset').on(table.datasetId)
+  index('idx_daily_geocodes_dataset').on(table.datasetId),
+  unique('unique_daily_geocodes_user_dataset_date').on(table.userId, table.datasetId, table.date)
 ]);
 
 // Geocoding cache table to avoid duplicate API calls
