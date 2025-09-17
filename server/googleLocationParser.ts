@@ -1,26 +1,21 @@
-interface GoogleLocationHistoryMobile {
-  visits?: Array<{
-    location?: {
-      latitudeE7: number;
-      longitudeE7: number;
-      address?: string;
+// Mobile format is an array of timeline elements
+interface GoogleLocationHistoryMobileArray extends Array<{
+  endTime?: string;
+  startTime?: string;
+  visit?: {
+    hierarchyLevel?: string;
+    topCandidate?: {
+      probability?: number;
+      placeId?: string;
+      location?: {
+        lat?: number;
+        lng?: number;
+      };
     };
-    duration?: {
-      startTimestamp: string;
-      endTimestamp: string;
-    };
-    activityType?: string;
-  }>;
-  timelinePath?: Array<{
-    location?: {
-      latitudeE7: number;
-      longitudeE7: number;
-    };
-    timestamp: string;
-    accuracy?: number;
-    activity?: string;
-  }>;
-}
+  };
+  point?: string; // Format: "geo:lat,lng"
+  durationMinutesOffsetFromStartTime?: string;
+}> {}
 
 interface GoogleLocationHistoryNew {
   timelineObjects?: Array<{
@@ -88,50 +83,59 @@ function normalizeTimestamp(timestamp: string): Date {
   }
 }
 
-// Parse the new mobile format with visits and timelinePath
-function parseMobileFormat(jsonData: GoogleLocationHistoryMobile): ParsedLocationPoint[] {
+// Parse the actual mobile format (array of timeline objects)
+function parseMobileArrayFormat(jsonData: GoogleLocationHistoryMobileArray): ParsedLocationPoint[] {
   const results: ParsedLocationPoint[] = [];
   
-  // Parse visits (with UTC offsets like -06:00)
-  if (jsonData.visits && Array.isArray(jsonData.visits)) {
-    console.log(`Parsing ${jsonData.visits.length} visits`);
-    for (const visit of jsonData.visits) {
-      if (visit.location && visit.duration) {
-        // Add start point
-        if (visit.duration.startTimestamp) {
-          results.push({
-            lat: visit.location.latitudeE7 / 1e7,
-            lng: visit.location.longitudeE7 / 1e7,
-            timestamp: normalizeTimestamp(visit.duration.startTimestamp),
-            activity: visit.activityType?.toLowerCase() || 'still'
-          });
-        }
-        
-        // Add end point if different from start
-        if (visit.duration.endTimestamp && visit.duration.endTimestamp !== visit.duration.startTimestamp) {
-          results.push({
-            lat: visit.location.latitudeE7 / 1e7,
-            lng: visit.location.longitudeE7 / 1e7,
-            timestamp: normalizeTimestamp(visit.duration.endTimestamp),
-            activity: visit.activityType?.toLowerCase() || 'still'
-          });
-        }
+  console.log(`Parsing ${jsonData.length} mobile timeline elements`);
+  
+  for (const element of jsonData) {
+    // Handle visit elements with start/end times
+    if (element.visit && element.visit.topCandidate?.location && (element.startTime || element.endTime)) {
+      const location = element.visit.topCandidate.location;
+      
+      // Add start point
+      if (element.startTime && location.lat && location.lng) {
+        results.push({
+          lat: location.lat,
+          lng: location.lng,
+          timestamp: normalizeTimestamp(element.startTime),
+          activity: 'still' // Visits are typically stationary
+        });
+      }
+      
+      // Add end point if different
+      if (element.endTime && location.lat && location.lng && element.endTime !== element.startTime) {
+        results.push({
+          lat: location.lat,
+          lng: location.lng,
+          timestamp: normalizeTimestamp(element.endTime),
+          activity: 'still'
+        });
       }
     }
-  }
-  
-  // Parse timelinePath elements (with Z UTC format)
-  if (jsonData.timelinePath && Array.isArray(jsonData.timelinePath)) {
-    console.log(`Parsing ${jsonData.timelinePath.length} timeline path points`);
-    for (const pathPoint of jsonData.timelinePath) {
-      if (pathPoint.location && pathPoint.timestamp) {
-        results.push({
-          lat: pathPoint.location.latitudeE7 / 1e7,
-          lng: pathPoint.location.longitudeE7 / 1e7,
-          timestamp: normalizeTimestamp(pathPoint.timestamp),
-          accuracy: pathPoint.accuracy,
-          activity: pathPoint.activity?.toLowerCase() || 'walking'
-        });
+    
+    // Handle timeline path points with geo coordinates
+    else if (element.point && element.point.startsWith('geo:')) {
+      try {
+        const coords = element.point.replace('geo:', '').split(',');
+        if (coords.length === 2) {
+          const lat = parseFloat(coords[0]);
+          const lng = parseFloat(coords[1]);
+          
+          if (!isNaN(lat) && !isNaN(lng)) {
+            // For path points, we need to calculate timestamp based on duration offset
+            // This is tricky without a base timestamp, so we'll use a placeholder for now
+            results.push({
+              lat: lat,
+              lng: lng,
+              timestamp: new Date(), // TODO: Calculate based on offset
+              activity: 'walking'
+            });
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to parse geo point:', element.point, error);
       }
     }
   }
@@ -142,11 +146,11 @@ function parseMobileFormat(jsonData: GoogleLocationHistoryMobile): ParsedLocatio
 export function parseGoogleLocationHistory(jsonData: any): ParsedLocationPoint[] {
   const results: ParsedLocationPoint[] = [];
 
-  // Handle new mobile format (visits + timelinePath)
-  if ((jsonData.visits && Array.isArray(jsonData.visits)) || 
-      (jsonData.timelinePath && Array.isArray(jsonData.timelinePath))) {
-    console.log('Detected mobile Google location format');
-    const mobileResults = parseMobileFormat(jsonData as GoogleLocationHistoryMobile);
+  // Handle new mobile format (array of timeline objects)
+  if (Array.isArray(jsonData) && jsonData.length > 0 && 
+      (jsonData[0].visit || jsonData[0].point || jsonData[0].endTime || jsonData[0].startTime)) {
+    console.log('Detected mobile Google location array format');
+    const mobileResults = parseMobileArrayFormat(jsonData as GoogleLocationHistoryMobileArray);
     results.push(...mobileResults);
   }
   
@@ -243,9 +247,9 @@ export function validateGoogleLocationHistory(jsonData: any): boolean {
     return false;
   }
   
-  // Check for new mobile format (visits + timelinePath)
-  if ((jsonData.visits && Array.isArray(jsonData.visits)) || 
-      (jsonData.timelinePath && Array.isArray(jsonData.timelinePath))) {
+  // Check for new mobile format (array of timeline objects)
+  if (Array.isArray(jsonData) && jsonData.length > 0 && 
+      (jsonData[0].visit || jsonData[0].point || jsonData[0].endTime || jsonData[0].startTime)) {
     return true;
   }
   
