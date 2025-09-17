@@ -46,7 +46,7 @@ export default function LocationHistoryApp() {
             setViewMode('map'); // Switch to map view since they have data
             
             // Set selected date to the most recent date with data
-            const dates = processedData.map(loc => loc.timestamp.getTime());
+            const dates = processedData.map((loc: LocationData) => loc.timestamp.getTime());
             const mostRecentDate = new Date(Math.max(...dates));
             setSelectedDate(mostRecentDate);
           }

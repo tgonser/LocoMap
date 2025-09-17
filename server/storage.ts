@@ -16,7 +16,7 @@ import {
   type DailyGeocode,
   type InsertDailyGeocode,
 } from "@shared/schema";
-import { db } from "./db";
+import { db } from "./db.js";
 import { eq, and, desc, sql } from "drizzle-orm";
 
 // Interface for storage operations
@@ -44,13 +44,23 @@ export interface IStorage {
   
   // Daily centroid analytics pipeline (user-specific)
   computeAndUpsertDailyCentroids(userId: string, datasetId: string): Promise<number>;
-  getUngeocodedDailyCentroids(userId: string): Promise<DailyGeocode[]>;
+  computeDailyCentroidsForAllDatasets(userId: string): Promise<number>;
+  getUngeocodedDailyCentroids(userId: string, limit?: number): Promise<DailyGeocode[]>;
+  getUngeocodedCentroidsCount(userId: string): Promise<number>;
   updateDailyCentroidGeocoding(id: string, address: string, city?: string, state?: string, country?: string): Promise<void>;
   getLocationStatsByDateRange(userId: string, startDate: Date, endDate: Date): Promise<{
     totalDays: number;
+    geocodedDays: number;
+    geocodingCoverage: number;
     countries: Array<{ country: string; days: number; percent: number }>;
     usStates: Array<{ state: string; days: number; percent: number }>;
     dateRange: { start: Date; end: Date };
+  }>;
+  debugGeocodingCoverage(userId: string, year: number): Promise<{
+    expectedDays: number;
+    actualGeocodedDays: number;
+    coverage: number;
+    ungeocodedCount: number;
   }>;
 }
 
@@ -220,7 +230,7 @@ export class DatabaseStorage implements IStorage {
     }
 
     // Upsert daily centroids with conflict resolution
-    const insertData = dailyCentroids.map(centroid => ({
+    const insertData = dailyCentroids.map((centroid: { userId: string; datasetId: string; date: Date; lat: number; lng: number; pointCount: number }) => ({
       userId: centroid.userId,
       datasetId: centroid.datasetId,
       date: centroid.date,
@@ -253,16 +263,57 @@ export class DatabaseStorage implements IStorage {
     return upserted.length;
   }
 
-  async getUngeocodedDailyCentroids(userId: string): Promise<DailyGeocode[]> {
-    return await db
+  async computeDailyCentroidsForAllDatasets(userId: string): Promise<number> {
+    // Get all datasets for the user
+    const datasets = await this.getUserLocationDatasets(userId);
+    
+    if (datasets.length === 0) {
+      return 0;
+    }
+
+    console.log(`Computing daily centroids for ${datasets.length} datasets for user ${userId}`);
+    
+    let totalCentroidsCreated = 0;
+    
+    for (const dataset of datasets) {
+      try {
+        const centroidsCreated = await this.computeAndUpsertDailyCentroids(userId, dataset.id);
+        totalCentroidsCreated += centroidsCreated;
+        console.log(`Computed ${centroidsCreated} centroids for dataset ${dataset.id} (${dataset.filename})`);
+      } catch (error) {
+        console.error(`Failed to compute centroids for dataset ${dataset.id}:`, error);
+      }
+    }
+    
+    console.log(`Total ${totalCentroidsCreated} daily centroids computed for user ${userId}`);
+    return totalCentroidsCreated;
+  }
+
+  async getUngeocodedCentroidsCount(userId: string): Promise<number> {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(dailyGeocodes)
+      .where(and(
+        eq(dailyGeocodes.userId, userId),
+        eq(dailyGeocodes.geocoded, false)
+      ));
+    return result[0]?.count || 0;
+  }
+
+  async getUngeocodedDailyCentroids(userId: string, limit?: number): Promise<DailyGeocode[]> {
+    const query = db
       .select()
       .from(dailyGeocodes)
       .where(and(
         eq(dailyGeocodes.userId, userId),
         eq(dailyGeocodes.geocoded, false)
       ))
-      .orderBy(desc(dailyGeocodes.date))
-      .limit(100); // Batch process to avoid overwhelming geocoding service
+      .orderBy(desc(dailyGeocodes.date));
+    
+    if (limit) {
+      return await query.limit(limit);
+    }
+    return await query;
   }
 
   async updateDailyCentroidGeocoding(
@@ -291,6 +342,8 @@ export class DatabaseStorage implements IStorage {
     endDate: Date
   ): Promise<{
     totalDays: number;
+    geocodedDays: number;
+    geocodingCoverage: number;
     countries: Array<{ country: string; days: number; percent: number }>;
     usStates: Array<{ state: string; days: number; percent: number }>;
     dateRange: { start: Date; end: Date };
@@ -317,6 +370,8 @@ export class DatabaseStorage implements IStorage {
     if (totalDays === 0) {
       return {
         totalDays: 0,
+        geocodedDays: 0,
+        geocodingCoverage: 0,
         countries: [],
         usStates: [],
         dateRange: { start: startDate, end: endDate },
@@ -327,7 +382,7 @@ export class DatabaseStorage implements IStorage {
     const countryMap = new Map<string, number>();
     const stateMap = new Map<string, number>();
     
-    deduplicatedCentroids.forEach(record => {
+    deduplicatedCentroids.forEach((record: { date: Date; country: string | null; state: string | null; pointCount: number }) => {
       if (record.country) {
         countryMap.set(record.country, (countryMap.get(record.country) || 0) + 1);
       }
@@ -355,11 +410,83 @@ export class DatabaseStorage implements IStorage {
       }))
       .sort((a, b) => b.days - a.days);
 
+    // Get true total days from location_points (not just geocoded ones)
+    const actualDaysResult = await db
+      .select({
+        date: sql<Date>`date_trunc('day', ${locationPoints.timestamp})`,
+      })
+      .from(locationPoints)
+      .where(and(
+        eq(locationPoints.userId, userId),
+        sql`${locationPoints.timestamp} >= ${startDate}`,
+        sql`${locationPoints.timestamp} <= ${endDate}`
+      ))
+      .groupBy(sql`date_trunc('day', ${locationPoints.timestamp})`);
+    
+    const actualTotalDays = actualDaysResult.length;
+    const geocodedDays = totalDays;
+    const geocodingCoverage = actualTotalDays > 0 ? Math.round((geocodedDays / actualTotalDays) * 100 * 100) / 100 : 0;
+
     return {
-      totalDays,
+      totalDays: actualTotalDays,
+      geocodedDays,
+      geocodingCoverage,
       countries,
       usStates,
       dateRange: { start: startDate, end: endDate },
+    };
+  }
+
+  async debugGeocodingCoverage(userId: string, year: number): Promise<{
+    expectedDays: number;
+    actualGeocodedDays: number;
+    coverage: number;
+    ungeocodedCount: number;
+  }> {
+    const startDate = new Date(`${year}-01-01`);
+    const endDate = new Date(`${year}-12-31T23:59:59`);
+    
+    // Count total days with location data
+    const expectedDaysResult = await db
+      .select({
+        date: sql<Date>`date_trunc('day', ${locationPoints.timestamp})`,
+      })
+      .from(locationPoints)
+      .where(and(
+        eq(locationPoints.userId, userId),
+        sql`${locationPoints.timestamp} >= ${startDate}`,
+        sql`${locationPoints.timestamp} <= ${endDate}`
+      ))
+      .groupBy(sql`date_trunc('day', ${locationPoints.timestamp})`);
+      
+    const expectedDays = expectedDaysResult.length;
+    
+    // Count geocoded days
+    const geocodedDaysResult = await db
+      .select({
+        date: dailyGeocodes.date,
+      })
+      .from(dailyGeocodes)
+      .where(and(
+        eq(dailyGeocodes.userId, userId),
+        sql`${dailyGeocodes.date} >= ${startDate}`,
+        sql`${dailyGeocodes.date} <= ${endDate}`,
+        eq(dailyGeocodes.geocoded, true)
+      ))
+      .groupBy(dailyGeocodes.date);
+      
+    const actualGeocodedDays = geocodedDaysResult.length;
+    
+    // Count ungeocoded centroids
+    const ungeocodedCount = await this.getUngeocodedCentroidsCount(userId);
+    
+    const coverage = expectedDays > 0 ? Math.round((actualGeocodedDays / expectedDays) * 100 * 100) / 100 : 0;
+    
+    return {
+      expectedDays,
+      actualGeocodedDays,
+      coverage,
+      ungeocodedCount,
     };
   }
 }
@@ -425,8 +552,16 @@ export class MemStorage implements IStorage {
     return 0;
   }
 
-  async getUngeocodedDailyCentroids(userId: string): Promise<DailyGeocode[]> {
+  async getUngeocodedDailyCentroids(userId: string, limit?: number): Promise<DailyGeocode[]> {
     return [];
+  }
+
+  async computeDailyCentroidsForAllDatasets(userId: string): Promise<number> {
+    return 0;
+  }
+
+  async getUngeocodedCentroidsCount(userId: string): Promise<number> {
+    return 0;
   }
 
   async updateDailyCentroidGeocoding(
@@ -443,15 +578,33 @@ export class MemStorage implements IStorage {
     endDate: Date
   ): Promise<{
     totalDays: number;
+    geocodedDays: number;
+    geocodingCoverage: number;
     countries: Array<{ country: string; days: number; percent: number }>;
     usStates: Array<{ state: string; days: number; percent: number }>;
     dateRange: { start: Date; end: Date };
   }> {
     return {
       totalDays: 0,
+      geocodedDays: 0,
+      geocodingCoverage: 0,
       countries: [],
       usStates: [],
       dateRange: { start: startDate, end: endDate },
+    };
+  }
+
+  async debugGeocodingCoverage(userId: string, year: number): Promise<{
+    expectedDays: number;
+    actualGeocodedDays: number;
+    coverage: number;
+    ungeocodedCount: number;
+  }> {
+    return {
+      expectedDays: 0,
+      actualGeocodedDays: 0,
+      coverage: 0,
+      ungeocodedCount: 0,
     };
   }
 }

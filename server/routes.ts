@@ -73,38 +73,69 @@ async function geocodeUserLocationPoints(userId: string, datasetId: string) {
   }
 }
 
-// Background geocoding function for daily centroids (analytics pipeline)
+// Background geocoding function for daily centroids (analytics pipeline) - FIXED: Drains entire queue
 async function geocodeDailyCentroids(userId: string) {
   try {
-    const ungeocoded = await storage.getUngeocodedDailyCentroids(userId);
+    let totalProcessed = 0;
+    let batchNumber = 1;
+    const BATCH_SIZE = 50; // Process in smaller batches to avoid overwhelming geocoding service
     
-    if (ungeocoded.length === 0) {
-      return;
-    }
-
-    console.log(`Geocoding ${ungeocoded.length} daily centroids for user ${userId}`);
-    
-    // Batch geocode the centroids
-    const coordinates = ungeocoded.map(centroid => ({ lat: centroid.lat, lng: centroid.lng }));
-    const geocodeResults = await batchReverseGeocode(coordinates);
-    
-    // Update daily centroids with geocoding results
-    for (let i = 0; i < ungeocoded.length; i++) {
-      const centroid = ungeocoded[i];
-      const geocodeResult = geocodeResults[i];
+    while (true) {
+      // Get remaining ungeocoded centroids count for progress tracking
+      const remainingCount = await storage.getUngeocodedCentroidsCount(userId);
       
-      await storage.updateDailyCentroidGeocoding(
-        centroid.id,
-        geocodeResult.address || '',
-        geocodeResult.city || undefined,
-        geocodeResult.state || undefined,
-        geocodeResult.country || undefined
-      );
+      if (remainingCount === 0) {
+        console.log(`✅ Geocoding queue drained for user ${userId}. Total processed: ${totalProcessed}`);
+        break;
+      }
+      
+      // Get next batch of ungeocoded centroids
+      const ungeocoded = await storage.getUngeocodedDailyCentroids(userId, BATCH_SIZE);
+      
+      if (ungeocoded.length === 0) {
+        console.log(`No ungeocoded centroids found, but count shows ${remainingCount}. Breaking loop.`);
+        break;
+      }
+
+      console.log(`🔄 Batch ${batchNumber}: Geocoding ${ungeocoded.length} centroids for user ${userId} (${remainingCount} remaining)`);
+      
+      try {
+        // Batch geocode the centroids
+        const coordinates = ungeocoded.map(centroid => ({ lat: centroid.lat, lng: centroid.lng }));
+        const geocodeResults = await batchReverseGeocode(coordinates);
+        
+        // Update daily centroids with geocoding results
+        for (let i = 0; i < ungeocoded.length; i++) {
+          const centroid = ungeocoded[i];
+          const geocodeResult = geocodeResults[i];
+          
+          await storage.updateDailyCentroidGeocoding(
+            centroid.id,
+            geocodeResult.address || '',
+            geocodeResult.city || undefined,
+            geocodeResult.state || undefined,
+            geocodeResult.country || undefined
+          );
+        }
+        
+        totalProcessed += ungeocoded.length;
+        console.log(`✅ Batch ${batchNumber} completed: ${ungeocoded.length} centroids geocoded (${totalProcessed} total processed)`);
+        
+      } catch (batchError) {
+        console.error(`❌ Batch ${batchNumber} failed for user ${userId}:`, batchError);
+        // Continue with next batch even if one fails
+      }
+      
+      batchNumber++;
+      
+      // Small delay between batches to be respectful to geocoding service
+      if (remainingCount > BATCH_SIZE) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
     }
     
-    console.log(`Geocoded ${ungeocoded.length} daily centroids for user ${userId}`);
   } catch (error) {
-    console.error(`Daily centroid geocoding failed for user ${userId}:`, error);
+    console.error(`💥 Daily centroid geocoding pipeline failed for user ${userId}:`, error);
   }
 }
 
@@ -327,6 +358,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Frontend expects: {name, days, percentage}
       const transformedStats = {
         totalDays: stats.totalDays,
+        geocodedDays: stats.geocodedDays,
+        geocodingCoverage: stats.geocodingCoverage,
         dateRange: {
           start: stats.dateRange.start.toISOString().split('T')[0], // Convert Date to YYYY-MM-DD string
           end: stats.dateRange.end.toISOString().split('T')[0]      // Convert Date to YYYY-MM-DD string
@@ -360,6 +393,118 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error clearing locations:", error);
       res.status(500).json({ error: "Failed to clear location data" });
+    }
+  });
+
+  // CRITICAL FIX: Backfill daily centroids for all user datasets
+  app.post("/api/analytics/backfill-centroids", isAuthenticated, async (req, res) => {
+    try {
+      const { claims } = getAuthenticatedUser(req);
+      const userId = claims.sub;
+      
+      console.log(`🔄 Starting centroid backfill for user ${userId}`);
+      const centroidsCreated = await storage.computeDailyCentroidsForAllDatasets(userId);
+      
+      // After creating centroids, trigger geocoding pipeline
+      setTimeout(async () => {
+        console.log(`🌍 Starting geocoding pipeline for user ${userId} after backfill`);
+        await geocodeDailyCentroids(userId);
+      }, 1000);
+      
+      res.json({ 
+        success: true, 
+        message: `Backfilled ${centroidsCreated} daily centroids and started geocoding pipeline`,
+        centroidsCreated 
+      });
+    } catch (error) {
+      console.error("Error backfilling centroids:", error);
+      res.status(500).json({ error: "Failed to backfill centroids" });
+    }
+  });
+
+  // CRITICAL FIX: Manual geocoding queue drainage
+  app.post("/api/analytics/process-geocoding-queue", isAuthenticated, async (req, res) => {
+    try {
+      const { claims } = getAuthenticatedUser(req);
+      const userId = claims.sub;
+      
+      const ungeocodedCount = await storage.getUngeocodedCentroidsCount(userId);
+      
+      if (ungeocodedCount === 0) {
+        res.json({ 
+          success: true, 
+          message: "Geocoding queue is already empty",
+          ungeocodedCount: 0 
+        });
+        return;
+      }
+      
+      // Start geocoding process in background
+      setTimeout(async () => {
+        console.log(`🌍 Starting manual geocoding queue processing for user ${userId}`);
+        await geocodeDailyCentroids(userId);
+      }, 1000);
+      
+      res.json({ 
+        success: true, 
+        message: `Started processing ${ungeocodedCount} ungeocoded centroids`,
+        ungeocodedCount 
+      });
+    } catch (error) {
+      console.error("Error processing geocoding queue:", error);
+      res.status(500).json({ error: "Failed to process geocoding queue" });
+    }
+  });
+
+  // CRITICAL FIX: Debug geocoding coverage for specific year
+  app.get("/api/analytics/debug/:year", isAuthenticated, async (req, res) => {
+    try {
+      const { claims } = getAuthenticatedUser(req);
+      const userId = claims.sub;
+      const year = parseInt(req.params.year);
+      
+      if (!year || year < 2000 || year > new Date().getFullYear()) {
+        return res.status(400).json({ 
+          error: "Invalid year parameter. Use format: /api/analytics/debug/2024" 
+        });
+      }
+      
+      const coverage = await storage.debugGeocodingCoverage(userId, year);
+      
+      res.json({
+        year,
+        expectedDays: coverage.expectedDays,
+        actualGeocodedDays: coverage.actualGeocodedDays,
+        coverage: coverage.coverage,
+        ungeocodedCount: coverage.ungeocodedCount,
+        message: `Coverage analysis for ${year}: ${coverage.actualGeocodedDays}/${coverage.expectedDays} days geocoded (${coverage.coverage}%). ${coverage.ungeocodedCount} centroids in geocoding queue.`
+      });
+    } catch (error) {
+      console.error("Error debugging geocoding coverage:", error);
+      res.status(500).json({ error: "Failed to debug geocoding coverage" });
+    }
+  });
+
+  // CRITICAL FIX: Get geocoding queue status
+  app.get("/api/analytics/geocoding-status", isAuthenticated, async (req, res) => {
+    try {
+      const { claims } = getAuthenticatedUser(req);
+      const userId = claims.sub;
+      
+      const ungeocodedCount = await storage.getUngeocodedCentroidsCount(userId);
+      const datasets = await storage.getUserLocationDatasets(userId);
+      
+      res.json({
+        ungeocodedCount,
+        datasetsCount: datasets.length,
+        queueEmpty: ungeocodedCount === 0,
+        message: ungeocodedCount === 0 
+          ? "Geocoding queue is empty ✅" 
+          : `${ungeocodedCount} centroids waiting for geocoding 🔄`
+      });
+    } catch (error) {
+      console.error("Error getting geocoding status:", error);
+      res.status(500).json({ error: "Failed to get geocoding status" });
     }
   });
 
