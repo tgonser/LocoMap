@@ -76,12 +76,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         jsonData = JSON.parse(fileContent);
       } catch (parseError) {
-        return res.status(400).json({ error: "Invalid JSON file" });
+        console.error("JSON parse error:", parseError);
+        return res.status(400).json({ error: "Invalid JSON file - parsing failed" });
       }
+
+      // Debug: log the structure of the uploaded file
+      console.log("File structure:", {
+        hasTimelineObjects: jsonData.timelineObjects !== undefined,
+        timelineObjectsIsArray: Array.isArray(jsonData.timelineObjects),
+        timelineObjectsLength: jsonData.timelineObjects?.length,
+        hasLocations: jsonData.locations !== undefined,
+        locationsIsArray: Array.isArray(jsonData.locations),
+        locationsLength: jsonData.locations?.length,
+        topLevelKeys: Object.keys(jsonData)
+      });
 
       if (!validateGoogleLocationHistory(jsonData)) {
         return res.status(400).json({ 
-          error: "Invalid Google location history format. Please upload a valid location history JSON file." 
+          error: `Invalid Google location history format. Found keys: ${Object.keys(jsonData).join(', ')}. Expected 'timelineObjects' or 'locations' array.` 
         });
       }
 
