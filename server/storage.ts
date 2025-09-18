@@ -17,7 +17,7 @@ import {
   type InsertDailyGeocode,
 } from "@shared/schema";
 import { db } from "./db.js";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
 
 // Interface for storage operations
 export interface IStorage {
@@ -620,9 +620,9 @@ export class DatabaseStorage implements IStorage {
       .where(and(
         eq(dailyGeocodes.userId, userId),
         eq(dailyGeocodes.geocoded, true),
-        // Use DATE comparison to ensure proper filtering - cast both sides to DATE type
-        sql`DATE(${dailyGeocodes.date}) >= DATE(${startDateStr})`,
-        sql`DATE(${dailyGeocodes.date}) <= DATE(${endDateStr})`,
+        // Use proper date comparison with timezone handling
+        gte(dailyGeocodes.date, new Date(startDateStr + 'T00:00:00.000Z')),
+        lte(dailyGeocodes.date, new Date(endDateStr + 'T23:59:59.999Z')),
         // Ensure we have meaningful location data
         sql`${dailyGeocodes.city} IS NOT NULL OR ${dailyGeocodes.country} IS NOT NULL`
       ))
