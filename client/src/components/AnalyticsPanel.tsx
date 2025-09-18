@@ -38,14 +38,11 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
   const [geocodingLoading, setGeocodingLoading] = useState(false);
   const { toast } = useToast();
   
-  // Set default date range to last calendar year
+  // Set default date range to a smaller, manageable range for testing
   const getDefaultDateRange = () => {
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const lastYear = currentYear - 1;
     return {
-      start: `${lastYear}-01-01`,
-      end: `${lastYear}-12-31`
+      start: '2024-01-01',
+      end: '2024-03-01'
     };
   };
   
@@ -61,7 +58,12 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
       setLoading(true);
       setError(null);
       
-      console.log('AnalyticsPanel: Fetching analytics data from /api/analytics/geocoded-places with body:', { startDate, endDate });
+      console.log('AnalyticsPanel: Fetching analytics data from /api/analytics/geocoded-places with body:', { 
+        startDate, 
+        endDate,
+        startDateType: typeof startDate,
+        endDateType: typeof endDate 
+      });
       
       const response = await fetch('/api/analytics/geocoded-places', {
         method: 'POST',
@@ -110,6 +112,12 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
   };
   
   const handleApplyDateRange = () => {
+    console.log('AnalyticsPanel: User clicked Update Analytics with dates:', { 
+      startDate, 
+      endDate, 
+      startDateType: typeof startDate,
+      endDateType: typeof endDate
+    });
     fetchAnalytics();
   };
   

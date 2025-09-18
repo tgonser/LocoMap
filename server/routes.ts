@@ -15,7 +15,10 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 // Function to analyze and curate interesting places using OpenAI
 async function curateInterestingPlaces(locations: any[]): Promise<any[]> {
   try {
-    const locationData = locations.map(loc => ({
+    // Limit data sent to OpenAI to avoid token limits - sample diverse locations
+    const sampledLocations = sampleDiverseLocations(locations, 50);
+    
+    const locationData = sampledLocations.map(loc => ({
       city: loc.city,
       state: loc.state,
       country: loc.country,
@@ -78,6 +81,35 @@ Return ONLY a JSON object with this structure:
     console.error('OpenAI curation error:', error);
     throw new Error('Failed to curate interesting places');
   }
+}
+
+function sampleDiverseLocations(locations: any[], maxSamples: number): any[] {
+  // Group by unique city/country combinations to get diverse sample
+  const uniquePlaces = new Map<string, any>();
+  
+  locations.forEach(loc => {
+    if (loc.city && loc.country) {
+      const key = `${loc.city}-${loc.country}`;
+      if (!uniquePlaces.has(key)) {
+        uniquePlaces.set(key, loc);
+      }
+    }
+  });
+  
+  // If we have fewer unique places than maxSamples, return all
+  const uniqueArray = Array.from(uniquePlaces.values());
+  if (uniqueArray.length <= maxSamples) {
+    return uniqueArray;
+  }
+  
+  // Sample evenly from the unique places
+  const step = Math.floor(uniqueArray.length / maxSamples);
+  const sampled = [];
+  for (let i = 0; i < uniqueArray.length && sampled.length < maxSamples; i += step) {
+    sampled.push(uniqueArray[i]);
+  }
+  
+  return sampled;
 }
 
 // Configure multer for file uploads
