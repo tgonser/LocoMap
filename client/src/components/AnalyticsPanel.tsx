@@ -1,26 +1,29 @@
 import { useState, useEffect } from "react";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CalendarDays, MapPin, Globe, Users, BarChart3, Calendar, RefreshCw, Database, ChevronDown, TestTube } from "lucide-react";
+import { CalendarDays, MapPin, Globe, Users, BarChart3, Calendar, RefreshCw, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
 
 interface AnalyticsData {
   totalDays: number;
+  geocodedDays: number;
   dateRange: { start: string; end: string };
-  countries: Array<{ name: string; days: number; percentage: number }>;
-  usStates: Array<{ name: string; days: number; percentage: number }>;
-}
-
-interface UngeocodedRange {
-  year: number;
-  month: number;
-  monthName: string;
-  count: number;
-  dateRange: string;
+  countries: Record<string, number>;
+  states: Record<string, number>;
+  cities: Record<string, number>;
+  curatedPlaces: Array<{
+    city: string;
+    state?: string;
+    country: string;
+    lat: number;
+    lng: number;
+    visitDays: number;
+    reason: string;
+    mapsLink: string;
+  }>;
 }
 
 interface AnalyticsPanelProps {
@@ -33,9 +36,6 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [backfillLoading, setBackfillLoading] = useState(false);
   const [geocodingLoading, setGeocodingLoading] = useState(false);
-  const [ungeocodedRanges, setUngeocodedRanges] = useState<UngeocodedRange[]>([]);
-  const [ungeocodedLoading, setUngeocodedLoading] = useState(false);
-  const [isQuickRangesOpen, setIsQuickRangesOpen] = useState(false);
   const { toast } = useToast();
   
   // Set default date range to last calendar year
@@ -54,7 +54,6 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
 
   useEffect(() => {
     fetchAnalytics();
-    fetchUngeocodedSummary();
   }, []);
 
   const fetchAnalytics = async () => {
@@ -62,14 +61,19 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
       setLoading(true);
       setError(null);
       
-      const params = new URLSearchParams({
-        start: startDate,
-        end: endDate
+      console.log('AnalyticsPanel: Fetching analytics data from /api/analytics/geocoded-places with body:', { startDate, endDate });
+      
+      const response = await fetch('/api/analytics/geocoded-places', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          startDate,
+          endDate
+        })
       });
-      
-      console.log('AnalyticsPanel: Fetching analytics data from /api/locations/stats with params:', { start: startDate, end: endDate });
-      
-      const response = await fetch(`/api/locations/stats?${params}`);
       console.log('AnalyticsPanel: Response status:', response.status);
       
       if (!response.ok) {
@@ -121,48 +125,6 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
     });
   };
 
-  const fetchUngeocodedSummary = async () => {
-    try {
-      setUngeocodedLoading(true);
-      
-      console.log('AnalyticsPanel: Fetching ungeocoded summary from /api/analytics/ungeocoded-summary');
-      
-      const response = await fetch('/api/analytics/ungeocoded-summary');
-      console.log('AnalyticsPanel: Ungeocoded summary response status:', response.status);
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('AnalyticsPanel: Ungeocoded summary error:', errorData);
-        
-        // Handle authentication failures more clearly
-        if (response.status === 401) {
-          toast({
-            title: "Authentication Expired", 
-            description: "Your session has expired. Refreshing the page...",
-            variant: "destructive",
-          });
-          
-          // Auto-refresh the page after a short delay
-          setTimeout(() => {
-            window.location.reload();
-          }, 2000);
-          
-          throw new Error('Authentication expired. Page will refresh automatically.');
-        }
-        
-        throw new Error(errorData.error || `Failed to fetch ungeocoded summary (${response.status})`);
-      }
-      
-      const data = await response.json();
-      console.log('AnalyticsPanel: Received ungeocoded summary data:', data);
-      setUngeocodedRanges(data.ranges || []);
-    } catch (err) {
-      console.error('AnalyticsPanel: Ungeocoded summary fetch error:', err);
-      // Don't show error toast for this since it's not critical
-    } finally {
-      setUngeocodedLoading(false);
-    }
-  };
 
   const handleBackfillCentroids = async () => {
     try {
@@ -280,12 +242,16 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
     const exportData = {
       summary: {
         totalDays: analytics.totalDays,
+        geocodedDays: analytics.geocodedDays,
         dateRange: analytics.dateRange,
-        uniqueCountries: analytics.countries.length,
-        uniqueUsStates: analytics.usStates.length
+        uniqueCountries: Object.keys(analytics.countries).length,
+        uniqueStates: Object.keys(analytics.states).length,
+        uniqueCities: Object.keys(analytics.cities).length
       },
       countries: analytics.countries,
-      usStates: analytics.usStates,
+      states: analytics.states,
+      cities: analytics.cities,
+      curatedPlaces: analytics.curatedPlaces,
       generatedAt: new Date().toISOString()
     };
     
@@ -446,108 +412,12 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
         </CardContent>
       </Card>
 
-      {/* Quick Test Ranges - Ungeocoded Data Summary */}
-      <Card data-testid="card-quick-test-ranges">
-        <Collapsible 
-          open={isQuickRangesOpen} 
-          onOpenChange={setIsQuickRangesOpen}
-        >
-          <CollapsibleTrigger asChild>
-            <CardHeader className="hover-elevate cursor-pointer">
-              <CardTitle className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <TestTube className="h-5 w-5" />
-                  Quick Test Ranges
-                </div>
-                <div className="flex items-center gap-2">
-                  {ungeocodedRanges.length > 0 && (
-                    <Badge variant="secondary" data-testid="badge-ungeocoded-ranges-count">
-                      {ungeocodedRanges.length} ranges
-                    </Badge>
-                  )}
-                  <ChevronDown className={`h-4 w-4 transition-transform ${isQuickRangesOpen ? 'rotate-180' : ''}`} />
-                </div>
-              </CardTitle>
-            </CardHeader>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <CardContent>
-              {ungeocodedLoading ? (
-                <div className="flex items-center justify-center py-4" data-testid="loading-ungeocoded-ranges">
-                  <RefreshCw className="h-4 w-4 animate-spin mr-2" />
-                  <span>Loading ungeocoded ranges...</span>
-                </div>
-              ) : ungeocodedRanges.length === 0 ? (
-                <div className="text-center py-6" data-testid="no-ungeocoded-ranges">
-                  <div className="text-green-600 dark:text-green-400 mb-2">
-                    <svg className="h-8 w-8 mx-auto" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                  <p className="text-lg font-medium text-green-600 dark:text-green-400">All data is geocoded!</p>
-                  <p className="text-sm text-muted-foreground">No ungeocoded date ranges found.</p>
-                </div>
-              ) : (
-                <div>
-                  <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
-                    <div className="flex items-start gap-2">
-                      <div className="text-blue-600 dark:text-blue-400 mt-0.5">
-                        <TestTube className="h-4 w-4" />
-                      </div>
-                      <div className="text-sm">
-                        <p className="font-medium text-blue-800 dark:text-blue-200 mb-1">Fast Testing</p>
-                        <p className="text-blue-700 dark:text-blue-300">
-                          These date ranges have ungeocoded data. Use them for quick testing of geocoding functionality. 
-                          Smaller counts will process faster.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    {ungeocodedRanges.map((range, index) => (
-                      <div
-                        key={`${range.year}-${range.month}`}
-                        className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md border hover-elevate cursor-pointer"
-                        onClick={() => {
-                          const startOfMonth = `${range.year}-${range.month.toString().padStart(2, '0')}-01`;
-                          const endOfMonth = new Date(range.year, range.month, 0).toISOString().split('T')[0];
-                          setStartDate(startOfMonth);
-                          setEndDate(endOfMonth);
-                        }}
-                        data-testid={`row-ungeocoded-range-${index}`}
-                      >
-                        <div className="text-base" data-testid={`text-ungeocoded-range-details-${index}`}>
-                          <span className="font-medium">{range.dateRange}</span>
-                          <span className="text-muted-foreground ml-2">
-                            {range.count} ungeocoded centroid{range.count !== 1 ? 's' : ''}
-                          </span>
-                        </div>
-                        <Badge 
-                          variant={range.count <= 50 ? "default" : range.count <= 200 ? "secondary" : "outline"}
-                          data-testid={`badge-ungeocoded-count-${index}`}
-                        >
-                          {range.count}
-                        </Badge>
-                      </div>
-                    ))}
-                  </div>
-                  
-                  <div className="mt-4 text-sm text-muted-foreground">
-                    <p>💡 Click any range to set it as your date filter above.</p>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </CollapsibleContent>
-        </Collapsible>
-      </Card>
 
       {/* Analytics Results */}
       {analytics && (
         <>
           {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <Card data-testid="card-total-days">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Total Days</CardTitle>
@@ -562,24 +432,36 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
 
             <Card data-testid="card-countries-count">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Countries Visited</CardTitle>
+                <CardTitle className="text-sm font-medium">Countries</CardTitle>
                 <Globe className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold" data-testid="text-countries-count">
-                  {analytics.countries.length}
+                  {Object.keys(analytics.countries).length}
                 </div>
               </CardContent>
             </Card>
 
-            <Card data-testid="card-us-states-count">
+            <Card data-testid="card-states-count">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">US States Visited</CardTitle>
+                <CardTitle className="text-sm font-medium">States</CardTitle>
                 <MapPin className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold" data-testid="text-us-states-count">
-                  {analytics.usStates.length}
+                <div className="text-2xl font-bold" data-testid="text-states-count">
+                  {Object.keys(analytics.states).length}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card data-testid="card-cities-count">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Cities</CardTitle>
+                <Users className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold" data-testid="text-cities-count">
+                  {Object.keys(analytics.cities).length}
                 </div>
               </CardContent>
             </Card>
@@ -606,63 +488,167 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
             </CardContent>
           </Card>
 
-          {/* US States */}
-          {analytics.usStates.length > 0 && (
-            <Card data-testid="card-us-states">
+          {/* Places Visited Summary */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Countries */}
+            <Card data-testid="card-countries">
               <CardHeader>
-                <CardTitle>US States Visited</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <Globe className="h-5 w-5" />
+                  Countries Visited
+                </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="max-h-96 overflow-y-auto">
                 <div className="space-y-3">
-                  {analytics.usStates.map((state, index) => (
+                  {Object.entries(analytics.countries)
+                    .sort(([,a], [,b]) => b - a)
+                    .map(([country, days], index) => (
                     <div
-                      key={`${state.name}-${index}`}
+                      key={`${country}-${index}`}
                       className="flex items-center justify-between py-2 border-b border-muted last:border-b-0"
-                      data-testid={`row-us-state-${index}`}
+                      data-testid={`row-country-${index}`}
                     >
-                      <div className="text-base" data-testid={`text-us-state-details-${index}`}>
-                        <span className="font-medium">{state.name}</span>
+                      <div className="text-base" data-testid={`text-country-details-${index}`}>
+                        <span className="font-medium">{country}</span>
                         <span className="text-muted-foreground ml-2">
-                          {state.days} day{state.days !== 1 ? 's' : ''} ({state.percentage.toFixed(1)}%)
+                          {days} day{days !== 1 ? 's' : ''} ({((days / analytics.totalDays) * 100).toFixed(1)}%)
                         </span>
                       </div>
-                      <Badge variant="secondary" data-testid={`badge-us-state-days-${index}`}>
-                        {state.days} day{state.days !== 1 ? 's' : ''}
+                      <Badge variant="outline" data-testid={`badge-country-days-${index}`}>
+                        {days} day{days !== 1 ? 's' : ''}
                       </Badge>
                     </div>
                   ))}
                 </div>
               </CardContent>
             </Card>
-          )}
 
-          {/* Countries */}
-          <Card data-testid="card-countries">
-            <CardHeader>
-              <CardTitle>Countries Visited</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {analytics.countries.map((country, index) => (
-                  <div
-                    key={`${country.name}-${index}`}
-                    className="flex items-center justify-between py-2 border-b border-muted last:border-b-0"
-                    data-testid={`row-country-${index}`}
-                  >
-                    <div className="text-base" data-testid={`text-country-details-${index}`}>
-                      <span className="font-medium">{country.name}</span>
-                      <span className="text-muted-foreground ml-2">
-                        {country.days} day{country.days !== 1 ? 's' : ''} ({country.percentage.toFixed(1)}%)
-                      </span>
+            {/* States */}
+            <Card data-testid="card-states">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <MapPin className="h-5 w-5" />
+                  States/Regions Visited
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="max-h-96 overflow-y-auto">
+                <div className="space-y-3">
+                  {Object.entries(analytics.states)
+                    .sort(([,a], [,b]) => b - a)
+                    .map(([state, days], index) => (
+                    <div
+                      key={`${state}-${index}`}
+                      className="flex items-center justify-between py-2 border-b border-muted last:border-b-0"
+                      data-testid={`row-state-${index}`}
+                    >
+                      <div className="text-base" data-testid={`text-state-details-${index}`}>
+                        <span className="font-medium">{state}</span>
+                        <span className="text-muted-foreground ml-2">
+                          {days} day{days !== 1 ? 's' : ''} ({((days / analytics.totalDays) * 100).toFixed(1)}%)
+                        </span>
+                      </div>
+                      <Badge variant="secondary" data-testid={`badge-state-days-${index}`}>
+                        {days} day{days !== 1 ? 's' : ''}
+                      </Badge>
                     </div>
-                    <Badge variant="outline" data-testid={`badge-country-days-${index}`}>
-                      {country.days} day{country.days !== 1 ? 's' : ''}
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Cities */}
+          <Card data-testid="card-cities">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Cities Visited
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="max-h-96 overflow-y-auto">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {Object.entries(analytics.cities)
+                  .sort(([,a], [,b]) => b - a)
+                  .slice(0, 50) // Show top 50 cities
+                  .map(([city, days], index) => (
+                  <div
+                    key={`${city}-${index}`}
+                    className="flex items-center justify-between p-3 bg-muted/30 rounded-md"
+                    data-testid={`row-city-${index}`}
+                  >
+                    <div className="text-sm" data-testid={`text-city-details-${index}`}>
+                      <span className="font-medium">{city}</span>
+                      <div className="text-muted-foreground text-xs">
+                        {days} day{days !== 1 ? 's' : ''}
+                      </div>
+                    </div>
+                    <Badge variant="outline" data-testid={`badge-city-days-${index}`}>
+                      {days}
                     </Badge>
                   </div>
                 ))}
               </div>
+              {Object.keys(analytics.cities).length > 50 && (
+                <p className="text-sm text-muted-foreground mt-4 text-center">
+                  Showing top 50 cities of {Object.keys(analytics.cities).length} total
+                </p>
+              )}
             </CardContent>
           </Card>
+
+          {/* Interesting Places - AI Curated */}
+          {analytics.curatedPlaces.length > 0 && (
+            <Card data-testid="card-interesting-places">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5" />
+                  Interesting Places
+                  <Badge variant="secondary" className="ml-2">AI Curated</Badge>
+                </CardTitle>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Highlighted places from your travels based on cultural significance, natural beauty, and uniqueness.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {analytics.curatedPlaces.map((place, index) => (
+                    <div
+                      key={`${place.city}-${index}`}
+                      className="p-4 border rounded-lg hover-elevate"
+                      data-testid={`card-interesting-place-${index}`}
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <h4 className="font-medium" data-testid={`text-place-name-${index}`}>
+                            {place.city}{place.state && `, ${place.state}`}
+                          </h4>
+                          <p className="text-sm text-muted-foreground">
+                            {place.country}
+                          </p>
+                        </div>
+                        <Badge variant="outline" data-testid={`badge-place-days-${index}`}>
+                          {place.visitDays} day{place.visitDays !== 1 ? 's' : ''}
+                        </Badge>
+                      </div>
+                      <p className="text-sm mb-3" data-testid={`text-place-reason-${index}`}>
+                        {place.reason}
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => window.open(place.mapsLink, '_blank')}
+                        className="flex items-center gap-2 w-full"
+                        data-testid={`button-view-on-maps-${index}`}
+                      >
+                        <Globe className="h-4 w-4" />
+                        View on Google Maps
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </>
       )}
     </div>
