@@ -610,9 +610,9 @@ export class DatabaseStorage implements IStorage {
       endDateFormatted: endDate.toISOString().split('T')[0]
     });
 
-    // Convert JavaScript Dates to proper SQL timestamp format for PostgreSQL
-    const startDateStr = startDate.toISOString();
-    const endDateStr = endDate.toISOString();
+    // Use proper PostgreSQL date comparison - convert dates to string format for comparison
+    const startDateStr = startDate.toISOString().split('T')[0]; // Get YYYY-MM-DD format
+    const endDateStr = endDate.toISOString().split('T')[0]; // Get YYYY-MM-DD format
 
     const result = await db
       .select()
@@ -620,14 +620,15 @@ export class DatabaseStorage implements IStorage {
       .where(and(
         eq(dailyGeocodes.userId, userId),
         eq(dailyGeocodes.geocoded, true),
-        sql`${dailyGeocodes.date} >= ${startDateStr}`,
-        sql`${dailyGeocodes.date} <= ${endDateStr}`,
+        // Use DATE comparison to ensure proper filtering - cast both sides to DATE type
+        sql`DATE(${dailyGeocodes.date}) >= DATE(${startDateStr})`,
+        sql`DATE(${dailyGeocodes.date}) <= DATE(${endDateStr})`,
         // Ensure we have meaningful location data
         sql`${dailyGeocodes.city} IS NOT NULL OR ${dailyGeocodes.country} IS NOT NULL`
       ))
       .orderBy(desc(dailyGeocodes.date));
 
-    console.log(`DEBUG: Query returned ${result.length} geocoded centroids for date range ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
+    console.log(`DEBUG: Query returned ${result.length} geocoded centroids for date range ${startDateStr} to ${endDateStr}`);
     if (result.length > 0) {
       console.log(`DEBUG: First result date: ${result[0].date}, Last result date: ${result[result.length - 1].date}`);
     }

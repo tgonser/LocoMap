@@ -1008,30 +1008,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         });
 
-        // Sort and format the statistics
-        const countriesArray = Array.from(locationStats.countries.entries())
-          .map(([country, days]) => ({ 
-            country, 
-            days, 
-            percent: Number(((days / geocodedCentroids.length) * 100).toFixed(1)) 
-          }))
-          .sort((a, b) => b.days - a.days);
-
-        const statesArray = Array.from(locationStats.states.entries())
-          .map(([state, days]) => ({ 
-            state, 
-            days, 
-            percent: Number(((days / geocodedCentroids.length) * 100).toFixed(1)) 
-          }))
-          .sort((a, b) => b.days - a.days);
-
-        const citiesArray = Array.from(locationStats.cities.entries())
-          .map(([city, days]) => ({ 
-            city, 
-            days, 
-            percent: Number(((days / geocodedCentroids.length) * 100).toFixed(1)) 
-          }))
-          .sort((a, b) => b.days - a.days);
+        // Convert Maps to Objects for frontend compatibility
+        const countriesObject = Object.fromEntries(locationStats.countries);
+        const statesObject = Object.fromEntries(locationStats.states);  
+        const citiesObject = Object.fromEntries(locationStats.cities);
 
         // Generate curated places using OpenAI
         let curatedPlaces: any[] = [];
@@ -1054,9 +1034,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             totalDays: totalDaysInRange,
             geocodedDays: geocodedCentroids.length,
             geocodingCoverage: Number(((geocodedCentroids.length / totalDaysInRange) * 100).toFixed(1)),
-            countries: countriesArray,
-            states: statesArray,
-            cities: citiesArray,
+            countries: countriesObject,
+            states: statesObject,
+            cities: citiesObject,
             curatedPlaces,
             dateRange: {
               start: startDate.toISOString().split('T')[0],
