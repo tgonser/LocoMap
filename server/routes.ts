@@ -485,23 +485,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
 
-      // Start background geocoding for user's new data (restored analytics pipeline)
-      geocodeUserLocationPoints(userId, dataset.id).catch(error => {
-        console.error(`Background geocoding failed for user ${userId}:`, error);
-      });
-
-      // Start daily centroid computation and geocoding (analytics pipeline)
-      setTimeout(async () => {
-        try {
-          const centroidsCreated = await storage.computeAndUpsertDailyCentroids(userId, dataset.id);
-          console.log(`Computed ${centroidsCreated} daily centroids for user ${userId}, dataset ${dataset.id}`);
-          
-          // Geocode daily centroids after computation
-          await geocodeDailyCentroids(userId);
-        } catch (error) {
-          console.error(`Daily centroid pipeline failed for user ${userId}:`, error);
-        }
-      }, 5000); // Delay to let initial geocoding start first
+      // NOTE: All geocoding and analytics processing is now handled by the POST /api/analytics/run endpoint
+      // Upload only stores raw data - no processing
 
       console.log(`Successfully imported ${savedPoints.length} points for user ${userId}`);
 
@@ -633,7 +618,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // CRITICAL FIX: Backfill daily centroids for all user datasets
+  // FIXED: Backfill daily centroids - NO GEOCODING (violates user requirements)
   app.post("/api/analytics/backfill-centroids", isAuthenticated, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
@@ -642,15 +627,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`🔄 Starting centroid backfill for user ${userId}`);
       const centroidsCreated = await storage.computeDailyCentroidsForAllDatasets(userId);
       
-      // After creating centroids, trigger geocoding pipeline
-      setTimeout(async () => {
-        console.log(`🌍 Starting geocoding pipeline for user ${userId} after backfill`);
-        await geocodeDailyCentroids(userId);
-      }, 1000);
+      // NOTE: No geocoding triggered - user must use analytics/run with date range
       
       res.json({ 
         success: true, 
-        message: `Backfilled ${centroidsCreated} daily centroids and started geocoding pipeline`,
+        message: `Backfilled ${centroidsCreated} daily centroids. Use analytics/run with date range for geocoding.`,
         centroidsCreated 
       });
     } catch (error) {
@@ -659,37 +640,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // CRITICAL FIX: Manual geocoding queue drainage
-  app.post("/api/analytics/process-geocoding-queue", isAuthenticated, async (req, res) => {
+  // FIXED: Manual geocoding queue status - NO PROCESSING (violates user requirements)
+  app.get("/api/analytics/geocoding-queue-status", isAuthenticated, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
       
       const ungeocodedCount = await storage.getUngeocodedCentroidsCount(userId);
       
-      if (ungeocodedCount === 0) {
-        res.json({ 
-          success: true, 
-          message: "Geocoding queue is already empty",
-          ungeocodedCount: 0 
-        });
-        return;
-      }
-      
-      // Start geocoding process in background
-      setTimeout(async () => {
-        console.log(`🌍 Starting manual geocoding queue processing for user ${userId}`);
-        await geocodeDailyCentroids(userId);
-      }, 1000);
-      
       res.json({ 
         success: true, 
-        message: `Started processing ${ungeocodedCount} ungeocoded centroids`,
+        message: "Use analytics/run with date range to process geocoding",
         ungeocodedCount 
       });
     } catch (error) {
-      console.error("Error processing geocoding queue:", error);
-      res.status(500).json({ error: "Failed to process geocoding queue" });
+      console.error("Error checking geocoding queue:", error);
+      res.status(500).json({ error: "Failed to check geocoding queue" });
     }
   });
 

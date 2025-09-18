@@ -27,11 +27,34 @@ export default function LocationHistoryApp() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Skip data loading on component mount - let user choose their view
+  // Check for existing data on component mount
   useEffect(() => {
-    // Simply finish loading without fetching any data
-    // The user can navigate to analytics immediately or choose to load map data
-    setIsLoading(false);
+    const checkExistingData = async () => {
+      try {
+        const response = await fetch('/api/datasets');
+        if (response.ok) {
+          const datasets = await response.json();
+          if (datasets && datasets.length > 0) {
+            // User has existing data - default to analytics view
+            setViewMode('analytics');
+          } else {
+            // No data exists - show upload view
+            setViewMode('upload');
+          }
+        } else {
+          // API error or no auth - default to upload
+          setViewMode('upload');
+        }
+      } catch (error) {
+        console.error('Error checking existing data:', error);
+        // On error, default to upload view
+        setViewMode('upload');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    checkExistingData();
   }, []);
 
   // Load full location data (only called when needed for map/timeline views)
