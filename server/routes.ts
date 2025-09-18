@@ -6,6 +6,79 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { parseGoogleLocationHistory, validateGoogleLocationHistory } from "./googleLocationParser";
 import { batchReverseGeocode, deduplicateCoordinates } from "./geocodingService";
+import OpenAI from "openai";
+
+// OpenAI integration for analyzing and curating interesting places
+// the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// Function to analyze and curate interesting places using OpenAI
+async function curateInterestingPlaces(locations: any[]): Promise<any[]> {
+  try {
+    const locationData = locations.map(loc => ({
+      city: loc.city,
+      state: loc.state,
+      country: loc.country,
+      lat: loc.lat,
+      lng: loc.lng,
+      visitDays: loc.visitDays,
+      address: loc.address
+    }));
+
+    const prompt = `Analyze the following location data from a person's travel history and select 8-12 of the most interesting places. Focus on:
+
+1. Landmarks and famous tourist destinations
+2. Beautiful natural areas (national parks, scenic locations)
+3. Major cities with cultural significance
+4. Unique or unusual places
+5. Places with diverse geographical representation
+
+Location data:
+${JSON.stringify(locationData, null, 2)}
+
+Select the most interesting and diverse places, ensuring good geographical spread. For each selected place, provide:
+- The exact city, state (if applicable), country from the data
+- Latitude and longitude from the data
+- A brief reason why this place is interesting (1-2 sentences)
+- Visit information from the data
+
+Return ONLY a JSON object with this structure:
+{
+  "curatedPlaces": [
+    {
+      "city": "exact city from data",
+      "state": "exact state from data if exists",
+      "country": "exact country from data", 
+      "lat": latitude_from_data,
+      "lng": longitude_from_data,
+      "visitDays": visit_days_from_data,
+      "reason": "why this place is interesting",
+      "mapsLink": "https://www.google.com/maps/search/{lat},{lng}"
+    }
+  ]
+}`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-5",
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+    });
+
+    const result = JSON.parse(response.choices[0].message.content || '{"curatedPlaces": []}');
+    
+    // Ensure Google Maps links are properly formatted
+    if (result.curatedPlaces) {
+      result.curatedPlaces.forEach((place: any) => {
+        place.mapsLink = `https://www.google.com/maps/search/${place.lat},${place.lng}`;
+      });
+    }
+
+    return result.curatedPlaces || [];
+  } catch (error) {
+    console.error('OpenAI curation error:', error);
+    throw new Error('Failed to curate interesting places');
+  }
+}
 
 // Configure multer for file uploads
 const upload = multer({ 
@@ -767,6 +840,152 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error in date-range geocoding endpoint:", error);
       res.status(500).json({ error: "Failed to process date-range geocoding request" });
+    }
+  });
+
+  // Analytics endpoint: Geocoded places analysis with OpenAI curation
+  app.post('/api/analytics/geocoded-places', isAuthenticated, async (req, res) => {
+    try {
+      const user = getAuthenticatedUser(req);
+      const userId = user.claims.sub;
+      
+      const { startDate: startDateStr, endDate: endDateStr } = req.body;
+      
+      // Validate input
+      if (!startDateStr || !endDateStr) {
+        return res.status(400).json({ 
+          error: "Missing required fields: startDate and endDate" 
+        });
+      }
+
+      const startDate = new Date(startDateStr);
+      const endDate = new Date(endDateStr);
+
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        return res.status(400).json({ 
+          error: "Invalid date format. Use ISO date strings (YYYY-MM-DD)" 
+        });
+      }
+
+      if (startDate >= endDate) {
+        return res.status(400).json({ 
+          error: "startDate must be before endDate" 
+        });
+      }
+
+      // Get geocoded daily centroids within the date range
+      const geocodedCentroids = await storage.getGeocodedDailyCentroidsByDateRange(userId, startDate, endDate);
+
+      if (geocodedCentroids.length === 0) {
+        return res.json({
+          totalDays: 0,
+          geocodedDays: 0,
+          countries: {},
+          states: {},
+          cities: {},
+          curatedPlaces: [],
+          dateRange: {
+            start: startDate.toISOString().split('T')[0],
+            end: endDate.toISOString().split('T')[0]
+          }
+        });
+      }
+
+      // Group locations by city/state/country and calculate visit statistics
+      const locationStats = {
+        countries: new Map<string, number>(),
+        states: new Map<string, number>(),
+        cities: new Map<string, number>(),
+        locations: [] as any[]
+      };
+
+      // Process each centroid and aggregate data
+      geocodedCentroids.forEach(centroid => {
+        // Count countries
+        if (centroid.country) {
+          locationStats.countries.set(
+            centroid.country, 
+            (locationStats.countries.get(centroid.country) || 0) + 1
+          );
+        }
+
+        // Count US states
+        if (centroid.country === 'United States' && centroid.state) {
+          locationStats.states.set(
+            centroid.state,
+            (locationStats.states.get(centroid.state) || 0) + 1
+          );
+        }
+
+        // Count cities
+        if (centroid.city) {
+          const cityKey = `${centroid.city}, ${centroid.state || centroid.country}`;
+          locationStats.cities.set(
+            cityKey,
+            (locationStats.cities.get(cityKey) || 0) + 1
+          );
+        }
+
+        // Prepare location data for OpenAI analysis
+        locationStats.locations.push({
+          city: centroid.city,
+          state: centroid.state,
+          country: centroid.country,
+          lat: centroid.lat,
+          lng: centroid.lng,
+          address: centroid.address,
+          visitDays: 1, // Each centroid represents one day
+          date: centroid.date
+        });
+      });
+
+      // Convert Maps to objects for JSON response
+      const countriesObj = Object.fromEntries(locationStats.countries);
+      const statesObj = Object.fromEntries(locationStats.states);
+      const citiesObj = Object.fromEntries(locationStats.cities);
+
+      // Use OpenAI to curate interesting places
+      let curatedPlaces: any[] = [];
+      try {
+        curatedPlaces = await curateInterestingPlaces(locationStats.locations);
+      } catch (openaiError: any) {
+        console.error('OpenAI curation failed:', openaiError);
+        // Return base data even if OpenAI fails
+        return res.status(200).json({
+          totalDays: geocodedCentroids.length,
+          geocodedDays: geocodedCentroids.length,
+          countries: countriesObj,
+          states: statesObj, 
+          cities: citiesObj,
+          curatedPlaces: [],
+          openaiError: 'Failed to curate places with AI analysis',
+          dateRange: {
+            start: startDate.toISOString().split('T')[0],
+            end: endDate.toISOString().split('T')[0]
+          }
+        });
+      }
+
+      // Return complete analytics response
+      res.json({
+        totalDays: geocodedCentroids.length,
+        geocodedDays: geocodedCentroids.length,
+        countries: countriesObj,
+        states: statesObj,
+        cities: citiesObj,
+        curatedPlaces,
+        dateRange: {
+          start: startDate.toISOString().split('T')[0],
+          end: endDate.toISOString().split('T')[0]
+        }
+      });
+
+    } catch (error) {
+      console.error("Error in geocoded places analytics endpoint:", error);
+      res.status(500).json({ 
+        error: "Failed to process geocoded places analytics request",
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 

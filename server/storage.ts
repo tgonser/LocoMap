@@ -72,6 +72,9 @@ export interface IStorage {
     count: number;
     dateRange: string;
   }>>;
+  
+  // New method for analytics endpoint
+  getGeocodedDailyCentroidsByDateRange(userId: string, startDate: Date, endDate: Date): Promise<DailyGeocode[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -596,6 +599,22 @@ export class DatabaseStorage implements IStorage {
       dateRange: `${monthNames[result.month - 1]} ${result.year}`
     }));
   }
+
+  // Get geocoded daily centroids by date range for analytics
+  async getGeocodedDailyCentroidsByDateRange(userId: string, startDate: Date, endDate: Date): Promise<DailyGeocode[]> {
+    return await db
+      .select()
+      .from(dailyGeocodes)
+      .where(and(
+        eq(dailyGeocodes.userId, userId),
+        eq(dailyGeocodes.geocoded, true),
+        sql`${dailyGeocodes.date} >= ${startDate}`,
+        sql`${dailyGeocodes.date} <= ${endDate}`,
+        // Ensure we have meaningful location data
+        sql`${dailyGeocodes.city} IS NOT NULL OR ${dailyGeocodes.country} IS NOT NULL`
+      ))
+      .orderBy(desc(dailyGeocodes.date));
+  }
 }
 
 // Legacy in-memory storage for comparison (not used with authentication)
@@ -740,6 +759,10 @@ export class MemStorage implements IStorage {
     count: number;
     dateRange: string;
   }>> {
+    return [];
+  }
+
+  async getGeocodedDailyCentroidsByDateRange(userId: string, startDate: Date, endDate: Date): Promise<DailyGeocode[]> {
     return [];
   }
 }
