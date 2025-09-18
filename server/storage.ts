@@ -616,42 +616,39 @@ export class DatabaseStorage implements IStorage {
     
     console.log(`DEBUG: About to execute query with startDateStr='${startDateStr}' and endDateStr='${endDateStr}'`);
 
-    const result = await db
-      .select()
-      .from(dailyGeocodes)
-      .where(and(
-        eq(dailyGeocodes.userId, userId),
-        eq(dailyGeocodes.geocoded, true),
-        // Use direct SQL date comparison that works properly
-        sql`${dailyGeocodes.date} >= ${startDateStr}::date`,
-        sql`${dailyGeocodes.date} <= ${endDateStr}::date`,
-        // Ensure we have meaningful location data
-        sql`${dailyGeocodes.city} IS NOT NULL OR ${dailyGeocodes.country} IS NOT NULL`
-      ))
-      .orderBy(desc(dailyGeocodes.date));
+    // Use completely raw SQL since Drizzle date filtering isn't working
+    const result = await db.execute(sql`
+      SELECT * FROM daily_geocodes 
+      WHERE user_id = ${userId} 
+      AND geocoded = true 
+      AND date >= ${startDateStr}::date 
+      AND date <= ${endDateStr}::date
+      AND (city IS NOT NULL OR country IS NOT NULL)
+      ORDER BY date DESC
+    `);
 
-    console.log(`DEBUG: Query returned ${result.length} geocoded centroids for date range ${startDateStr} to ${endDateStr}`);
-    if (result.length > 0) {
-      console.log(`DEBUG: First result date: ${result[0].date}, Last result date: ${result[result.length - 1].date}`);
-      console.log(`DEBUG: Sample of first 3 result dates: ${result.slice(0, 3).map(r => r.date).join(', ')}`);
-    }
-    
-    // Let's also test the expected count with raw SQL
-    try {
-      const testQuery = await db.execute(sql`
-        SELECT COUNT(*) as count 
-        FROM daily_geocodes 
-        WHERE user_id = ${userId} 
-        AND geocoded = true 
-        AND date >= ${startDateStr}::date 
-        AND date <= ${endDateStr}::date
-      `);
-      console.log(`DEBUG: Expected count from raw SQL: ${testQuery.rows[0]?.count || 0}`);
-    } catch (err) {
-      console.log(`DEBUG: Raw SQL test failed:`, err);
+    // Convert raw SQL results to proper format
+    const formattedResults = result.rows.map(row => ({
+      id: row.id,
+      userId: row.user_id,
+      datasetId: row.dataset_id,
+      date: new Date(row.date as string),
+      lat: row.lat,
+      lng: row.lng,
+      city: row.city,
+      state: row.state,
+      country: row.country,
+      address: row.address,
+      geocoded: row.geocoded
+    })) as DailyGeocode[];
+
+    console.log(`DEBUG: Query returned ${formattedResults.length} geocoded centroids for date range ${startDateStr} to ${endDateStr}`);
+    if (formattedResults.length > 0) {
+      console.log(`DEBUG: First result date: ${formattedResults[0].date}, Last result date: ${formattedResults[formattedResults.length - 1].date}`);
+      console.log(`DEBUG: Sample of first 3 result dates: ${formattedResults.slice(0, 3).map(r => r.date).join(', ')}`);
     }
 
-    return result;
+    return formattedResults;
   }
 }
 
