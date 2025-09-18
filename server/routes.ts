@@ -946,24 +946,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Use OpenAI to curate interesting places
       let curatedPlaces: any[] = [];
+      let aiCurationStatus = 'success';
       try {
         curatedPlaces = await curateInterestingPlaces(locationStats.locations);
       } catch (openaiError: any) {
         console.error('OpenAI curation failed:', openaiError);
-        // Return base data even if OpenAI fails
-        return res.status(200).json({
-          totalDays: geocodedCentroids.length,
-          geocodedDays: geocodedCentroids.length,
-          countries: countriesObj,
-          states: statesObj, 
-          cities: citiesObj,
-          curatedPlaces: [],
-          openaiError: 'Failed to curate places with AI analysis',
-          dateRange: {
-            start: startDate.toISOString().split('T')[0],
-            end: endDate.toISOString().split('T')[0]
+        aiCurationStatus = openaiError.code === 'insufficient_quota' ? 'quota_exceeded' : 'error';
+        
+        // Fallback: Create basic interesting places from unique cities with most visits
+        const cityVisits = new Map<string, { count: number, location: any }>();
+        
+        locationStats.locations.forEach(loc => {
+          if (loc.city && loc.country) {
+            const key = `${loc.city}, ${loc.state || loc.country}`;
+            if (!cityVisits.has(key)) {
+              cityVisits.set(key, { count: 0, location: loc });
+            }
+            cityVisits.get(key)!.count++;
           }
         });
+
+        // Get top 10 most visited unique places as fallback
+        const sortedCities = Array.from(cityVisits.entries())
+          .sort(([,a], [,b]) => b.count - a.count)
+          .slice(0, 10);
+
+        curatedPlaces = sortedCities.map(([cityName, data]) => ({
+          city: data.location.city,
+          state: data.location.state,
+          country: data.location.country,
+          visitDays: data.count,
+          reason: `Visited ${data.count} time${data.count !== 1 ? 's' : ''} - ${cityName}`,
+          latitude: data.location.lat,
+          longitude: data.location.lng,
+          googleMapsUrl: `https://www.google.com/maps/search/${data.location.lat},${data.location.lng}`
+        }));
       }
 
       // Return complete analytics response
@@ -974,6 +991,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         states: statesObj,
         cities: citiesObj,
         curatedPlaces,
+        aiCurationStatus,
         dateRange: {
           start: startDate.toISOString().split('T')[0],
           end: endDate.toISOString().split('T')[0]
