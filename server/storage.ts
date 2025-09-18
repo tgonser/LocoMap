@@ -610,24 +610,20 @@ export class DatabaseStorage implements IStorage {
       endDateFormatted: endDate.toISOString().split('T')[0]
     });
 
-    // Convert dates to YYYY-MM-DD format for proper date comparison
-    const startDateStr = startDate.toISOString().split('T')[0];
-    const endDateStr = endDate.toISOString().split('T')[0];
-
     const result = await db
       .select()
       .from(dailyGeocodes)
       .where(and(
         eq(dailyGeocodes.userId, userId),
         eq(dailyGeocodes.geocoded, true),
-        sql`${dailyGeocodes.date} >= ${startDateStr}`,
-        sql`${dailyGeocodes.date} <= ${endDateStr}`,
+        sql`${dailyGeocodes.date} >= ${startDate}`,
+        sql`${dailyGeocodes.date} <= ${endDate}`,
         // Ensure we have meaningful location data
         sql`${dailyGeocodes.city} IS NOT NULL OR ${dailyGeocodes.country} IS NOT NULL`
       ))
       .orderBy(desc(dailyGeocodes.date));
 
-    console.log(`DEBUG: Query returned ${result.length} geocoded centroids for date range ${startDateStr} to ${endDateStr}`);
+    console.log(`DEBUG: Query returned ${result.length} geocoded centroids for date range ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
     if (result.length > 0) {
       console.log(`DEBUG: First result date: ${result[0].date}, Last result date: ${result[result.length - 1].date}`);
     }

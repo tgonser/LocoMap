@@ -27,57 +27,48 @@ export default function LocationHistoryApp() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Check for existing user data on component mount
+  // Skip data loading on component mount - let user choose their view
   useEffect(() => {
-    const loadExistingData = async () => {
-      try {
-        const response = await fetch('/api/locations');
-        if (response.ok) {
-          const locations = await response.json();
-          
-          if (locations.length > 0) {
-            // Convert timestamps to Date objects
-            const processedData = locations.map((loc: any) => ({
-              ...loc,
-              timestamp: new Date(loc.timestamp)
-            }));
-            
-            setLocationData(processedData);
-            setViewMode('map'); // Switch to map view since they have data
-            
-            // Set selected date to the most recent date with data
-            const dates = processedData.map((loc: LocationData) => loc.timestamp.getTime());
-            const mostRecentDate = new Date(Math.max(...dates));
-            setSelectedDate(mostRecentDate);
-          }
-        }
-      } catch (error) {
-        console.error('Error loading existing location data:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadExistingData();
+    // Simply finish loading without fetching any data
+    // The user can navigate to analytics immediately or choose to load map data
+    setIsLoading(false);
   }, []);
+
+  // Load full location data (only called when needed for map/timeline views)
+  const loadFullLocationData = async () => {
+    try {
+      const response = await fetch('/api/locations');
+      if (response.ok) {
+        const locations = await response.json();
+        
+        // Convert timestamps to Date objects
+        const processedData = locations.map((loc: any) => ({
+          ...loc,
+          timestamp: new Date(loc.timestamp)
+        }));
+        
+        setLocationData(processedData);
+        
+        // Set selected date to the most recent date with data
+        if (processedData.length > 0) {
+          const dates = processedData.map((loc: LocationData) => loc.timestamp.getTime());
+          const mostRecentDate = new Date(Math.max(...dates));
+          setSelectedDate(mostRecentDate);
+        }
+        
+        console.log('Location data loaded:', processedData.length, 'points');
+      }
+    } catch (error) {
+      console.error('Error loading location data:', error);
+    }
+  };
 
   const handleFileUpload = async (result: any) => {
     setIsProcessing(true);
     
     try {
-      // Fetch the uploaded location data
-      const response = await fetch('/api/locations');
-      const locations = await response.json();
-      
-      // Convert timestamps to Date objects
-      const processedData = locations.map((loc: any) => ({
-        ...loc,
-        timestamp: new Date(loc.timestamp)
-      }));
-      
-      setLocationData(processedData);
+      await loadFullLocationData();
       setViewMode('map');
-      console.log('Location data loaded:', processedData.length, 'points');
     } catch (error) {
       console.error('Error loading location data:', error);
     } finally {
@@ -145,7 +136,7 @@ export default function LocationHistoryApp() {
       key={mode}
       variant={viewMode === mode ? "default" : "ghost"}
       size="sm"
-      onClick={() => setViewMode(mode)}
+      onClick={() => handleViewModeChange(mode)}
       className="gap-2"
       data-testid={`button-view-${mode}`}
     >
@@ -153,6 +144,15 @@ export default function LocationHistoryApp() {
       <span className="hidden sm:inline">{label}</span>
     </Button>
   );
+
+  // Handle view mode changes and load data only when needed
+  const handleViewModeChange = async (mode: ViewMode) => {
+    // If switching to map view and we don't have location data yet, load it
+    if (mode === 'map' && locationData.length === 0) {
+      await loadFullLocationData();
+    }
+    setViewMode(mode);
+  };
 
   return (
     <div className="h-full bg-background">
