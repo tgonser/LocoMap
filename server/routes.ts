@@ -7,6 +7,7 @@ import { setupAuth, isAuthenticated } from "./replitAuth";
 import { parseGoogleLocationHistory, validateGoogleLocationHistory } from "./googleLocationParser";
 import { batchReverseGeocode, deduplicateCoordinates } from "./geocodingService";
 import OpenAI from "openai";
+import { z } from "zod";
 
 // OpenAI integration for analyzing and curating interesting places
 // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
@@ -881,23 +882,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = getAuthenticatedUser(req);
       const userId = user.claims.sub;
       
-      const { startDate: startDateStr, endDate: endDateStr } = req.body;
+      // Add proper date validation using zod for YYYY-MM-DD format
+      const dateRangeSchema = z.object({
+        startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Start date must be in YYYY-MM-DD format"),
+        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "End date must be in YYYY-MM-DD format")
+      });
       
-      // Validate input
-      if (!startDateStr || !endDateStr) {
+      let validatedInput;
+      try {
+        validatedInput = dateRangeSchema.parse(req.body);
+      } catch (validationError) {
+        console.log(`❌ Date validation failed for user ${userId}:`, validationError);
         return res.status(400).json({ 
-          error: "Missing required fields: startDate and endDate" 
+          error: "Invalid date format. Both startDate and endDate must be in YYYY-MM-DD format",
+          details: validationError instanceof z.ZodError ? validationError.errors : undefined
         });
       }
-
-      const startDate = new Date(startDateStr);
-      const endDate = new Date(endDateStr);
-
-      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-        return res.status(400).json({ 
-          error: "Invalid date format. Use ISO date strings (YYYY-MM-DD)" 
-        });
-      }
+      
+      const { startDate: startDateStr, endDate: endDateStr } = validatedInput;
+      
+      // Fix UTC timezone conversion with proper format
+      const startDate = new Date(`${startDateStr}T00:00:00.000Z`);
+      const endDate = new Date(`${endDateStr}T23:59:59.999Z`);
+      
+      // Add debug logging to verify correct date processing
+      console.log(`🔍 Analytics date range processing for user ${userId}:`, {
+        inputStartDate: startDateStr,
+        inputEndDate: endDateStr,
+        parsedStartDate: startDate.toISOString(),
+        parsedEndDate: endDate.toISOString(),
+        startDateFormatted: startDate.toISOString().split('T')[0],
+        endDateFormatted: endDate.toISOString().split('T')[0],
+        expectedDays: Math.ceil((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000))
+      });
 
       if (startDate >= endDate) {
         return res.status(400).json({ 
@@ -907,10 +924,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get geocoded daily centroids within the date range
       const geocodedCentroids = await storage.getGeocodedDailyCentroidsByDateRange(userId, startDate, endDate);
+      
+      // Calculate expected total days in the date range
+      const totalDaysInRange = Math.ceil((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+      
+      console.log(`📊 Analytics results for user ${userId}:`, {
+        dateRangeRequested: `${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`,
+        totalDaysInRange,
+        geocodedCentroidsFound: geocodedCentroids.length,
+        geocodingCoverage: `${((geocodedCentroids.length / totalDaysInRange) * 100).toFixed(1)}%`,
+        dateRangeSpan: `${totalDaysInRange} days`
+      });
 
       if (geocodedCentroids.length === 0) {
+        console.log(`⚠️  No geocoded centroids found for user ${userId} in date range ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
         return res.json({
-          totalDays: 0,
+          totalDays: totalDaysInRange,
           geocodedDays: 0,
           countries: {},
           states: {},
@@ -1015,9 +1044,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }));
       }
 
-      // Return complete analytics response
-      res.json({
-        totalDays: geocodedCentroids.length,
+      // Return complete analytics response with corrected totalDays calculation
+      const finalResponse = {
+        totalDays: totalDaysInRange, // Fixed: Use expected days in range, not geocoded count
         geocodedDays: geocodedCentroids.length,
         countries: countriesObj,
         states: statesObj,
@@ -1028,7 +1057,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           start: startDate.toISOString().split('T')[0],
           end: endDate.toISOString().split('T')[0]
         }
+      };
+      
+      console.log(`✅ Analytics response for user ${userId}:`, {
+        requestedRange: `${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`,
+        totalDays: finalResponse.totalDays,
+        geocodedDays: finalResponse.geocodedDays,
+        countriesCount: Object.keys(finalResponse.countries).length,
+        statesCount: Object.keys(finalResponse.states).length,
+        citiesCount: Object.keys(finalResponse.cities).length,
+        curatedPlacesCount: finalResponse.curatedPlaces.length
       });
+      
+      res.json(finalResponse);
 
     } catch (error) {
       console.error("Error in geocoded places analytics endpoint:", error);
