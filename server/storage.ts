@@ -602,17 +602,19 @@ export class DatabaseStorage implements IStorage {
 
   // Get geocoded daily centroids by date range for analytics
   async getGeocodedDailyCentroidsByDateRange(userId: string, startDate: Date, endDate: Date): Promise<DailyGeocode[]> {
+    // Use proper PostgreSQL date comparison - convert dates to string format for comparison
+    const startDateStr = startDate.toISOString().split('T')[0]; // Get YYYY-MM-DD format
+    const endDateStr = endDate.toISOString().split('T')[0]; // Get YYYY-MM-DD format
+
     console.log(`DEBUG: getGeocodedDailyCentroidsByDateRange called with:`, {
       userId,
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString(),
-      startDateFormatted: startDate.toISOString().split('T')[0],
-      endDateFormatted: endDate.toISOString().split('T')[0]
+      startDateFormatted: startDateStr,
+      endDateFormatted: endDateStr
     });
-
-    // Use proper PostgreSQL date comparison - convert dates to string format for comparison
-    const startDateStr = startDate.toISOString().split('T')[0]; // Get YYYY-MM-DD format
-    const endDateStr = endDate.toISOString().split('T')[0]; // Get YYYY-MM-DD format
+    
+    console.log(`DEBUG: About to execute query with startDateStr='${startDateStr}' and endDateStr='${endDateStr}'`);
 
     const result = await db
       .select()
@@ -620,9 +622,9 @@ export class DatabaseStorage implements IStorage {
       .where(and(
         eq(dailyGeocodes.userId, userId),
         eq(dailyGeocodes.geocoded, true),
-        // Use proper date comparison with timezone handling
-        gte(dailyGeocodes.date, new Date(startDateStr + 'T00:00:00.000Z')),
-        lte(dailyGeocodes.date, new Date(endDateStr + 'T23:59:59.999Z')),
+        // Use direct SQL date comparison that works properly
+        sql`${dailyGeocodes.date} >= ${startDateStr}::date`,
+        sql`${dailyGeocodes.date} <= ${endDateStr}::date`,
         // Ensure we have meaningful location data
         sql`${dailyGeocodes.city} IS NOT NULL OR ${dailyGeocodes.country} IS NOT NULL`
       ))
@@ -631,6 +633,22 @@ export class DatabaseStorage implements IStorage {
     console.log(`DEBUG: Query returned ${result.length} geocoded centroids for date range ${startDateStr} to ${endDateStr}`);
     if (result.length > 0) {
       console.log(`DEBUG: First result date: ${result[0].date}, Last result date: ${result[result.length - 1].date}`);
+      console.log(`DEBUG: Sample of first 3 result dates: ${result.slice(0, 3).map(r => r.date).join(', ')}`);
+    }
+    
+    // Let's also test the expected count with raw SQL
+    try {
+      const testQuery = await db.execute(sql`
+        SELECT COUNT(*) as count 
+        FROM daily_geocodes 
+        WHERE user_id = ${userId} 
+        AND geocoded = true 
+        AND date >= ${startDateStr}::date 
+        AND date <= ${endDateStr}::date
+      `);
+      console.log(`DEBUG: Expected count from raw SQL: ${testQuery.rows[0]?.count || 0}`);
+    } catch (err) {
+      console.log(`DEBUG: Raw SQL test failed:`, err);
     }
 
     return result;
