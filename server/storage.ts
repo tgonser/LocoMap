@@ -610,14 +610,18 @@ export class DatabaseStorage implements IStorage {
       endDateFormatted: endDate.toISOString().split('T')[0]
     });
 
+    // Convert JavaScript Dates to proper SQL timestamp format for PostgreSQL
+    const startDateStr = startDate.toISOString();
+    const endDateStr = endDate.toISOString();
+
     const result = await db
       .select()
       .from(dailyGeocodes)
       .where(and(
         eq(dailyGeocodes.userId, userId),
         eq(dailyGeocodes.geocoded, true),
-        sql`${dailyGeocodes.date} >= ${startDate}`,
-        sql`${dailyGeocodes.date} <= ${endDate}`,
+        sql`${dailyGeocodes.date} >= ${startDateStr}`,
+        sql`${dailyGeocodes.date} <= ${endDateStr}`,
         // Ensure we have meaningful location data
         sql`${dailyGeocodes.city} IS NOT NULL OR ${dailyGeocodes.country} IS NOT NULL`
       ))
