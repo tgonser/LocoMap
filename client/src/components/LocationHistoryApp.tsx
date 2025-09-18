@@ -117,7 +117,11 @@ export default function LocationHistoryApp() {
   const dateRange = validLocationData.length > 0 ? {
     start: new Date(Math.min(...validLocationData.map(l => l.timestamp.getTime()))),
     end: new Date(Math.max(...validLocationData.map(l => l.timestamp.getTime())))
-  } : { start: new Date('2024-01-01'), end: new Date('2024-12-31') };
+  } : { 
+    // Use reasonable fallback dates instead of future dates
+    start: new Date('2024-02-01'), 
+    end: new Date('2024-03-31') 
+  };
 
   const activities = validLocationData.reduce((acc, loc) => {
     if (loc.activity) {
@@ -222,7 +226,14 @@ export default function LocationHistoryApp() {
               
               {viewMode === 'analytics' && (
                 <LocationSummary
-                  locations={[]}
+                  locations={validLocationData.length > 0 ? validLocationData.map(location => ({
+                    city: 'Unknown City', // Will be filled by geocoding
+                    state: 'Unknown State',
+                    country: 'Unknown Country', 
+                    visitCount: 1,
+                    firstVisit: location.timestamp,
+                    lastVisit: location.timestamp
+                  })) : []}
                   dateRange={dateRange}
                   onExport={() => {
                     // Export location summary data
