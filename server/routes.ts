@@ -876,6 +876,249 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Orchestrated analytics endpoint: Automates the entire centroids → geocoding → analytics pipeline
+  app.post('/api/analytics/run', isAuthenticated, async (req, res) => {
+    try {
+      const { claims } = getAuthenticatedUser(req);
+      const userId = claims.sub;
+
+      // Input validation with zod
+      const dateRangeSchema = z.object({
+        startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Start date must be in YYYY-MM-DD format"),
+        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "End date must be in YYYY-MM-DD format")
+      });
+
+      let validatedInput;
+      try {
+        validatedInput = dateRangeSchema.parse(req.body);
+      } catch (validationError) {
+        console.log(`❌ Date validation failed for user ${userId}:`, validationError);
+        return res.status(400).json({ 
+          error: "Invalid date format. Both startDate and endDate must be in YYYY-MM-DD format",
+          details: validationError instanceof z.ZodError ? validationError.errors : undefined
+        });
+      }
+
+      const { startDate: startDateStr, endDate: endDateStr } = validatedInput;
+      
+      // Convert to proper Date objects
+      const startDate = new Date(`${startDateStr}T00:00:00.000Z`);
+      const endDate = new Date(`${endDateStr}T23:59:59.999Z`);
+
+      console.log(`🚀 Starting orchestrated analytics pipeline for user ${userId}:`, {
+        dateRange: `${startDateStr} to ${endDateStr}`,
+        step: "1/4 - Input validation complete"
+      });
+
+      if (startDate >= endDate) {
+        return res.status(400).json({ 
+          error: "startDate must be before endDate" 
+        });
+      }
+
+      // Step 1: Ensure centroids exist for the date range
+      console.log(`📊 Step 2/4 - Ensuring daily centroids exist for date range`);
+      let centroidsCreated = 0;
+      
+      try {
+        // Check if we need to create centroids for any datasets
+        const datasets = await storage.getUserLocationDatasets(userId);
+        
+        if (datasets.length === 0) {
+          return res.status(400).json({
+            error: "No location datasets found. Please upload location data first."
+          });
+        }
+
+        // Create centroids for all datasets (this will handle duplicates automatically)
+        centroidsCreated = await storage.computeDailyCentroidsForAllDatasets(userId);
+        console.log(`✅ Centroids ensured: ${centroidsCreated} centroids processed`);
+      } catch (error) {
+        console.error(`❌ Failed to ensure centroids for user ${userId}:`, error);
+        return res.status(500).json({
+          error: "Failed to compute daily centroids",
+          details: error instanceof Error ? error.message : "Unknown error"
+        });
+      }
+
+      // Step 2: Geocode missing locations in the date range
+      console.log(`🌍 Step 3/4 - Geocoding missing locations in date range`);
+      
+      let ungeocodedCount = 0;
+      try {
+        ungeocodedCount = await storage.getUngeocodedCentroidsCountByDateRange(userId, startDate, endDate);
+        
+        if (ungeocodedCount > 0) {
+          console.log(`Found ${ungeocodedCount} ungeocoded centroids in date range, starting geocoding...`);
+          
+          // Use the existing geocoding function for date ranges
+          await geocodeDailyCentroidsByDateRange(userId, startDate, endDate);
+          console.log(`✅ Geocoding completed for date range`);
+        } else {
+          console.log(`✅ No geocoding needed - all centroids in date range already geocoded`);
+        }
+      } catch (error) {
+        console.error(`❌ Geocoding failed for user ${userId}:`, error);
+        return res.status(500).json({
+          error: "Failed to geocode locations",
+          details: error instanceof Error ? error.message : "Unknown error"
+        });
+      }
+
+      // Step 3: Generate analytics using the existing geocoded-places logic
+      console.log(`📈 Step 4/4 - Generating analytics with curated places`);
+      
+      try {
+        // Get geocoded daily centroids within the date range
+        const geocodedCentroids = await storage.getGeocodedDailyCentroidsByDateRange(userId, startDate, endDate);
+        
+        // Calculate expected total days in the date range
+        const totalDaysInRange = Math.ceil((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+        
+        console.log(`📊 Analytics results for user ${userId}:`, {
+          dateRangeRequested: `${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`,
+          totalDaysInRange,
+          geocodedCentroidsFound: geocodedCentroids.length,
+          geocodingCoverage: `${((geocodedCentroids.length / totalDaysInRange) * 100).toFixed(1)}%`
+        });
+
+        if (geocodedCentroids.length === 0) {
+          console.log(`⚠️  No geocoded centroids found for user ${userId} in date range`);
+          return res.json({
+            success: true,
+            pipeline: {
+              centroidsCreated,
+              geocoded: 0,
+              analyticsGenerated: true
+            },
+            analytics: {
+              totalDays: totalDaysInRange,
+              geocodedDays: 0,
+              countries: {},
+              states: {},
+              cities: {},
+              curatedPlaces: [],
+              dateRange: {
+                start: startDate.toISOString().split('T')[0],
+                end: endDate.toISOString().split('T')[0]
+              }
+            }
+          });
+        }
+
+        // Group locations by city/state/country and calculate visit statistics
+        const locationStats = {
+          countries: new Map<string, number>(),
+          states: new Map<string, number>(),
+          cities: new Map<string, number>(),
+          locations: [] as any[]
+        };
+
+        geocodedCentroids.forEach(centroid => {
+          if (centroid.country) {
+            locationStats.countries.set(centroid.country, (locationStats.countries.get(centroid.country) || 0) + 1);
+          }
+          
+          if (centroid.state && centroid.country === 'United States') {
+            locationStats.states.set(centroid.state, (locationStats.states.get(centroid.state) || 0) + 1);
+          }
+          
+          if (centroid.city) {
+            const cityKey = centroid.state ? `${centroid.city}, ${centroid.state}` : `${centroid.city}, ${centroid.country}`;
+            locationStats.cities.set(cityKey, (locationStats.cities.get(cityKey) || 0) + 1);
+          }
+
+          // Collect location data for OpenAI curation
+          if (centroid.city && centroid.country) {
+            locationStats.locations.push({
+              city: centroid.city,
+              state: centroid.state,
+              country: centroid.country,
+              lat: centroid.lat,
+              lng: centroid.lng,
+              address: centroid.address,
+              visitDays: 1 // Each centroid represents one day
+            });
+          }
+        });
+
+        // Sort and format the statistics
+        const countriesArray = Array.from(locationStats.countries.entries())
+          .map(([country, days]) => ({ 
+            country, 
+            days, 
+            percent: Number(((days / geocodedCentroids.length) * 100).toFixed(1)) 
+          }))
+          .sort((a, b) => b.days - a.days);
+
+        const statesArray = Array.from(locationStats.states.entries())
+          .map(([state, days]) => ({ 
+            state, 
+            days, 
+            percent: Number(((days / geocodedCentroids.length) * 100).toFixed(1)) 
+          }))
+          .sort((a, b) => b.days - a.days);
+
+        const citiesArray = Array.from(locationStats.cities.entries())
+          .map(([city, days]) => ({ 
+            city, 
+            days, 
+            percent: Number(((days / geocodedCentroids.length) * 100).toFixed(1)) 
+          }))
+          .sort((a, b) => b.days - a.days);
+
+        // Generate curated places using OpenAI
+        let curatedPlaces: any[] = [];
+        try {
+          curatedPlaces = await curateInterestingPlaces(locationStats.locations);
+          console.log(`🎯 Generated ${curatedPlaces.length} curated places for user ${userId}`);
+        } catch (curationError) {
+          console.error(`⚠️  OpenAI curation failed for user ${userId}:`, curationError);
+          // Continue without curated places rather than failing the entire request
+        }
+
+        const analyticsResult = {
+          success: true,
+          pipeline: {
+            centroidsCreated,
+            geocoded: ungeocodedCount || 0,
+            analyticsGenerated: true
+          },
+          analytics: {
+            totalDays: totalDaysInRange,
+            geocodedDays: geocodedCentroids.length,
+            geocodingCoverage: Number(((geocodedCentroids.length / totalDaysInRange) * 100).toFixed(1)),
+            countries: countriesArray,
+            states: statesArray,
+            cities: citiesArray,
+            curatedPlaces,
+            dateRange: {
+              start: startDate.toISOString().split('T')[0],
+              end: endDate.toISOString().split('T')[0]
+            }
+          }
+        };
+
+        console.log(`🎉 Orchestrated analytics pipeline completed successfully for user ${userId}`);
+        res.json(analyticsResult);
+
+      } catch (error) {
+        console.error(`❌ Analytics generation failed for user ${userId}:`, error);
+        return res.status(500).json({
+          error: "Failed to generate analytics",
+          details: error instanceof Error ? error.message : "Unknown error"
+        });
+      }
+
+    } catch (error) {
+      console.error(`💥 Orchestrated analytics pipeline failed:`, error);
+      res.status(500).json({ 
+        error: "Failed to run analytics pipeline",
+        details: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   // Analytics endpoint: Geocoded places analysis with OpenAI curation
   app.post('/api/analytics/geocoded-places', isAuthenticated, async (req, res) => {
     try {
