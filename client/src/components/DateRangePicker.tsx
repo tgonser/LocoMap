@@ -375,59 +375,6 @@ export default function DateRangePicker({
             </div>
           )}
 
-          {/* Quick Selection Buttons */}
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const today = new Date();
-                
-                // Get exactly 7 days by subtracting 6 days from today
-                let startDate = new Date(today);
-                startDate.setDate(today.getDate() - 6);
-                startDate = normalizeToStartOfDay(startDate);
-                
-                let endDate = normalizeToEndOfDay(today);
-                
-                // Clamp dates to min/max bounds if provided
-                if (minDate || maxDate) {
-                  startDate = clampDate(startDate, minDate, maxDate);
-                  endDate = clampDate(endDate, minDate, maxDate);
-                }
-                
-                handleRangeSelect({ from: startDate, to: endDate });
-              }}
-              data-testid="button-last-week"
-            >
-              Last 7 days
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const today = new Date();
-                
-                // Get exactly 30 days by subtracting 29 days from today
-                let startDate = new Date(today);
-                startDate.setDate(today.getDate() - 29);
-                startDate = normalizeToStartOfDay(startDate);
-                
-                let endDate = normalizeToEndOfDay(today);
-                
-                // Clamp dates to min/max bounds if provided
-                if (minDate || maxDate) {
-                  startDate = clampDate(startDate, minDate, maxDate);
-                  endDate = clampDate(endDate, minDate, maxDate);
-                }
-                
-                handleRangeSelect({ from: startDate, to: endDate });
-              }}
-              data-testid="button-last-month"
-            >
-              Last 30 days
-            </Button>
-          </div>
         </div>
 
         {/* Footer Actions */}
