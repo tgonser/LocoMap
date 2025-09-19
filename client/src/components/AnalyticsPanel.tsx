@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CalendarDays, MapPin, Globe, Users, BarChart3, Calendar, Play } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { CalendarDays, MapPin, Globe, Users, BarChart3, Calendar, Play, Clock, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
@@ -11,6 +12,9 @@ import LocationSummary from "@/components/LocationSummary";
 interface AnalyticsData {
   totalDays: number;
   geocodedDays: number;
+  geocodingCoverage: number;
+  geocodingInProgress: boolean;
+  ungeocodedCount: number;
   dateRange: { start: string; end: string };
   countries: Record<string, number>;
   states: Record<string, number>;
@@ -25,6 +29,7 @@ interface AnalyticsData {
     reason: string;
     mapsLink: string;
   }>;
+  note?: string;
 }
 
 interface AnalyticsPanelProps {
@@ -47,7 +52,10 @@ export default function AnalyticsPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDateRangePicker, setShowDateRangePicker] = useState(false);
+  const [autoRefreshCountdown, setAutoRefreshCountdown] = useState<number | null>(null);
   const { toast } = useToast();
+  const autoRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
   
   // Helper functions for timezone-safe date handling
   const formatLocalYmd = (date: Date): string => {
@@ -96,6 +104,71 @@ export default function AnalyticsPanel({
       }
     }
   }, [defaultStartDate, defaultEndDate]);
+
+  // Auto-refresh effect when geocoding is in progress
+  useEffect(() => {
+    if (analytics?.geocodingInProgress && !loading) {
+      console.log('Setting up auto-refresh for background geocoding...');
+      
+      // Set up countdown timer
+      let countdown = 45; // 45 seconds countdown
+      setAutoRefreshCountdown(countdown);
+      
+      countdownIntervalRef.current = setInterval(() => {
+        countdown -= 1;
+        setAutoRefreshCountdown(countdown);
+        
+        if (countdown <= 0) {
+          if (countdownIntervalRef.current) {
+            clearInterval(countdownIntervalRef.current);
+            countdownIntervalRef.current = null;
+          }
+        }
+      }, 1000);
+      
+      // Set up auto-refresh after 45 seconds
+      autoRefreshTimeoutRef.current = setTimeout(() => {
+        console.log('Auto-refreshing analytics due to background geocoding...');
+        handleRunAnalytics();
+      }, 45000);
+      
+    } else {
+      // Clear auto-refresh if geocoding is complete
+      setAutoRefreshCountdown(null);
+      if (autoRefreshTimeoutRef.current) {
+        clearTimeout(autoRefreshTimeoutRef.current);
+        autoRefreshTimeoutRef.current = null;
+      }
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+        countdownIntervalRef.current = null;
+      }
+    }
+    
+    return () => {
+      // Cleanup on unmount or dependency change
+      if (autoRefreshTimeoutRef.current) {
+        clearTimeout(autoRefreshTimeoutRef.current);
+        autoRefreshTimeoutRef.current = null;
+      }
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+        countdownIntervalRef.current = null;
+      }
+    };
+  }, [analytics?.geocodingInProgress, loading]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (autoRefreshTimeoutRef.current) {
+        clearTimeout(autoRefreshTimeoutRef.current);
+      }
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+      }
+    };
+  }, []);
 
   // Handle DateRangePicker confirm
   const handleDateRangeConfirm = (selectedStartDate: Date, selectedEndDate: Date) => {
@@ -372,6 +445,39 @@ export default function AnalyticsPanel({
             </Button>
           </div>
         </div>
+
+        {/* Processing Alert - Show when geocoding is in progress */}
+        {analytics.geocodingInProgress && (
+          <Alert className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950" data-testid="alert-processing">
+            <Clock className="h-4 w-4" />
+            <AlertTitle>Processing locations in background</AlertTitle>
+            <AlertDescription className="mt-2">
+              <div className="space-y-2">
+                <p>
+                  Currently processing {analytics.ungeocodedCount} location{analytics.ungeocodedCount !== 1 ? 's' : ''} to add geographic details.
+                  {analytics.geocodingCoverage > 0 && (
+                    <> Current coverage: {analytics.geocodingCoverage.toFixed(1)}% of requested date range.</>
+                  )}
+                </p>
+                <div className="flex items-center gap-2">
+                  {autoRefreshCountdown !== null && autoRefreshCountdown > 0 ? (
+                    <>
+                      <RotateCcw className="h-3 w-3 animate-spin" />
+                      <span className="text-sm">
+                        Results will auto-refresh in {autoRefreshCountdown}s
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Clock className="h-3 w-3" />
+                      <span className="text-sm">Processing complete results...</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
         
         {/* Date Range Picker and Run Analytics */}
         <Card data-testid="card-date-range-picker">

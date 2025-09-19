@@ -906,6 +906,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             analytics: {
               totalDays: totalDaysInRange,
               geocodedDays: 0,
+              geocodingCoverage: 0,
+              geocodingInProgress: ungeocodedCount > 0, // Clear boolean flag for frontend
+              ungeocodedCount: ungeocodedCount, // Count of locations being processed
               countries: {},
               states: {},
               cities: {},
@@ -913,7 +916,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               dateRange: {
                 start: startDate.toISOString().split('T')[0],
                 end: endDate.toISOString().split('T')[0]
-              }
+              },
+              note: ungeocodedCount > 0 ? `${ungeocodedCount} locations are being geocoded in the background. Re-run analytics in a few minutes for complete data.` : undefined
             }
           });
         }
@@ -965,6 +969,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             totalDays: totalDaysInRange,
             geocodedDays: geocodedCentroids.length,
             geocodingCoverage: Number(((geocodedCentroids.length / totalDaysInRange) * 100).toFixed(1)),
+            geocodingInProgress: ungeocodedCount > 0, // Clear boolean flag for frontend
+            ungeocodedCount: ungeocodedCount, // Count of locations being processed
             countries: countriesObject,
             states: statesObject,
             cities: citiesObject,
