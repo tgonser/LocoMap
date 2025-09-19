@@ -871,7 +871,24 @@ export class DatabaseStorage implements IStorage {
   // CRUD operations for travel stops
   async insertTravelStops(stops: InsertTravelStop[]): Promise<TravelStop[]> {
     if (stops.length === 0) return [];
-    return await db.insert(travelStops).values(stops).returning();
+    
+    const BATCH_SIZE = 100; // Process in batches to prevent stack overflow
+    const allInsertedStops: TravelStop[] = [];
+    
+    console.log(`🔄 Inserting ${stops.length} travel stops in batches of ${BATCH_SIZE}...`);
+    
+    for (let i = 0; i < stops.length; i += BATCH_SIZE) {
+      const batch = stops.slice(i, i + BATCH_SIZE);
+      const batchResult = await db.insert(travelStops).values(batch).returning();
+      allInsertedStops.push(...batchResult);
+      
+      if (i % (BATCH_SIZE * 5) === 0) { // Log progress every 500 stops
+        console.log(`📝 Processed ${Math.min(i + BATCH_SIZE, stops.length)}/${stops.length} travel stops`);
+      }
+    }
+    
+    console.log(`✅ Successfully inserted ${allInsertedStops.length} travel stops in ${Math.ceil(stops.length / BATCH_SIZE)} batches`);
+    return allInsertedStops;
   }
 
   async getUserTravelStops(userId: string, datasetId?: string): Promise<TravelStop[]> {
@@ -927,7 +944,24 @@ export class DatabaseStorage implements IStorage {
   // CRUD operations for travel segments
   async insertTravelSegments(segments: InsertTravelSegment[]): Promise<TravelSegment[]> {
     if (segments.length === 0) return [];
-    return await db.insert(travelSegments).values(segments).returning();
+    
+    const BATCH_SIZE = 100; // Process in batches to prevent stack overflow
+    const allInsertedSegments: TravelSegment[] = [];
+    
+    console.log(`🔄 Inserting ${segments.length} travel segments in batches of ${BATCH_SIZE}...`);
+    
+    for (let i = 0; i < segments.length; i += BATCH_SIZE) {
+      const batch = segments.slice(i, i + BATCH_SIZE);
+      const batchResult = await db.insert(travelSegments).values(batch).returning();
+      allInsertedSegments.push(...batchResult);
+      
+      if (i % (BATCH_SIZE * 5) === 0) { // Log progress every 500 segments
+        console.log(`📝 Processed ${Math.min(i + BATCH_SIZE, segments.length)}/${segments.length} travel segments`);
+      }
+    }
+    
+    console.log(`✅ Successfully inserted ${allInsertedSegments.length} travel segments in ${Math.ceil(segments.length / BATCH_SIZE)} batches`);
+    return allInsertedSegments;
   }
 
   async getUserTravelSegments(userId: string, datasetId?: string): Promise<TravelSegment[]> {
