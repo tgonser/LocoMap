@@ -112,26 +112,19 @@ export default function DateRangePicker({
   // Initialize default dates when dialog opens
   useEffect(() => {
     if (open) {
-      console.log('DateRangePicker opening with props:', { defaultStartDate, defaultEndDate });
       let initialRange: DateRange | undefined;
       
       // Priority: shared state props > localStorage > no defaults
       if (defaultStartDate && defaultEndDate) {
-        console.log('Using shared state props for initial range');
         initialRange = { from: defaultStartDate, to: defaultEndDate };
       } else {
-        console.log('No shared state props, trying localStorage');
         // Try to load from localStorage if no shared state
         const lastUsed = loadLastUsedDates();
         if (lastUsed.from && lastUsed.to) {
-          console.log('Using localStorage dates:', lastUsed);
           initialRange = { from: lastUsed.from, to: lastUsed.to };
-        } else {
-          console.log('No localStorage dates found');
         }
       }
       
-      console.log('Final initial range:', initialRange);
       setSelectedRange(initialRange);
       setValidationResult({ error: '', isBackwards: false });
     }
@@ -316,6 +309,7 @@ export default function DateRangePicker({
                 if (maxDate && date > maxDate) return true;
                 return false;
               }}
+              defaultMonth={selectedRange?.from || new Date()}
               numberOfMonths={1}
               className="w-full"
               data-testid="calendar-date-range"

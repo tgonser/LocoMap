@@ -262,7 +262,6 @@ export default function LocationHistoryApp() {
 
   // Handle re-opening date range picker when already in map view
   const handleChangeDateRange = () => {
-    console.log('Opening DateRangePicker with selectedDateRange:', selectedDateRange);
     setPreviousViewMode('map');
     setShowDateRangePicker(true);
   };
