@@ -1331,11 +1331,11 @@ export class DatabaseStorage implements IStorage {
 
     return result.map(row => ({
       fromCity: row.fromStop.city || 'Unknown',
-      fromState: row.fromStop.state,
+      fromState: row.fromStop.state || undefined,
       fromCountry: row.fromStop.country || 'Unknown',
       fromCoords: { lat: row.fromStop.lat, lng: row.fromStop.lng },
       toCity: row.toStop.city as string || 'Unknown',
-      toState: row.toStop.state as string,
+      toState: (row.toStop.state as string) || undefined,
       toCountry: row.toStop.country as string || 'Unknown',
       toCoords: { lat: row.toStop.lat as number, lng: row.toStop.lng as number },
       date: row.segment.start.toISOString().split('T')[0],
@@ -1499,6 +1499,67 @@ export class MemStorage implements IStorage {
   }
 
   async getGeocodedDailyCentroidsByDateRange(userId: string, startDate: Date, endDate: Date): Promise<DailyGeocode[]> {
+    return [];
+  }
+
+  // Waypoint-based analytics operations (stub implementations)
+  async insertTravelStops(stops: InsertTravelStop[]): Promise<TravelStop[]> {
+    return [];
+  }
+
+  async getUserTravelStops(userId: string, datasetId?: string): Promise<TravelStop[]> {
+    return [];
+  }
+
+  async getUserTravelStopsByDateRange(userId: string, startDate: Date, endDate: Date, datasetId?: string): Promise<TravelStop[]> {
+    return [];
+  }
+
+  async updateTravelStopGeocoding(
+    id: string,
+    address: string,
+    city?: string,
+    state?: string,
+    country?: string
+  ): Promise<void> {}
+
+  async insertTravelSegments(segments: InsertTravelSegment[]): Promise<TravelSegment[]> {
+    return [];
+  }
+
+  async getUserTravelSegments(userId: string, datasetId?: string): Promise<TravelSegment[]> {
+    return [];
+  }
+
+  async getUserTravelSegmentsByDateRange(userId: string, startDate: Date, endDate: Date, datasetId?: string): Promise<TravelSegment[]> {
+    return [];
+  }
+
+  async computeTravelStopsFromPoints(userId: string, datasetId: string, minDwellMinutes?: number, maxDistanceMeters?: number): Promise<number> {
+    return 0;
+  }
+
+  async computeTravelSegmentsFromStops(userId: string, datasetId: string): Promise<number> {
+    return 0;
+  }
+
+  async computeWaypointAnalytics(userId: string, datasetId: string): Promise<{ stopsCreated: number; segmentsCreated: number }> {
+    return { stopsCreated: 0, segmentsCreated: 0 };
+  }
+
+  async getWaypointCityJumpsByDateRange(userId: string, startDate: Date, endDate: Date): Promise<Array<{
+    fromCity: string;
+    fromState?: string;
+    fromCountry: string;
+    fromCoords: { lat: number; lng: number };
+    toCity: string;
+    toState?: string;
+    toCountry: string;
+    toCoords: { lat: number; lng: number };
+    date: string;
+    mode: string;
+    distance: number;
+  }>> {
     return [];
   }
 }
