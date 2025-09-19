@@ -313,9 +313,7 @@ export default function DateRangePicker({
               numberOfMonths={1}
               className="w-full"
               data-testid="calendar-date-range"
-              // Enable year/month dropdowns for easier navigation
-              enableDropdowns={true}
-              // Calculate year range based on minDate/maxDate constraints
+              // Hybrid navigation: year dropdown + month arrows (custom caption component)
               fromYear={minDate ? minDate.getFullYear() : 2005}
               toYear={maxDate ? maxDate.getFullYear() : new Date().getFullYear()}
             />
