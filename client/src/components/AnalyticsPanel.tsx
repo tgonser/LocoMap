@@ -47,6 +47,17 @@ export default function AnalyticsPanel({
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
   
+  // Helper function to add months to a date string (YYYY-MM-DD format)
+  const addMonthsToDateString = (dateString: string, months: number): string => {
+    const date = new Date(dateString);
+    date.setMonth(date.getMonth() + months);
+    // Handle edge case where the day doesn't exist in the target month
+    if (date.getDate() !== new Date(dateString).getDate()) {
+      date.setDate(0); // Go to last day of previous month
+    }
+    return date.toISOString().split('T')[0];
+  };
+
   // Set default date range from shared state or fallback to reasonable defaults
   const getDefaultDateRange = () => {
     if (defaultStartDate && defaultEndDate) {
@@ -55,9 +66,13 @@ export default function AnalyticsPanel({
         end: defaultEndDate.toISOString().split('T')[0]
       };
     }
+    // Better defaults: current month and next month
+    const today = new Date();
+    const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const firstOfNextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
     return {
-      start: '2024-01-01',
-      end: '2024-03-01'
+      start: firstOfMonth.toISOString().split('T')[0],
+      end: firstOfNextMonth.toISOString().split('T')[0]
     };
   };
   
@@ -78,12 +93,27 @@ export default function AnalyticsPanel({
     }
   }, [defaultStartDate, defaultEndDate]);
 
-  // Helper to update both local state and shared state
+  // Helper to update both local state and shared state with smart end date suggestion
   const updateStartDate = (newStartDate: string) => {
     setStartDate(newStartDate);
-    if (onDateRangeChange && endDate) {
-      // Convert string dates to Date objects for the callback
-      onDateRangeChange(new Date(newStartDate), new Date(endDate));
+    
+    // Smart end date suggestion: if user picks a start date, suggest start + 1 month
+    const suggestedEndDate = addMonthsToDateString(newStartDate, 1);
+    
+    // Only auto-suggest if current end date is before start date (invalid) or if it's the old hardcoded default
+    const currentEndDate = new Date(endDate);
+    const newStart = new Date(newStartDate);
+    const shouldSuggestNewEnd = currentEndDate <= newStart || endDate === '2024-03-01';
+    
+    if (shouldSuggestNewEnd) {
+      setEndDate(suggestedEndDate);
+      if (onDateRangeChange) {
+        onDateRangeChange(new Date(newStartDate), new Date(suggestedEndDate));
+      }
+    } else {
+      if (onDateRangeChange) {
+        onDateRangeChange(new Date(newStartDate), new Date(endDate));
+      }
     }
   };
 
