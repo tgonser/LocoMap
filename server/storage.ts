@@ -606,15 +606,6 @@ export class DatabaseStorage implements IStorage {
     const startDateStr = startDate.toISOString().split('T')[0]; // Get YYYY-MM-DD format
     const endDateStr = endDate.toISOString().split('T')[0]; // Get YYYY-MM-DD format
 
-    console.log(`DEBUG: getGeocodedDailyCentroidsByDateRange called with:`, {
-      userId,
-      startDate: startDate.toISOString(),
-      endDate: endDate.toISOString(),
-      startDateFormatted: startDateStr,
-      endDateFormatted: endDateStr
-    });
-    
-    console.log(`DEBUG: About to execute query with startDateStr='${startDateStr}' and endDateStr='${endDateStr}'`);
 
     // Use completely raw SQL since Drizzle date filtering isn't working
     const result = await db.execute(sql`
@@ -642,11 +633,6 @@ export class DatabaseStorage implements IStorage {
       geocoded: row.geocoded
     })) as DailyGeocode[];
 
-    console.log(`DEBUG: Query returned ${formattedResults.length} geocoded centroids for date range ${startDateStr} to ${endDateStr}`);
-    if (formattedResults.length > 0) {
-      console.log(`DEBUG: First result date: ${formattedResults[0].date}, Last result date: ${formattedResults[formattedResults.length - 1].date}`);
-      console.log(`DEBUG: Sample of first 3 result dates: ${formattedResults.slice(0, 3).map(r => r.date).join(', ')}`);
-    }
 
     return formattedResults;
   }
