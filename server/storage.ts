@@ -45,6 +45,7 @@ export interface IStorage {
   // Daily centroid analytics pipeline (user-specific)
   computeAndUpsertDailyCentroids(userId: string, datasetId: string): Promise<number>;
   computeDailyCentroidsForAllDatasets(userId: string): Promise<number>;
+  computeDailyCentroidsByDateRange(userId: string, startDate: Date, endDate: Date): Promise<number>;
   getUngeocodedDailyCentroids(userId: string, limit?: number): Promise<DailyGeocode[]>;
   getUngeocodedCentroidsCount(userId: string): Promise<number>;
   // Date range filtering versions for better user experience
@@ -316,6 +317,89 @@ export class DatabaseStorage implements IStorage {
     
     console.log(`Total ${totalCentroidsCreated} daily centroids computed for user ${userId}`);
     return totalCentroidsCreated;
+  }
+
+  // OPTIMIZED: Compute daily centroids only for the requested date range
+  async computeDailyCentroidsByDateRange(userId: string, startDate: Date, endDate: Date): Promise<number> {
+    console.log(`🚀 Computing daily centroids for user ${userId} in date range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
+    
+    // SQL-first approach: compute daily centroids using date_trunc with date filtering
+    const dailyCentroids = await db
+      .select({
+        userId: sql<string>`${locationPoints.userId}`,
+        datasetId: sql<string>`${locationPoints.datasetId}`,
+        date: sql<string>`date_trunc('day', ${locationPoints.timestamp})::text`,
+        lat: sql<number>`avg(${locationPoints.lat})`,
+        lng: sql<number>`avg(${locationPoints.lng})`,
+        pointCount: sql<number>`count(*)`,
+      })
+      .from(locationPoints)
+      .where(and(
+        eq(locationPoints.userId, userId),
+        sql`${locationPoints.timestamp} >= ${startDate}`,
+        sql`${locationPoints.timestamp} <= ${endDate}`
+      ))
+      .groupBy(
+        locationPoints.userId,
+        locationPoints.datasetId,
+        sql`date_trunc('day', ${locationPoints.timestamp})`
+      );
+
+    if (dailyCentroids.length === 0) {
+      console.log(`📊 No location points found in date range for user ${userId}`);
+      return 0;
+    }
+
+    console.log(`📊 Found ${dailyCentroids.length} daily centroids to process in date range`);
+
+    // Convert string dates to proper Date objects and prepare for batch upsert
+    const insertData = dailyCentroids.map((centroid: { userId: string; datasetId: string; date: string; lat: number; lng: number; pointCount: number }) => ({
+      userId: centroid.userId,
+      datasetId: centroid.datasetId,
+      date: new Date(centroid.date), // Convert string to proper Date object
+      lat: centroid.lat,
+      lng: centroid.lng,
+      pointCount: centroid.pointCount,
+      geocoded: false,
+    }));
+
+    // Use batch processing to avoid "value too large to transmit" errors
+    const BATCH_SIZE = 100; // Smaller batch size for upsert operations with conflict resolution
+    let totalUpserted = 0;
+    
+    for (let i = 0; i < insertData.length; i += BATCH_SIZE) {
+      const batch = insertData.slice(i, i + BATCH_SIZE);
+      
+      const upserted = await db
+        .insert(dailyGeocodes)
+        .values(batch)
+        .onConflictDoUpdate({
+          target: [dailyGeocodes.userId, dailyGeocodes.datasetId, dailyGeocodes.date],
+          set: {
+            lat: sql`EXCLUDED.lat`,
+            lng: sql`EXCLUDED.lng`,
+            pointCount: sql`EXCLUDED.point_count`,
+            // Only update geocoded status if new pointCount is higher (better data)
+            geocoded: sql`CASE WHEN EXCLUDED.point_count > daily_geocodes.point_count THEN false ELSE daily_geocodes.geocoded END`,
+            city: sql`CASE WHEN EXCLUDED.point_count > daily_geocodes.point_count THEN null ELSE daily_geocodes.city END`,
+            state: sql`CASE WHEN EXCLUDED.point_count > daily_geocodes.point_count THEN null ELSE daily_geocodes.state END`,
+            country: sql`CASE WHEN EXCLUDED.point_count > daily_geocodes.point_count THEN null ELSE daily_geocodes.country END`,
+            address: sql`CASE WHEN EXCLUDED.point_count > daily_geocodes.point_count THEN null ELSE daily_geocodes.address END`,
+          },
+        })
+        .returning();
+        
+      totalUpserted += upserted.length;
+      
+      // Log progress for large batches
+      if (insertData.length > BATCH_SIZE) {
+        const progress = Math.min(i + BATCH_SIZE, insertData.length);
+        console.log(`📊 Upserted batch ${Math.floor(i / BATCH_SIZE) + 1}: ${progress}/${insertData.length} daily centroids`);
+      }
+    }
+
+    console.log(`✅ Successfully upserted ${totalUpserted} daily centroids for user ${userId} in date range ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
+    return totalUpserted;
   }
 
   async getUngeocodedCentroidsCount(userId: string): Promise<number> {

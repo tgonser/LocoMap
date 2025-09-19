@@ -62,7 +62,12 @@ export const locationPoints = pgTable("location_points", {
   city: text("city"),
   state: text("state"),  
   country: text("country"),
-});
+}, (table) => [
+  // Critical indexes for date range queries and analytics optimization
+  index('idx_location_points_user_timestamp').on(table.userId, table.timestamp),
+  index('idx_location_points_dataset').on(table.datasetId),
+  index('idx_location_points_timestamp').on(table.timestamp), // For date range filtering
+]);
 
 // Unique locations table - stores deduplicated locations with geocoding (user-specific)
 export const uniqueLocations = pgTable('unique_locations', {

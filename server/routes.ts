@@ -882,8 +882,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Step 1: Ensure centroids exist for the date range
-      console.log(`📊 Step 2/4 - Ensuring daily centroids exist for date range`);
+      // Step 1: Ensure centroids exist for the requested date range ONLY (OPTIMIZED)
+      console.log(`🚀 Step 2/4 - Computing daily centroids for date range ONLY (optimized)`);
       let centroidsCreated = 0;
       
       try {
@@ -896,39 +896,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
 
-        // Create centroids for all datasets (this will handle duplicates automatically)
-        centroidsCreated = await storage.computeDailyCentroidsForAllDatasets(userId);
-        console.log(`✅ Centroids ensured: ${centroidsCreated} centroids processed`);
+        // OPTIMIZED: Create centroids ONLY for the requested date range instead of all datasets
+        const startTime = Date.now();
+        centroidsCreated = await storage.computeDailyCentroidsByDateRange(userId, startDate, endDate);
+        const computeTime = (Date.now() - startTime) / 1000;
+        console.log(`✅ OPTIMIZED: Computed ${centroidsCreated} centroids for date range in ${computeTime.toFixed(1)}s (instead of processing all ${datasets.length} datasets)`);
       } catch (error) {
-        console.error(`❌ Failed to ensure centroids for user ${userId}:`, error);
+        console.error(`❌ Failed to compute centroids for date range for user ${userId}:`, error);
         return res.status(500).json({
-          error: "Failed to compute daily centroids",
+          error: "Failed to compute daily centroids for date range",
           details: error instanceof Error ? error.message : "Unknown error"
         });
       }
 
-      // Step 2: Geocode missing locations in the date range
-      console.log(`🌍 Step 3/4 - Geocoding missing locations in date range`);
+      // Step 2: ASYNC Geocoding - Return analytics immediately, geocode in background
+      console.log(`🚀 Step 3/4 - ASYNC geocoding: checking for missing locations (non-blocking)`);
       
       let ungeocodedCount = 0;
+      let geocodingStatus = 'complete';
+      
       try {
         ungeocodedCount = await storage.getUngeocodedCentroidsCountByDateRange(userId, startDate, endDate);
         
         if (ungeocodedCount > 0) {
-          console.log(`Found ${ungeocodedCount} ungeocoded centroids in date range, starting geocoding...`);
+          console.log(`🌍 Found ${ungeocodedCount} ungeocoded centroids in date range - starting BACKGROUND geocoding`);
+          geocodingStatus = 'in_progress';
           
-          // Use the existing geocoding function for date ranges
-          await geocodeDailyCentroidsByDateRange(userId, startDate, endDate);
-          console.log(`✅ Geocoding completed for date range`);
+          // ASYNC: Start geocoding in background, don't wait for completion
+          geocodeDailyCentroidsByDateRange(userId, startDate, endDate)
+            .then(() => {
+              console.log(`✅ BACKGROUND: Geocoding completed for user ${userId} date range ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
+            })
+            .catch((error) => {
+              console.error(`❌ BACKGROUND: Geocoding failed for user ${userId}:`, error);
+            });
+          
+          console.log(`🚀 ASYNC: Analytics proceeding with currently available geocoded data (${ungeocodedCount} locations will be geocoded in background)`);
         } else {
           console.log(`✅ No geocoding needed - all centroids in date range already geocoded`);
         }
       } catch (error) {
-        console.error(`❌ Geocoding failed for user ${userId}:`, error);
-        return res.status(500).json({
-          error: "Failed to geocode locations",
-          details: error instanceof Error ? error.message : "Unknown error"
-        });
+        console.error(`❌ Failed to check geocoding status for user ${userId}:`, error);
+        // Don't fail the entire request - proceed with analytics using available data
+        console.log(`⚠️ Proceeding with analytics despite geocoding check error`);
       }
 
       // Step 3: Generate analytics using the existing geocoded-places logic
@@ -1028,7 +1038,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           pipeline: {
             centroidsCreated,
             geocoded: ungeocodedCount || 0,
-            analyticsGenerated: true
+            geocodingStatus, // 'complete' or 'in_progress'
+            analyticsGenerated: true,
+            optimized: true, // Flag indicating this used the optimized date-range pipeline
+            processingTimeOptimization: centroidsCreated < 100 ? 'significant' : 'moderate'
           },
           analytics: {
             totalDays: totalDaysInRange,
@@ -1041,7 +1054,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             dateRange: {
               start: startDate.toISOString().split('T')[0],
               end: endDate.toISOString().split('T')[0]
-            }
+            },
+            note: ungeocodedCount > 0 ? `${ungeocodedCount} locations are being geocoded in the background. Re-run analytics in a few minutes for complete data.` : undefined
           }
         };
 
