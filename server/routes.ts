@@ -1047,7 +1047,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // ========== WAYPOINT-BASED CITY JUMPS (REPLACES CENTROID APPROACH) ==========
         // Get accurate city jumps from actual travel stops and segments
-        const waypointCityJumps = await storage.getWaypointCityJumpsByDateRange(userId, startDate, endDate);
+        let waypointCityJumps = await storage.getWaypointCityJumpsByDateRange(userId, startDate, endDate);
+        
+        // If no waypoints exist, compute them automatically from raw GPS data
+        if (waypointCityJumps.length === 0) {
+          console.log(`🔄 No waypoints found for date range - computing from raw GPS data...`);
+          
+          // Get user's datasets and compute waypoints automatically
+          const datasets = await storage.getUserLocationDatasets(userId);
+          if (datasets.length > 0) {
+            const primaryDataset = datasets[0]; // Use first dataset
+            try {
+              const waypointResult = await storage.computeWaypointAnalytics(userId, primaryDataset.id);
+              console.log(`✅ Auto-computed waypoints: ${waypointResult.stopsCreated} stops, ${waypointResult.segmentsCreated} segments`);
+              
+              // Re-fetch waypoint city jumps after computation
+              waypointCityJumps = await storage.getWaypointCityJumpsByDateRange(userId, startDate, endDate);
+              console.log(`🎯 Found ${waypointCityJumps.length} city jumps after waypoint computation`);
+            } catch (waypointError) {
+              console.error(`❌ Failed to compute waypoints automatically:`, waypointError);
+              // Fall back to empty results
+              waypointCityJumps = [];
+            }
+          }
+        }
         
         // Calculate total travel distance from waypoint segments (preserves accuracy)
         const totalTravelDistance = waypointCityJumps.reduce((sum, jump) => sum + jump.distance, 0);
