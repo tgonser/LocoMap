@@ -34,6 +34,7 @@ export interface IStorage {
   // Location point operations (user-specific)
   insertLocationPoints(points: InsertLocationPoint[]): Promise<LocationPoint[]>;
   getUserLocationPoints(userId: string, datasetId?: string): Promise<LocationPoint[]>;
+  getUserLocationPointsByDateRange(userId: string, startDate: Date, endDate: Date, datasetId?: string): Promise<LocationPoint[]>;
   getUserLocationPointsCount(userId: string): Promise<number>;
   clearUserLocationData(userId: string): Promise<void>;
   
@@ -158,6 +159,23 @@ export class DatabaseStorage implements IStorage {
 
   async getUserLocationPoints(userId: string, datasetId?: string): Promise<LocationPoint[]> {
     const conditions = [eq(locationPoints.userId, userId)];
+    if (datasetId) {
+      conditions.push(eq(locationPoints.datasetId, datasetId));
+    }
+    
+    return await db
+      .select()
+      .from(locationPoints)
+      .where(and(...conditions))
+      .orderBy(desc(locationPoints.timestamp));
+  }
+
+  async getUserLocationPointsByDateRange(userId: string, startDate: Date, endDate: Date, datasetId?: string): Promise<LocationPoint[]> {
+    const conditions = [
+      eq(locationPoints.userId, userId),
+      gte(locationPoints.timestamp, startDate),
+      lte(locationPoints.timestamp, endDate)
+    ];
     if (datasetId) {
       conditions.push(eq(locationPoints.datasetId, datasetId));
     }
@@ -756,6 +774,10 @@ export class MemStorage implements IStorage {
     return [];
   }
 
+  async getUserLocationPointsByDateRange(userId: string, startDate: Date, endDate: Date, datasetId?: string): Promise<LocationPoint[]> {
+    return [];
+  }
+
   async getUserLocationPointsCount(userId: string): Promise<number> {
     return 0;
   }
@@ -788,6 +810,10 @@ export class MemStorage implements IStorage {
   }
 
   async computeDailyCentroidsForAllDatasets(userId: string): Promise<number> {
+    return 0;
+  }
+
+  async computeDailyCentroidsByDateRange(userId: string, startDate: Date, endDate: Date): Promise<number> {
     return 0;
   }
 

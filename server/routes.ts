@@ -393,13 +393,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Protected route: Get user's location points
+  // Protected route: Get user's location points with optional date range filtering
   app.get("/api/locations", isAuthenticated, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
       const datasetId = req.query.datasetId as string;
-      const locations = await storage.getUserLocationPoints(userId, datasetId);
+      const start = req.query.start as string;
+      const end = req.query.end as string;
+
+      let locations;
+      
+      // If both start and end dates are provided, use date range filtering
+      if (start && end) {
+        try {
+          // Parse dates with consistent UTC boundaries to avoid timezone issues
+          const startDate = new Date(`${start}T00:00:00.000Z`);
+          const endDate = new Date(`${end}T23:59:59.999Z`);
+          
+          // Validate dates
+          if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+            return res.status(400).json({ error: "Invalid date format. Use YYYY-MM-DD format." });
+          }
+          
+          // Validate date range
+          if (startDate > endDate) {
+            return res.status(400).json({ error: "Start date must be less than or equal to end date." });
+          }
+          
+          locations = await storage.getUserLocationPointsByDateRange(userId, startDate, endDate, datasetId);
+          console.log(`Fetched ${locations.length} location points for user ${userId} between ${start} and ${end}`);
+        } catch (dateError) {
+          console.error("Error parsing dates:", dateError);
+          return res.status(400).json({ error: "Invalid date format. Use YYYY-MM-DD format." });
+        }
+      } else {
+        // Backwards compatibility: no date filtering, return all data
+        locations = await storage.getUserLocationPoints(userId, datasetId);
+        console.log(`Fetched ${locations.length} location points for user ${userId} (no date filter)`);
+      }
+      
       res.json(locations);
     } catch (error) {
       console.error("Error fetching locations:", error);

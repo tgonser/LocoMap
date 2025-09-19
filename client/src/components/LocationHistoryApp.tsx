@@ -65,33 +65,38 @@ export default function LocationHistoryApp() {
     checkExistingData();
   }, []);
 
-  // Load all location data and filter by date range on frontend
+  // Load location data with efficient server-side date range filtering
   const loadLocationDataForDateRange = async (startDate: Date, endDate: Date) => {
     // Loading state is set by caller to avoid empty state flash
     try {
-      // Load all location data from API (no date filtering on backend)
-      const response = await fetch('/api/locations');
+      // Format dates as YYYY-MM-DD strings for API using local date components to avoid timezone shifts
+      const startDateStr = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`;
+      const endDateStr = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
+      
+      // Build query parameters for date range filtering
+      const params = new URLSearchParams({
+        start: startDateStr,
+        end: endDateStr
+      });
+      
+      // Fetch only the requested date range from API (efficient backend filtering)
+      const response = await fetch(`/api/locations?${params.toString()}`);
       if (response.ok) {
         const locations = await response.json();
         
         // Convert timestamps to Date objects
-        const allData = locations.map((loc: any) => ({
+        const locationData = locations.map((loc: any) => ({
           ...loc,
           timestamp: new Date(loc.timestamp)
         }));
         
-        // Filter data by selected date range on frontend
-        const filteredData = allData.filter((loc: LocationData) => 
-          loc.timestamp >= startDate && loc.timestamp <= endDate
-        );
-        
-        setLocationData(filteredData);
+        setLocationData(locationData);
         setSelectedDateRange({ start: startDate, end: endDate });
         setMapDataLoaded(true);
         
         // Set selected date to the most recent date with data in the range
-        if (filteredData.length > 0) {
-          const dates = filteredData.map((loc: LocationData) => loc.timestamp.getTime());
+        if (locationData.length > 0) {
+          const dates = locationData.map((loc: LocationData) => loc.timestamp.getTime());
           const mostRecentDate = new Date(Math.max(...dates));
           setSelectedDate(mostRecentDate);
         } else {
@@ -99,7 +104,7 @@ export default function LocationHistoryApp() {
           setSelectedDate(endDate);
         }
         
-        console.log(`Location data loaded: ${filteredData.length} points in date range (${allData.length} total points)`);
+        console.log(`Location data loaded: ${locationData.length} points for date range ${startDateStr} to ${endDateStr} (server-side filtered)`);
       } else {
         console.error('Failed to load location data:', response.statusText);
       }
@@ -358,8 +363,8 @@ export default function LocationHistoryApp() {
                     const exportData = {
                       summary: 'Location Summary Export',
                       dateRange: {
-                        start: dateRange.start.toISOString().split('T')[0],
-                        end: dateRange.end.toISOString().split('T')[0]
+                        start: `${dateRange.start.getFullYear()}-${String(dateRange.start.getMonth() + 1).padStart(2, '0')}-${String(dateRange.start.getDate()).padStart(2, '0')}`,
+                        end: `${dateRange.end.getFullYear()}-${String(dateRange.end.getMonth() + 1).padStart(2, '0')}-${String(dateRange.end.getDate()).padStart(2, '0')}`
                       },
                       totalLocations,
                       exportedAt: new Date().toISOString()
