@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Calendar, BarChart3, List, Upload } from 'lucide-react';
+import { MapPin, Calendar, BarChart3, List, Upload, CalendarDays } from 'lucide-react';
 import FileUploader from './FileUploader';
 import MapDisplay from './MapDisplay';
 import DateNavigator from './DateNavigator';
 import AnalyticsPanel from './AnalyticsPanel';
 import LocationSummary from './LocationSummary';
 import TimelineViewer from './TimelineViewer';
+import DateRangePicker from './DateRangePicker';
 
 interface LocationData {
   lat: number;
@@ -26,6 +27,13 @@ export default function LocationHistoryApp() {
   const [viewMode, setViewMode] = useState<ViewMode>('upload');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // DateRangePicker state management
+  const [showDateRangePicker, setShowDateRangePicker] = useState(false);
+  const [isLoadingMapData, setIsLoadingMapData] = useState(false);
+  const [mapDataLoaded, setMapDataLoaded] = useState(false);
+  const [previousViewMode, setPreviousViewMode] = useState<ViewMode>('analytics');
+  const [selectedDateRange, setSelectedDateRange] = useState<{start: Date, end: Date} | null>(null);
 
   // Check for existing data on component mount
   useEffect(() => {
@@ -57,7 +65,52 @@ export default function LocationHistoryApp() {
     checkExistingData();
   }, []);
 
-  // Load full location data (only called when needed for map/timeline views)
+  // Load all location data and filter by date range on frontend
+  const loadLocationDataForDateRange = async (startDate: Date, endDate: Date) => {
+    // Loading state is set by caller to avoid empty state flash
+    try {
+      // Load all location data from API (no date filtering on backend)
+      const response = await fetch('/api/locations');
+      if (response.ok) {
+        const locations = await response.json();
+        
+        // Convert timestamps to Date objects
+        const allData = locations.map((loc: any) => ({
+          ...loc,
+          timestamp: new Date(loc.timestamp)
+        }));
+        
+        // Filter data by selected date range on frontend
+        const filteredData = allData.filter((loc: LocationData) => 
+          loc.timestamp >= startDate && loc.timestamp <= endDate
+        );
+        
+        setLocationData(filteredData);
+        setSelectedDateRange({ start: startDate, end: endDate });
+        setMapDataLoaded(true);
+        
+        // Set selected date to the most recent date with data in the range
+        if (filteredData.length > 0) {
+          const dates = filteredData.map((loc: LocationData) => loc.timestamp.getTime());
+          const mostRecentDate = new Date(Math.max(...dates));
+          setSelectedDate(mostRecentDate);
+        } else {
+          // No data in selected range - set to end date
+          setSelectedDate(endDate);
+        }
+        
+        console.log(`Location data loaded: ${filteredData.length} points in date range (${allData.length} total points)`);
+      } else {
+        console.error('Failed to load location data:', response.statusText);
+      }
+    } catch (error) {
+      console.error('Error loading location data:', error);
+    } finally {
+      setIsLoadingMapData(false);
+    }
+  };
+
+  // Load full location data (fallback method for non-date-range requests)
   const loadFullLocationData = async () => {
     try {
       const response = await fetch('/api/locations');
@@ -170,9 +223,36 @@ export default function LocationHistoryApp() {
     </Button>
   );
 
-  // Handle view mode changes - instant switching without automatic data loading
+  // Handle DateRangePicker confirm - load data for selected range
+  const handleDateRangeConfirm = async (startDate: Date, endDate: Date) => {
+    setShowDateRangePicker(false);
+    setIsLoadingMapData(true); // Set loading state before switching views
+    setViewMode('map'); // Now switch to map view with loading state active
+    await loadLocationDataForDateRange(startDate, endDate);
+  };
+
+  // Handle DateRangePicker cancel - return to previous view
+  const handleDateRangeCancel = () => {
+    setShowDateRangePicker(false);
+    setViewMode(previousViewMode);
+  };
+
+  // Handle view mode changes - show DateRangePicker for map view
   const handleViewModeChange = (mode: ViewMode) => {
-    setViewMode(mode);
+    if (mode === 'map') {
+      // Store current view as previous view
+      setPreviousViewMode(viewMode);
+      // Show DateRangePicker dialog instead of switching directly to map
+      setShowDateRangePicker(true);
+    } else {
+      setViewMode(mode);
+    }
+  };
+
+  // Handle re-opening date range picker when already in map view
+  const handleChangeDateRange = () => {
+    setPreviousViewMode('map');
+    setShowDateRangePicker(true);
   };
 
   return (
@@ -210,8 +290,25 @@ export default function LocationHistoryApp() {
                   <Badge variant="secondary" data-testid="text-total-points">
                     {totalLocations.toLocaleString()} points
                   </Badge>
+                  {viewMode === 'map' && selectedDateRange && (
+                    <Badge variant="outline" data-testid="text-date-range">
+                      {selectedDateRange.start.toLocaleDateString()} - {selectedDateRange.end.toLocaleDateString()}
+                    </Badge>
+                  )}
                 </div>
                 <div className="flex gap-1">
+                  {viewMode === 'map' && mapDataLoaded && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleChangeDateRange}
+                      className="gap-2"
+                      data-testid="button-change-date-range"
+                    >
+                      <CalendarDays className="w-4 h-4" />
+                      <span className="hidden sm:inline">Change Range</span>
+                    </Button>
+                  )}
                   {getViewModeButton('map', <MapPin className="w-4 h-4" />, 'Map')}
                   {getViewModeButton('analytics', <BarChart3 className="w-4 h-4" />, 'Analytics')}
                 </div>
@@ -285,14 +382,36 @@ export default function LocationHistoryApp() {
             {/* Main Content Area */}
             <div className="lg:col-span-3 order-1 lg:order-2">
               {viewMode === 'map' ? (
-                <MapDisplay
-                  locations={dayLocations}
-                  selectedDate={selectedDate}
-                  onDateChange={setSelectedDate}
-                  availableDates={availableDates}
-                  locationCountByDate={locationCountByDate}
-                  className="h-full"
-                />
+                isLoadingMapData ? (
+                  <Card className="h-full flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                      <p className="text-muted-foreground">Loading location data...</p>
+                      <p className="text-sm text-muted-foreground mt-1">This may take a moment for large date ranges</p>
+                    </div>
+                  </Card>
+                ) : mapDataLoaded ? (
+                  <MapDisplay
+                    locations={dayLocations}
+                    selectedDate={selectedDate}
+                    onDateChange={setSelectedDate}
+                    availableDates={availableDates}
+                    locationCountByDate={locationCountByDate}
+                    className="h-full"
+                  />
+                ) : (
+                  <Card className="h-full flex items-center justify-center">
+                    <div className="text-center">
+                      <MapPin className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                      <h3 className="text-lg font-semibold mb-2">Select Date Range</h3>
+                      <p className="text-muted-foreground mb-4">Choose a date range to load and view your location data on the map</p>
+                      <Button onClick={() => setShowDateRangePicker(true)} data-testid="button-select-date-range">
+                        <CalendarDays className="w-4 h-4 mr-2" />
+                        Select Date Range
+                      </Button>
+                    </div>
+                  </Card>
+                )
               ) : (
                 <AnalyticsPanel
                   onBack={() => setViewMode('map')}
@@ -304,8 +423,22 @@ export default function LocationHistoryApp() {
         )}
       </main>
 
+      {/* DateRangePicker Dialog */}
+      <DateRangePicker
+        open={showDateRangePicker}
+        setOpen={setShowDateRangePicker}
+        onConfirm={handleDateRangeConfirm}
+        onCancel={handleDateRangeCancel}
+        title="Select Date Range for Map View"
+        description="Choose the date range to load and display location data on the map."
+        defaultStartDate={selectedDateRange?.start}
+        defaultEndDate={selectedDateRange?.end}
+        minDate={new Date('2005-01-01')}
+        maxDate={new Date()}
+      />
+
       {/* Mobile Navigation */}
-      {locationData.length > 0 && (
+      {(locationData.length > 0 || mapDataLoaded) && (
         <div className="sm:hidden fixed bottom-4 left-4 right-4 flex justify-center">
           <Card className="flex gap-1 p-1">
             {getViewModeButton('map', <MapPin className="w-4 h-4" />, '')}
