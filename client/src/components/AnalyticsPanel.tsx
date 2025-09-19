@@ -38,6 +38,7 @@ interface AnalyticsData {
   dateRange: { start: string; end: string };
   countries: Record<string, number>;
   states: Record<string, number>;
+  cities: Record<string, number>;
   cityJumps: CityJumpsData;
   curatedPlaces: Array<{
     city: string;

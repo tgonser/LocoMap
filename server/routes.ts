@@ -894,8 +894,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`📈 Step 4/4 - Generating analytics with curated places`);
       
       try {
-        // Get geocoded daily centroids within the date range
+        // Get ALL daily centroids (geocoded + ungeocoded) for complete travel distance calculation
         const geocodedCentroids = await storage.getGeocodedDailyCentroidsByDateRange(userId, startDate, endDate);
+        const ungeocodedCentroids = await storage.getUngeocodedDailyCentroidsByDateRange(userId, startDate, endDate);
+        
+        // Combine all centroids for complete travel chain analysis
+        const allCentroids = [...geocodedCentroids, ...ungeocodedCentroids];
         
         // Calculate expected total days in the date range (fixed off-by-one error)
         const totalDaysInRange = Math.ceil((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000));
@@ -924,6 +928,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ungeocodedCount: ungeocodedCount, // Count of locations being processed
               countries: {},
               states: {},
+              cities: {},
               cityJumps: {
                 cityJumps: [],
                 totalTravelDistance: 0,
@@ -939,23 +944,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
 
-        // Group locations by country/state and calculate city jumps
+        // Group locations by country/state/city and calculate city jumps
         const locationStats = {
           countries: new Map<string, number>(),
-          states: new Map<string, number>()
+          states: new Map<string, number>(),
+          cities: new Map<string, number>()
         };
 
-        // Sort centroids chronologically for city jumps detection
-        const sortedCentroids = geocodedCentroids.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        // Sort ALL centroids chronologically for complete travel chain analysis
+        const sortedCentroids = allCentroids.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
         
-        // Calculate country and state statistics
-        sortedCentroids.forEach(centroid => {
+        // Use only geocoded centroids for city/state/country statistics
+        const sortedGeocodedCentroids = geocodedCentroids.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        
+        // Calculate country, state, and city statistics (only from geocoded centroids)
+        sortedGeocodedCentroids.forEach(centroid => {
           if (centroid.country) {
             locationStats.countries.set(centroid.country, (locationStats.countries.get(centroid.country) || 0) + 1);
           }
           
           if (centroid.state && centroid.country === 'United States') {
             locationStats.states.set(centroid.state, (locationStats.states.get(centroid.state) || 0) + 1);
+          }
+          
+          if (centroid.city) {
+            // Create city key with state/country for disambiguation
+            const cityKey = centroid.state ? `${centroid.city}, ${centroid.state}` : `${centroid.city}, ${centroid.country}`;
+            locationStats.cities.set(cityKey, (locationStats.cities.get(cityKey) || 0) + 1);
           }
         });
 
@@ -976,50 +991,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         let totalTravelDistance = 0;
 
-        // Detect city changes between consecutive days
+        // Calculate complete travel chain: distances between ALL consecutive centroids
         for (let i = 1; i < sortedCentroids.length; i++) {
           const prevCentroid = sortedCentroids[i - 1];
           const currCentroid = sortedCentroids[i];
 
-          // Skip if either centroid lacks city or country data
-          if (!prevCentroid.city || !currCentroid.city || !prevCentroid.country || !currCentroid.country) continue;
+          // Calculate distance between ALL consecutive centroids (geocoded or not)
+          const distance = calculateDistance(
+            prevCentroid.lat, 
+            prevCentroid.lng, 
+            currCentroid.lat, 
+            currCentroid.lng
+          );
 
-          // Create city keys for comparison
-          const prevCityKey = prevCentroid.state ? `${prevCentroid.city}, ${prevCentroid.state}` : `${prevCentroid.city}, ${prevCentroid.country}`;
-          const currCityKey = currCentroid.state ? `${currCentroid.city}, ${currCentroid.state}` : `${currCentroid.city}, ${currCentroid.country}`;
+          // Add ALL movement to total travel distance (no more gaps!)
+          totalTravelDistance += distance;
 
-          // If city changed, record the jump
-          if (prevCityKey !== currCityKey) {
-            const distance = calculateDistance(
-              prevCentroid.lat, 
-              prevCentroid.lng, 
-              currCentroid.lat, 
-              currCentroid.lng
-            );
+          // Only create named city jumps when BOTH centroids have complete city data
+          if (prevCentroid.city && currCentroid.city && 
+              prevCentroid.country && currCentroid.country) {
+            
+            // Create city keys for comparison
+            const prevCityKey = prevCentroid.state ? 
+              `${prevCentroid.city}, ${prevCentroid.state}` : 
+              `${prevCentroid.city}, ${prevCentroid.country}`;
+            const currCityKey = currCentroid.state ? 
+              `${currCentroid.city}, ${currCentroid.state}` : 
+              `${currCentroid.city}, ${currCentroid.country}`;
 
-            // Determine transportation mode based on distance (simple heuristic for now)
-            let mode = 'driving';
-            if (distance > 500) {
-              mode = 'flying';
-            } else if (distance < 10) {
-              mode = 'walking';
+            // Only record city jump if the cities actually changed
+            if (prevCityKey !== currCityKey) {
+              // Determine transportation mode based on distance
+              let mode = 'driving';
+              if (distance > 500) {
+                mode = 'flying';
+              } else if (distance < 10) {
+                mode = 'walking';
+              }
+
+              cityJumps.push({
+                fromCity: prevCentroid.city,
+                fromState: prevCentroid.state || undefined,
+                fromCountry: prevCentroid.country,
+                fromCoords: { lat: prevCentroid.lat, lng: prevCentroid.lng },
+                toCity: currCentroid.city,
+                toState: currCentroid.state || undefined,
+                toCountry: currCentroid.country,
+                toCoords: { lat: currCentroid.lat, lng: currCentroid.lng },
+                date: currCentroid.date.toISOString().split('T')[0],
+                mode,
+                distance: Math.round(distance * 10) / 10
+              });
             }
-
-            cityJumps.push({
-              fromCity: prevCentroid.city!, // Non-null assertion - we checked above
-              fromState: prevCentroid.state || undefined,
-              fromCountry: prevCentroid.country!, // Non-null assertion - we checked above
-              fromCoords: { lat: prevCentroid.lat, lng: prevCentroid.lng },
-              toCity: currCentroid.city!, // Non-null assertion - we checked above
-              toState: currCentroid.state || undefined,
-              toCountry: currCentroid.country!, // Non-null assertion - we checked above
-              toCoords: { lat: currCentroid.lat, lng: currCentroid.lng },
-              date: currCentroid.date.toISOString().split('T')[0],
-              mode,
-              distance: Math.round(distance * 10) / 10 // Round to 1 decimal place
-            });
-
-            totalTravelDistance += distance;
           }
         }
 
@@ -1033,6 +1056,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Convert Maps to Objects for frontend compatibility
         const countriesObject = Object.fromEntries(locationStats.countries);
         const statesObject = Object.fromEntries(locationStats.states);
+        const citiesObject = Object.fromEntries(locationStats.cities);
 
         // OpenAI curation removed for performance - analytics now return in under 2 seconds
         const curatedPlaces: any[] = []; // Empty array to maintain API compatibility
@@ -1055,6 +1079,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ungeocodedCount: ungeocodedCount, // Count of locations being processed
             countries: countriesObject,
             states: statesObject,
+            cities: citiesObject,
             cityJumps: cityJumpsData,
             curatedPlaces,
             dateRange: {
