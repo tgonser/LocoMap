@@ -331,6 +331,7 @@ export default function LocationHistoryApp() {
                     onDateChange={setSelectedDate}
                     availableDates={availableDates}
                     locationCount={dayLocations.length}
+                    selectedDateRange={selectedDateRange}
                   />
                   <TimelineViewer
                     events={dayLocations.map(loc => ({
