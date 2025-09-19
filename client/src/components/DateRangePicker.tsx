@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Calendar, CalendarDays, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogPortal, DialogOverlay } from '@/components/ui/dialog';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -286,7 +286,6 @@ export default function DateRangePicker({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange} data-testid="dialog-date-range-picker">
-      <div className="fixed inset-0 z-[9998] bg-black/80" />
       <DialogContent className="max-w-md w-full sm:max-w-lg !z-[9999]" data-testid="content-date-range-picker">
         <DialogHeader className="pb-4">
           <DialogTitle className="flex items-center gap-2 text-lg font-semibold" data-testid="title-date-range-picker">
