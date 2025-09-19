@@ -3,9 +3,9 @@ import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CalendarDays, MapPin, Globe, Users, BarChart3, Calendar, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import DateRangePicker from "@/components/DateRangePicker";
 
 interface AnalyticsData {
   totalDays: number;
@@ -45,25 +45,28 @@ export default function AnalyticsPanel({
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showDateRangePicker, setShowDateRangePicker] = useState(false);
   const { toast } = useToast();
   
-  // Helper function to add months to a date string (YYYY-MM-DD format)
-  const addMonthsToDateString = (dateString: string, months: number): string => {
-    const date = new Date(dateString);
-    date.setMonth(date.getMonth() + months);
-    // Handle edge case where the day doesn't exist in the target month
-    if (date.getDate() !== new Date(dateString).getDate()) {
-      date.setDate(0); // Go to last day of previous month
-    }
-    return date.toISOString().split('T')[0];
+  // Helper functions for timezone-safe date handling
+  const formatLocalYmd = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const fromLocalYmd = (dateString: string): Date => {
+    const [year, month, day] = dateString.split('-').map(Number);
+    return new Date(year, month - 1, day);
   };
 
   // Set default date range from shared state or fallback to reasonable defaults
   const getDefaultDateRange = () => {
     if (defaultStartDate && defaultEndDate) {
       return {
-        start: defaultStartDate.toISOString().split('T')[0], // Convert Date to YYYY-MM-DD format
-        end: defaultEndDate.toISOString().split('T')[0]
+        start: formatLocalYmd(defaultStartDate), // Use timezone-safe formatting
+        end: formatLocalYmd(defaultEndDate)
       };
     }
     // Better defaults: current month and next month
@@ -71,8 +74,8 @@ export default function AnalyticsPanel({
     const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
     const firstOfNextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
     return {
-      start: firstOfMonth.toISOString().split('T')[0],
-      end: firstOfNextMonth.toISOString().split('T')[0]
+      start: formatLocalYmd(firstOfMonth),
+      end: formatLocalYmd(firstOfNextMonth)
     };
   };
   
@@ -82,8 +85,8 @@ export default function AnalyticsPanel({
   // Update local state when shared state changes (e.g., coming from map view)
   useEffect(() => {
     if (defaultStartDate && defaultEndDate) {
-      const newStartDate = defaultStartDate.toISOString().split('T')[0];
-      const newEndDate = defaultEndDate.toISOString().split('T')[0];
+      const newStartDate = formatLocalYmd(defaultStartDate);
+      const newEndDate = formatLocalYmd(defaultEndDate);
       
       // Only update if different to avoid unnecessary re-renders
       if (newStartDate !== startDate || newEndDate !== endDate) {
@@ -93,20 +96,23 @@ export default function AnalyticsPanel({
     }
   }, [defaultStartDate, defaultEndDate]);
 
-  // Helper to update both local state and shared state
-  const updateStartDate = (newStartDate: string) => {
+  // Handle DateRangePicker confirm
+  const handleDateRangeConfirm = (selectedStartDate: Date, selectedEndDate: Date) => {
+    setShowDateRangePicker(false);
+    const newStartDate = formatLocalYmd(selectedStartDate);
+    const newEndDate = formatLocalYmd(selectedEndDate);
     setStartDate(newStartDate);
-    if (onDateRangeChange && endDate) {
-      onDateRangeChange(new Date(newStartDate), new Date(endDate));
+    setEndDate(newEndDate);
+    
+    // Update shared state using the original Date objects (not reconstructed from strings)
+    if (onDateRangeChange) {
+      onDateRangeChange(selectedStartDate, selectedEndDate);
     }
   };
 
-  const updateEndDate = (newEndDate: string) => {
-    setEndDate(newEndDate);
-    if (onDateRangeChange && startDate) {
-      // Convert string dates to Date objects for the callback
-      onDateRangeChange(new Date(startDate), new Date(newEndDate));
-    }
+  // Handle DateRangePicker cancel
+  const handleDateRangeCancel = () => {
+    setShowDateRangePicker(false);
   };
 
   const handleRunAnalytics = async () => {
@@ -173,7 +179,7 @@ export default function AnalyticsPanel({
         
         // Update shared state with the analytics date range that was just used
         if (onDateRangeChange) {
-          onDateRangeChange(new Date(startDate), new Date(endDate));
+          onDateRangeChange(fromLocalYmd(startDate), fromLocalYmd(endDate));
         }
         
         toast({
@@ -199,11 +205,11 @@ export default function AnalyticsPanel({
   };
   
   const isDateRangeValid = () => {
-    return startDate && endDate && new Date(startDate) <= new Date(endDate);
+    return startDate && endDate && fromLocalYmd(startDate) <= fromLocalYmd(endDate);
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+    return fromLocalYmd(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric'
@@ -240,9 +246,12 @@ export default function AnalyticsPanel({
     URL.revokeObjectURL(url);
   };
 
-  // Initial loading state - show instructions instead of loading spinner
+  // Compute content based on current state
+  let content;
+
   if (!analytics && !loading && !error) {
-    return (
+    // Initial loading state - show instructions instead of loading spinner
+    content = (
       <div className="space-y-6 p-6" data-testid="analytics-panel">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -263,28 +272,21 @@ export default function AnalyticsPanel({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-col sm:flex-row gap-4 items-end">
-              <div className="flex-1">
-                <Label htmlFor="start-date">Start Date</Label>
-                <Input
-                  id="start-date"
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => updateStartDate(e.target.value)}
-                  className="mt-1"
-                  data-testid="input-start-date"
-                />
-              </div>
-              <div className="flex-1">
-                <Label htmlFor="end-date">End Date</Label>
-                <Input
-                  id="end-date"
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => updateEndDate(e.target.value)}
-                  className="mt-1"
-                  data-testid="input-end-date"
-                />
+            <div className="flex flex-col gap-4">
+              <div>
+                <Label>Selected Date Range</Label>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowDateRangePicker(true)}
+                  className="w-full mt-1 justify-start text-left font-normal"
+                  data-testid="button-select-date-range"
+                >
+                  <Calendar className="mr-2 h-4 w-4" />
+                  {startDate && endDate ? 
+                    `${fromLocalYmd(startDate).toLocaleDateString()} - ${fromLocalYmd(endDate).toLocaleDateString()}` : 
+                    'Click to select date range'
+                  }
+                </Button>
               </div>
               <Button 
                 onClick={handleRunAnalytics}
@@ -318,10 +320,8 @@ export default function AnalyticsPanel({
         </Card>
       </div>
     );
-  }
-
-  if (loading) {
-    return (
+  } else if (loading) {
+    content = (
       <div className="space-y-6 p-6" data-testid="analytics-panel">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -342,10 +342,8 @@ export default function AnalyticsPanel({
         </div>
       </div>
     );
-  }
-
-  if (error) {
-    return (
+  } else if (error) {
+    content = (
       <div className="space-y-6 p-6" data-testid="analytics-panel">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -370,11 +368,9 @@ export default function AnalyticsPanel({
         </div>
       </div>
     );
-  }
-
-  // Analytics results display
-  if (analytics) {
-    return (
+  } else if (analytics) {
+    // Analytics results display
+    content = (
       <div className="space-y-6 p-6" data-testid="analytics-panel">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -400,28 +396,21 @@ export default function AnalyticsPanel({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-col sm:flex-row gap-4 items-end">
-              <div className="flex-1">
-                <Label htmlFor="start-date">Start Date</Label>
-                <Input
-                  id="start-date"
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => updateStartDate(e.target.value)}
-                  className="mt-1"
-                  data-testid="input-start-date"
-                />
-              </div>
-              <div className="flex-1">
-                <Label htmlFor="end-date">End Date</Label>
-                <Input
-                  id="end-date"
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => updateEndDate(e.target.value)}
-                  className="mt-1"
-                  data-testid="input-end-date"
-                />
+            <div className="flex flex-col gap-4">
+              <div>
+                <Label>Selected Date Range</Label>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowDateRangePicker(true)}
+                  className="w-full mt-1 justify-start text-left font-normal"
+                  data-testid="button-select-date-range"
+                >
+                  <Calendar className="mr-2 h-4 w-4" />
+                  {startDate && endDate ? 
+                    `${fromLocalYmd(startDate).toLocaleDateString()} - ${fromLocalYmd(endDate).toLocaleDateString()}` : 
+                    'Click to select date range'
+                  }
+                </Button>
               </div>
               <Button 
                 onClick={handleRunAnalytics}
@@ -676,5 +665,22 @@ export default function AnalyticsPanel({
     );
   }
 
-  return null;
+  // Always render DateRangePicker alongside any content
+  return (
+    <>
+      {content}
+      <DateRangePicker
+        open={showDateRangePicker}
+        setOpen={setShowDateRangePicker}
+        onConfirm={handleDateRangeConfirm}
+        onCancel={handleDateRangeCancel}
+        title="Select Date Range for Analytics"
+        description="Choose the date range to analyze your location data and generate insights."
+        defaultStartDate={startDate ? fromLocalYmd(startDate) : undefined}
+        defaultEndDate={endDate ? fromLocalYmd(endDate) : undefined}
+        minDate={new Date('2005-01-01')}
+        maxDate={new Date()}
+      />
+    </>
+  );
 }
