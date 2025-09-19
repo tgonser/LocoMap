@@ -7,7 +7,6 @@ import FileUploader from './FileUploader';
 import MapDisplay from './MapDisplay';
 import DateNavigator from './DateNavigator';
 import AnalyticsPanel from './AnalyticsPanel';
-import LocationSummary from './LocationSummary';
 import TimelineViewer from './TimelineViewer';
 import DateRangePicker from './DateRangePicker';
 
@@ -354,41 +353,6 @@ export default function LocationHistoryApp() {
                 </>
               )}
               
-              {viewMode === 'analytics' && (
-                <LocationSummary
-                  locations={validLocationData.length > 0 ? validLocationData.map(location => ({
-                    city: 'Unknown City', // Will be filled by geocoding
-                    state: 'Unknown State',
-                    country: 'Unknown Country', 
-                    visitCount: 1,
-                    firstVisit: location.timestamp,
-                    lastVisit: location.timestamp
-                  })) : []}
-                  dateRange={dateRange}
-                  onExport={() => {
-                    // Export location summary data
-                    const exportData = {
-                      summary: 'Location Summary Export',
-                      dateRange: {
-                        start: `${dateRange.start.getFullYear()}-${String(dateRange.start.getMonth() + 1).padStart(2, '0')}-${String(dateRange.start.getDate()).padStart(2, '0')}`,
-                        end: `${dateRange.end.getFullYear()}-${String(dateRange.end.getMonth() + 1).padStart(2, '0')}-${String(dateRange.end.getDate()).padStart(2, '0')}`
-                      },
-                      totalLocations,
-                      exportedAt: new Date().toISOString()
-                    };
-                    
-                    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `location-summary-${dateRange.start.toISOString().split('T')[0]}-to-${dateRange.end.toISOString().split('T')[0]}.json`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                  }}
-                />
-              )}
             </div>
 
             {/* Main Content Area */}
