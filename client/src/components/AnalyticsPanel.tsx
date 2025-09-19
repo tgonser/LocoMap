@@ -93,42 +93,11 @@ export default function AnalyticsPanel({
     }
   }, [defaultStartDate, defaultEndDate]);
 
-  // Helper to update both local state and shared state with smart end date suggestion
+  // Helper to update both local state and shared state
   const updateStartDate = (newStartDate: string) => {
-    console.log('updateStartDate called with:', newStartDate);
     setStartDate(newStartDate);
-    
-    // Smart end date suggestion: if user picks a start date, suggest start + 1 month
-    const suggestedEndDate = addMonthsToDateString(newStartDate, 1);
-    console.log('Suggested end date:', suggestedEndDate);
-    
-    // Auto-suggest end date in these cases:
-    // 1. Current end date is before start date (invalid range)  
-    // 2. Current end date is the same as start date (just picked one date)
-    // 3. End date is more than 3 months after start date (probably old data)
-    const currentEndDate = new Date(endDate);
-    const newStart = new Date(newStartDate);
-    const daysDiff = Math.ceil((currentEndDate.getTime() - newStart.getTime()) / (1000 * 60 * 60 * 24));
-    
-    const shouldSuggestNewEnd = currentEndDate <= newStart || daysDiff > 90 || daysDiff < 0;
-    
-    console.log('Should suggest new end date?', shouldSuggestNewEnd, {
-      currentEndDate: endDate,
-      newStartDate,
-      daysDiff,
-      endBeforeStart: currentEndDate <= newStart
-    });
-    
-    if (shouldSuggestNewEnd) {
-      console.log('Setting end date to:', suggestedEndDate);
-      setEndDate(suggestedEndDate);
-      if (onDateRangeChange) {
-        onDateRangeChange(new Date(newStartDate), new Date(suggestedEndDate));
-      }
-    } else {
-      if (onDateRangeChange) {
-        onDateRangeChange(new Date(newStartDate), new Date(endDate));
-      }
+    if (onDateRangeChange && endDate) {
+      onDateRangeChange(new Date(newStartDate), new Date(endDate));
     }
   };
 
