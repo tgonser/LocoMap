@@ -1,6 +1,5 @@
 import { MapContainer, TileLayer, Marker, Polyline, Popup } from 'react-leaflet';
 import { Icon } from 'leaflet';
-import 'leaflet/dist/leaflet.css';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import CalendarOverlay from './CalendarOverlay';
@@ -8,9 +7,9 @@ import CalendarOverlay from './CalendarOverlay';
 // Fix for default markers in react-leaflet
 delete (Icon.Default.prototype as any)._getIconUrl;
 Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
 interface LocationPoint {
@@ -61,7 +60,7 @@ export default function MapDisplay({
 
   return (
     <Card className={`h-full relative ${className}`}>
-      <div className="h-full rounded-lg overflow-hidden">
+      <div className="h-full rounded-lg">
         <MapContainer
           center={mapCenter}
           zoom={zoom}
@@ -96,11 +95,11 @@ export default function MapDisplay({
                 icon={new Icon({
                   iconUrl: isFirst ? 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png' 
                     : isLast ? 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png'
-                    : 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+                    : 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
                   iconRetinaUrl: isFirst ? 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png' 
                     : isLast ? 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png'
-                    : 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-                  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+                    : 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+                  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
                   iconSize: [25, 41],
                   iconAnchor: [12, 41],
                   popupAnchor: [1, -34],
