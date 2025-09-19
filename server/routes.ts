@@ -884,8 +884,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Get geocoded daily centroids within the date range
         const geocodedCentroids = await storage.getGeocodedDailyCentroidsByDateRange(userId, startDate, endDate);
         
-        // Calculate expected total days in the date range
-        const totalDaysInRange = Math.ceil((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+        // Calculate expected total days in the date range (fixed off-by-one error)
+        const totalDaysInRange = Math.ceil((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000));
         
         console.log(`📊 Analytics results for user ${userId}:`, {
           dateRangeRequested: `${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`,
@@ -1052,8 +1052,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get geocoded daily centroids within the date range
       const geocodedCentroids = await storage.getGeocodedDailyCentroidsByDateRange(userId, startDate, endDate);
       
-      // Calculate expected total days in the date range
-      const totalDaysInRange = Math.ceil((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+      // Calculate expected total days in the date range (fixed off-by-one error)
+      const totalDaysInRange = Math.ceil((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000));
       
       console.log(`📊 Analytics results for user ${userId}:`, {
         dateRangeRequested: `${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`,
