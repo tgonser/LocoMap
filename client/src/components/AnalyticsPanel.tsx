@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CalendarDays, MapPin, Globe, Users, BarChart3, Calendar, Play } from "lucide-react";
@@ -28,16 +28,33 @@ interface AnalyticsData {
 
 interface AnalyticsPanelProps {
   onBack: () => void;
+  /** Optional default start date from shared state */
+  defaultStartDate?: Date;
+  /** Optional default end date from shared state */
+  defaultEndDate?: Date;
+  /** Callback to update shared date range state */
+  onDateRangeChange?: (startDate: Date, endDate: Date) => void;
 }
 
-export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
+export default function AnalyticsPanel({ 
+  onBack, 
+  defaultStartDate, 
+  defaultEndDate, 
+  onDateRangeChange 
+}: AnalyticsPanelProps) {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
   
-  // Set default date range to a smaller, manageable range for testing
+  // Set default date range from shared state or fallback to reasonable defaults
   const getDefaultDateRange = () => {
+    if (defaultStartDate && defaultEndDate) {
+      return {
+        start: defaultStartDate.toISOString().split('T')[0], // Convert Date to YYYY-MM-DD format
+        end: defaultEndDate.toISOString().split('T')[0]
+      };
+    }
     return {
       start: '2024-01-01',
       end: '2024-03-01'
@@ -46,6 +63,37 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
   
   const [startDate, setStartDate] = useState(getDefaultDateRange().start);
   const [endDate, setEndDate] = useState(getDefaultDateRange().end);
+
+  // Update local state when shared state changes (e.g., coming from map view)
+  useEffect(() => {
+    if (defaultStartDate && defaultEndDate) {
+      const newStartDate = defaultStartDate.toISOString().split('T')[0];
+      const newEndDate = defaultEndDate.toISOString().split('T')[0];
+      
+      // Only update if different to avoid unnecessary re-renders
+      if (newStartDate !== startDate || newEndDate !== endDate) {
+        setStartDate(newStartDate);
+        setEndDate(newEndDate);
+      }
+    }
+  }, [defaultStartDate, defaultEndDate]);
+
+  // Helper to update both local state and shared state
+  const updateStartDate = (newStartDate: string) => {
+    setStartDate(newStartDate);
+    if (onDateRangeChange && endDate) {
+      // Convert string dates to Date objects for the callback
+      onDateRangeChange(new Date(newStartDate), new Date(endDate));
+    }
+  };
+
+  const updateEndDate = (newEndDate: string) => {
+    setEndDate(newEndDate);
+    if (onDateRangeChange && startDate) {
+      // Convert string dates to Date objects for the callback
+      onDateRangeChange(new Date(startDate), new Date(newEndDate));
+    }
+  };
 
   const handleRunAnalytics = async () => {
     try {
@@ -108,6 +156,12 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
       // The /api/analytics/run endpoint returns the analytics data directly
       if (data.analytics) {
         setAnalytics(data.analytics);
+        
+        // Update shared state with the analytics date range that was just used
+        if (onDateRangeChange) {
+          onDateRangeChange(new Date(startDate), new Date(endDate));
+        }
+        
         toast({
           title: "Analytics Complete",
           description: `Successfully processed analytics for ${data.analytics.totalDays} days`,
@@ -202,7 +256,7 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
                   id="start-date"
                   type="date"
                   value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
+                  onChange={(e) => updateStartDate(e.target.value)}
                   className="mt-1"
                   data-testid="input-start-date"
                 />
@@ -213,7 +267,7 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
                   id="end-date"
                   type="date"
                   value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
+                  onChange={(e) => updateEndDate(e.target.value)}
                   className="mt-1"
                   data-testid="input-end-date"
                 />
@@ -339,7 +393,7 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
                   id="start-date"
                   type="date"
                   value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
+                  onChange={(e) => updateStartDate(e.target.value)}
                   className="mt-1"
                   data-testid="input-start-date"
                 />
@@ -350,7 +404,7 @@ export default function AnalyticsPanel({ onBack }: AnalyticsPanelProps) {
                   id="end-date"
                   type="date"
                   value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
+                  onChange={(e) => updateEndDate(e.target.value)}
                   className="mt-1"
                   data-testid="input-end-date"
                 />

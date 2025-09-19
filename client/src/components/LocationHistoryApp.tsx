@@ -33,6 +33,8 @@ export default function LocationHistoryApp() {
   const [isLoadingMapData, setIsLoadingMapData] = useState(false);
   const [mapDataLoaded, setMapDataLoaded] = useState(false);
   const [previousViewMode, setPreviousViewMode] = useState<ViewMode>('analytics');
+  
+  // Shared date range state between analytics and map views
   const [selectedDateRange, setSelectedDateRange] = useState<{start: Date, end: Date} | null>(null);
 
   // Check for existing data on component mount
@@ -233,6 +235,10 @@ export default function LocationHistoryApp() {
     setShowDateRangePicker(false);
     setIsLoadingMapData(true); // Set loading state before switching views
     setViewMode('map'); // Now switch to map view with loading state active
+    
+    // Update shared date range state
+    setSelectedDateRange({ start: startDate, end: endDate });
+    
     await loadLocationDataForDateRange(startDate, endDate);
   };
 
@@ -421,6 +427,12 @@ export default function LocationHistoryApp() {
               ) : (
                 <AnalyticsPanel
                   onBack={() => setViewMode('map')}
+                  defaultStartDate={selectedDateRange?.start}
+                  defaultEndDate={selectedDateRange?.end}
+                  onDateRangeChange={(startDate: Date, endDate: Date) => {
+                    // Update shared date range state when analytics dates change
+                    setSelectedDateRange({ start: startDate, end: endDate });
+                  }}
                 />
               )}
             </div>
