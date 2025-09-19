@@ -68,14 +68,64 @@ export default function DateRangePicker({
     return clamped;
   };
 
+  // Helper function to add months to a date
+  const addMonths = (date: Date, months: number): Date => {
+    const result = new Date(date);
+    result.setMonth(result.getMonth() + months);
+    // Handle edge case where the day doesn't exist in the target month (e.g., Jan 31 -> Feb 28)
+    if (result.getDate() !== date.getDate()) {
+      result.setDate(0); // Go to last day of previous month
+    }
+    return result;
+  };
+
+  // Load last used dates from localStorage
+  const loadLastUsedDates = (): { from?: Date; to?: Date } => {
+    try {
+      const saved = localStorage.getItem('dateRangePicker_lastUsed');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          from: parsed.from ? new Date(parsed.from) : undefined,
+          to: parsed.to ? new Date(parsed.to) : undefined
+        };
+      }
+    } catch (error) {
+      // Clear corrupted data
+      localStorage.removeItem('dateRangePicker_lastUsed');
+    }
+    return {};
+  };
+
+  // Save dates to localStorage
+  const saveLastUsedDates = (from: Date, to: Date) => {
+    try {
+      localStorage.setItem('dateRangePicker_lastUsed', JSON.stringify({
+        from: from.toISOString(),
+        to: to.toISOString()
+      }));
+    } catch (error) {
+      // Silently fail if localStorage is not available
+    }
+  };
+
   // Initialize default dates when dialog opens
   useEffect(() => {
     if (open) {
-      setSelectedRange(
-        defaultStartDate && defaultEndDate
-          ? { from: defaultStartDate, to: defaultEndDate }
-          : undefined
-      );
+      let initialRange: DateRange | undefined;
+      
+      // Priority: shared state props > localStorage > no defaults
+      if (defaultStartDate && defaultEndDate) {
+        initialRange = { from: defaultStartDate, to: defaultEndDate };
+      } else {
+        // Try to load from localStorage if no shared state
+        const lastUsed = loadLastUsedDates();
+        if (lastUsed.from && lastUsed.to) {
+          initialRange = { from: lastUsed.from, to: lastUsed.to };
+        }
+      }
+      
+      setSelectedRange(initialRange);
       setValidationResult({ error: '', isBackwards: false });
     }
   }, [open, defaultStartDate, defaultEndDate]);
@@ -129,7 +179,7 @@ export default function DateRangePicker({
     return { error: '', isBackwards: false };
   };
 
-  // Handle date range selection
+  // Handle date range selection with smart end date suggestion
   const handleRangeSelect = (range: DateRange | undefined) => {
     if (!range) {
       setSelectedRange(undefined);
@@ -137,10 +187,18 @@ export default function DateRangePicker({
       return;
     }
 
-    setSelectedRange(range);
+    let updatedRange = range;
+    
+    // Smart end date suggestion: if only start date is selected, suggest start + 1 month
+    if (range.from && !range.to && !selectedRange?.to) {
+      const suggestedEndDate = addMonths(range.from, 1);
+      updatedRange = { from: range.from, to: suggestedEndDate };
+    }
+
+    setSelectedRange(updatedRange);
 
     // Validate and set error if any
-    const result = validateDateRange(range);
+    const result = validateDateRange(updatedRange);
     setValidationResult(result);
   };
 
@@ -156,6 +214,9 @@ export default function DateRangePicker({
       // Normalize dates before calling onConfirm to ensure consistent backend filtering
       const normalizedStartDate = normalizeToStartOfDay(selectedRange.from);
       const normalizedEndDate = normalizeToEndOfDay(selectedRange.to);
+      
+      // Save to localStorage for next time
+      saveLastUsedDates(selectedRange.from, selectedRange.to);
       
       onConfirm(normalizedStartDate, normalizedEndDate);
       setOpen(false);
