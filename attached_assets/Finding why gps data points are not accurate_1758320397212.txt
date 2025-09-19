@@ -1,0 +1,30 @@
+Finding why gps data points are not accurate. 
+
+We see this on Aug / 8 for the city jumps table:
+44.222, -121.286, Oregon
+→
+43.844, -118.667, Oregon
+8/8/2025
+driving
+132.7 miles
+
+ONLY ONE DATA point. A 3rd party analyzer sees 185 data points on 8/8/25. Why do we only show one data point, and they show 185? Further, when I look at our MAP view, it shows 22 data points. WAY more than the only 1 data point that the city list had, but far short of what the data holds.
+
+See images - 3rd party tool Aug 8, 2205, and our tool aug_8_25.
+
+From the 3rd party tool you can see far more cities/stops.
+
+------------------------------------------
+Another comparison is the drive from Bend to Boise on Aug 21. The 3rd party tool finds 367 data points, and 510,211.57 meters. - aug_21_3rd_party.jpg, vs our map view of that day
+
+Our map tool finds 32 locations only, during that day, it does show a trip from Redmond OR to boise, just missing lots of detail.
+
+Our city jumps tool finds 
+43.927, -119.206, Oregon
+→
+43.596, -115.212, Idaho
+8/21/2025
+driving
+200.6 miles
+
+This is a location in the middle of the forest about 35 miles outside of boise, where we were in downtown boise for the night.

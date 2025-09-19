@@ -109,6 +109,49 @@ export const insertUniqueLocationSchema = createInsertSchema(uniqueLocations).om
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
 
+// Travel stops - waypoint-based analytics replacing daily centroids
+export const travelStops = pgTable('travel_stops', {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar('user_id').references(() => users.id).notNull(),
+  datasetId: varchar('dataset_id').references(() => locationDatasets.id).notNull(),
+  start: timestamp('start').notNull(), // When the stop started
+  end: timestamp('end').notNull(), // When the stop ended
+  lat: real('lat').notNull(), // Stop location latitude
+  lng: real('lng').notNull(), // Stop location longitude
+  pointCount: integer('point_count').notNull(), // Number of GPS points at this stop
+  dwellMinutes: integer('dwell_minutes').notNull(), // How long user stayed (minutes)
+  city: text('city'),
+  state: text('state'),
+  country: text('country'),
+  address: text('address'),
+  geocoded: boolean('geocoded').default(false),
+  geocodedAt: timestamp('geocoded_at'),
+  createdAt: timestamp('created_at').defaultNow(),
+}, (table) => [
+  index('idx_travel_stops_user_time').on(table.userId, table.start),
+  index('idx_travel_stops_dataset').on(table.datasetId),
+  index('idx_travel_stops_dwell').on(table.dwellMinutes), // For filtering significant stops
+]);
+
+// Travel segments - routes between consecutive stops
+export const travelSegments = pgTable('travel_segments', {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar('user_id').references(() => users.id).notNull(),
+  fromStopId: varchar('from_stop_id').references(() => travelStops.id).notNull(),
+  toStopId: varchar('to_stop_id').references(() => travelStops.id).notNull(),
+  start: timestamp('start').notNull(), // When travel started
+  end: timestamp('end').notNull(), // When travel ended  
+  distanceMiles: real('distance_miles').notNull(), // Calculated travel distance
+  polyline: text('polyline'), // Encoded polyline of the route
+  cities: text('cities').array().default([]), // Intermediate cities along route
+  createdAt: timestamp('created_at').defaultNow(),
+}, (table) => [
+  index('idx_travel_segments_user_time').on(table.userId, table.start),
+  index('idx_travel_segments_from').on(table.fromStopId),
+  index('idx_travel_segments_to').on(table.toStopId),
+  unique('unique_travel_segments_from_to').on(table.fromStopId, table.toStopId)
+]);
+
 // Daily geocoded centroids for efficient analytics (user-specific)
 export const dailyGeocodes = pgTable('daily_geocodes', {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -157,6 +200,17 @@ export const insertGeocodeCacheSchema = createInsertSchema(geocodeCache).omit({
   cachedAt: true,
 });
 
+// Zod schemas for waypoint tables
+export const insertTravelStopSchema = createInsertSchema(travelStops).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertTravelSegmentSchema = createInsertSchema(travelSegments).omit({
+  id: true,
+  createdAt: true,
+});
+
 // TypeScript types for location data
 export type LocationDataset = typeof locationDatasets.$inferSelect;
 export type InsertLocationDataset = z.infer<typeof insertLocationDatasetSchema>;
@@ -168,3 +222,7 @@ export type DailyGeocode = typeof dailyGeocodes.$inferSelect;
 export type InsertDailyGeocode = z.infer<typeof insertDailyGeocodeSchema>;
 export type GeocodeCache = typeof geocodeCache.$inferSelect;
 export type InsertGeocodeCache = z.infer<typeof insertGeocodeCacheSchema>;
+export type TravelStop = typeof travelStops.$inferSelect;
+export type InsertTravelStop = z.infer<typeof insertTravelStopSchema>;
+export type TravelSegment = typeof travelSegments.$inferSelect;
+export type InsertTravelSegment = z.infer<typeof insertTravelSegmentSchema>;

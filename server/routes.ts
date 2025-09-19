@@ -791,6 +791,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ================== WAYPOINT-BASED ANALYTICS ENDPOINTS ==================
+
+  // NEW: Waypoint computation pipeline endpoint
+  app.post('/api/analytics/compute-waypoints', isAuthenticated, async (req, res) => {
+    try {
+      const { claims } = getAuthenticatedUser(req);
+      const userId = claims.sub;
+
+      // Input validation
+      const waypointSchema = z.object({
+        datasetId: z.string().min(1, "Dataset ID is required"),
+        minDwellMinutes: z.number().min(1).max(60).default(15),
+        maxDistanceMeters: z.number().min(50).max(500).default(150)
+      });
+
+      let validatedInput;
+      try {
+        validatedInput = waypointSchema.parse(req.body);
+      } catch (validationError) {
+        console.log(`❌ Waypoint computation validation failed for user ${userId}:`, validationError);
+        return res.status(400).json({ 
+          error: "Invalid parameters for waypoint computation",
+          details: validationError instanceof z.ZodError ? validationError.errors : undefined
+        });
+      }
+
+      const { datasetId, minDwellMinutes, maxDistanceMeters } = validatedInput;
+
+      // Verify dataset belongs to user
+      const dataset = await storage.getLocationDataset(datasetId, userId);
+      if (!dataset) {
+        return res.status(404).json({ 
+          error: "Dataset not found or access denied" 
+        });
+      }
+
+      console.log(`🚀 Starting waypoint computation for user ${userId}, dataset ${datasetId}`);
+      const startTime = Date.now();
+
+      // Run complete waypoint analytics pipeline
+      const result = await storage.computeWaypointAnalytics(userId, datasetId);
+
+      const processingTime = (Date.now() - startTime) / 1000;
+
+      console.log(`✅ Waypoint computation completed in ${processingTime.toFixed(1)}s: ${result.stopsCreated} stops, ${result.segmentsCreated} segments`);
+
+      res.json({
+        success: true,
+        pipeline: {
+          datasetId,
+          stopsCreated: result.stopsCreated,
+          segmentsCreated: result.segmentsCreated,
+          processingTimeSeconds: Math.round(processingTime * 10) / 10,
+          parameters: {
+            minDwellMinutes,
+            maxDistanceMeters
+          }
+        },
+        message: `Waypoint computation completed: ${result.stopsCreated} stops and ${result.segmentsCreated} travel segments created`,
+        next: "Use /api/analytics/run with date range to see accurate city jumps from waypoints"
+      });
+
+    } catch (error) {
+      console.error(`❌ Waypoint computation failed:`, error);
+      res.status(500).json({ 
+        error: "Failed to compute waypoints",
+        details: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   // Orchestrated analytics endpoint: Automates the entire centroids → geocoding → analytics pipeline
   app.post('/api/analytics/run', isAuthenticated, async (req, res) => {
     try {
@@ -974,108 +1045,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         });
 
-        // Calculate city jumps from chronologically sorted centroids
-        const cityJumps: Array<{
-          fromCity: string;
-          fromState?: string;
-          fromCountry: string;
-          fromCoords: { lat: number; lng: number };
-          toCity: string;
-          toState?: string;
-          toCountry: string;
-          toCoords: { lat: number; lng: number };
-          date: string;
-          mode: string;
-          distance: number;
-        }> = [];
+        // ========== WAYPOINT-BASED CITY JUMPS (REPLACES CENTROID APPROACH) ==========
+        // Get accurate city jumps from actual travel stops and segments
+        const waypointCityJumps = await storage.getWaypointCityJumpsByDateRange(userId, startDate, endDate);
+        
+        // Calculate total travel distance from waypoint segments (preserves accuracy)
+        const totalTravelDistance = waypointCityJumps.reduce((sum, jump) => sum + jump.distance, 0);
 
-        let totalTravelDistance = 0;
-
-        // Calculate complete travel chain: distances between ALL consecutive centroids
-        for (let i = 1; i < sortedCentroids.length; i++) {
-          const prevCentroid = sortedCentroids[i - 1];
-          const currCentroid = sortedCentroids[i];
-
-          // Calculate distance between ALL consecutive centroids (geocoded or not)
-          const distance = calculateDistance(
-            prevCentroid.lat, 
-            prevCentroid.lng, 
-            currCentroid.lat, 
-            currCentroid.lng
-          );
-
-          // Add ALL movement to total travel distance (no more gaps!)
-          totalTravelDistance += distance;
-
-          // Create city jumps with more flexible logic to show complete travel chain
-          let shouldCreateJump = false;
-          let jumpType = '';
-
-          // Case 1: Both locations have complete city data (original logic)
-          if (prevCentroid.city && currCentroid.city && 
-              prevCentroid.country && currCentroid.country) {
-            
-            const prevCityKey = prevCentroid.state ? 
-              `${prevCentroid.city}, ${prevCentroid.state}` : 
-              `${prevCentroid.city}, ${prevCentroid.country}`;
-            const currCityKey = currCentroid.state ? 
-              `${currCentroid.city}, ${currCentroid.state}` : 
-              `${currCentroid.city}, ${currCentroid.country}`;
-
-            // Only create jump if cities are different
-            if (prevCityKey !== currCityKey) {
-              shouldCreateJump = true;
-              jumpType = 'complete';
-            }
-          }
-          // Case 2: Only one location has city data - still show partial jumps
-          else if ((prevCentroid.city && prevCentroid.country) || (currCentroid.city && currCentroid.country)) {
-            shouldCreateJump = true;
-            jumpType = 'partial';
-          }
-          // Case 3: Neither has city data, but significant movement (50+ miles) - show coordinate jumps
-          else if (distance >= 50) {
-            shouldCreateJump = true;
-            jumpType = 'coordinate';
-          }
-
-          if (shouldCreateJump) {
-            // Determine transportation mode based on distance
-            let mode = 'driving';
-            if (distance > 500) {
-              mode = 'flying';
-            } else if (distance < 10) {
-              mode = 'walking';
-            }
-
-            // Create jump with available data, fallback to coordinates when needed
-            const fromCity = prevCentroid.city || `${prevCentroid.lat.toFixed(3)}, ${prevCentroid.lng.toFixed(3)}`;
-            const fromCountry = prevCentroid.country || 'Unknown';
-            const toCity = currCentroid.city || `${currCentroid.lat.toFixed(3)}, ${currCentroid.lng.toFixed(3)}`;
-            const toCountry = currCentroid.country || 'Unknown';
-
-            cityJumps.push({
-              fromCity,
-              fromState: prevCentroid.state || undefined,
-              fromCountry,
-              fromCoords: { lat: prevCentroid.lat, lng: prevCentroid.lng },
-              toCity,
-              toState: currCentroid.state || undefined,
-              toCountry,
-              toCoords: { lat: currCentroid.lat, lng: currCentroid.lng },
-              date: currCentroid.date.toISOString().split('T')[0],
-              mode,
-              distance: Math.round(distance * 10) / 10
-            });
-          }
-        }
-
-        // Prepare city jumps data
+        // Prepare city jumps data with waypoint-based results
         const cityJumpsData = {
-          cityJumps,
+          cityJumps: waypointCityJumps,
           totalTravelDistance: Math.round(totalTravelDistance * 10) / 10,
-          totalJumps: cityJumps.length
+          totalJumps: waypointCityJumps.length
         };
+
+        console.log(`🎯 Waypoint Analytics: ${waypointCityJumps.length} city jumps, ${Math.round(totalTravelDistance)} miles total travel`);
 
         // Convert Maps to Objects for frontend compatibility
         const countriesObject = Object.fromEntries(locationStats.countries);

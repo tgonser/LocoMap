@@ -5,6 +5,8 @@ import {
   locationDatasets,
   uniqueLocations,
   dailyGeocodes,
+  travelStops,
+  travelSegments,
   type User,
   type UpsertUser,
   type LocationPoint,
@@ -15,6 +17,10 @@ import {
   type InsertUniqueLocation,
   type DailyGeocode,
   type InsertDailyGeocode,
+  type TravelStop,
+  type InsertTravelStop,
+  type TravelSegment,
+  type InsertTravelSegment,
 } from "@shared/schema";
 import { db } from "./db.js";
 import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
@@ -77,6 +83,38 @@ export interface IStorage {
   
   // New method for analytics endpoint
   getGeocodedDailyCentroidsByDateRange(userId: string, startDate: Date, endDate: Date): Promise<DailyGeocode[]>;
+  
+  // Waypoint-based analytics operations (replaces daily centroids)
+  // Travel stops operations
+  insertTravelStops(stops: InsertTravelStop[]): Promise<TravelStop[]>;
+  getUserTravelStops(userId: string, datasetId?: string): Promise<TravelStop[]>;
+  getUserTravelStopsByDateRange(userId: string, startDate: Date, endDate: Date, datasetId?: string): Promise<TravelStop[]>;
+  updateTravelStopGeocoding(id: string, address: string, city?: string, state?: string, country?: string): Promise<void>;
+  
+  // Travel segments operations
+  insertTravelSegments(segments: InsertTravelSegment[]): Promise<TravelSegment[]>;
+  getUserTravelSegments(userId: string, datasetId?: string): Promise<TravelSegment[]>;
+  getUserTravelSegmentsByDateRange(userId: string, startDate: Date, endDate: Date, datasetId?: string): Promise<TravelSegment[]>;
+  
+  // Waypoint computation pipeline
+  computeTravelStopsFromPoints(userId: string, datasetId: string, minDwellMinutes?: number, maxDistanceMeters?: number): Promise<number>;
+  computeTravelSegmentsFromStops(userId: string, datasetId: string): Promise<number>;
+  computeWaypointAnalytics(userId: string, datasetId: string): Promise<{ stopsCreated: number; segmentsCreated: number }>;
+  
+  // Analytics from waypoints (replaces centroid-based analytics)
+  getWaypointCityJumpsByDateRange(userId: string, startDate: Date, endDate: Date): Promise<Array<{
+    fromCity: string;
+    fromState?: string;
+    fromCountry: string;
+    fromCoords: { lat: number; lng: number };
+    toCity: string;
+    toState?: string;
+    toCountry: string;
+    toCoords: { lat: number; lng: number };
+    date: string;
+    mode: string;
+    distance: number;
+  }>>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -825,6 +863,485 @@ export class DatabaseStorage implements IStorage {
 
 
     return formattedResults;
+  }
+
+  // ================== WAYPOINT-BASED ANALYTICS IMPLEMENTATION ==================
+  // Replaces daily centroid approach with accurate stop detection and trip segmentation
+
+  // CRUD operations for travel stops
+  async insertTravelStops(stops: InsertTravelStop[]): Promise<TravelStop[]> {
+    if (stops.length === 0) return [];
+    return await db.insert(travelStops).values(stops).returning();
+  }
+
+  async getUserTravelStops(userId: string, datasetId?: string): Promise<TravelStop[]> {
+    const conditions = [eq(travelStops.userId, userId)];
+    if (datasetId) {
+      conditions.push(eq(travelStops.datasetId, datasetId));
+    }
+    
+    return await db
+      .select()
+      .from(travelStops)
+      .where(and(...conditions))
+      .orderBy(desc(travelStops.start));
+  }
+
+  async getUserTravelStopsByDateRange(userId: string, startDate: Date, endDate: Date, datasetId?: string): Promise<TravelStop[]> {
+    const conditions = [
+      eq(travelStops.userId, userId),
+      gte(travelStops.start, startDate),
+      lte(travelStops.end, endDate)
+    ];
+    if (datasetId) {
+      conditions.push(eq(travelStops.datasetId, datasetId));
+    }
+    
+    return await db
+      .select()
+      .from(travelStops)
+      .where(and(...conditions))
+      .orderBy(desc(travelStops.start));
+  }
+
+  async updateTravelStopGeocoding(
+    id: string,
+    address: string,
+    city?: string,
+    state?: string,
+    country?: string
+  ): Promise<void> {
+    await db
+      .update(travelStops)
+      .set({
+        address,
+        city,
+        state,
+        country,
+        geocoded: true,
+        geocodedAt: new Date(),
+      })
+      .where(eq(travelStops.id, id));
+  }
+
+  // CRUD operations for travel segments
+  async insertTravelSegments(segments: InsertTravelSegment[]): Promise<TravelSegment[]> {
+    if (segments.length === 0) return [];
+    return await db.insert(travelSegments).values(segments).returning();
+  }
+
+  async getUserTravelSegments(userId: string, datasetId?: string): Promise<TravelSegment[]> {
+    // Join with travel stops to filter by dataset if needed
+    if (datasetId) {
+      const result = await db
+        .select({
+          id: travelSegments.id,
+          userId: travelSegments.userId,
+          fromStopId: travelSegments.fromStopId,
+          toStopId: travelSegments.toStopId,
+          start: travelSegments.start,
+          end: travelSegments.end,
+          distanceMiles: travelSegments.distanceMiles,
+          polyline: travelSegments.polyline,
+          cities: travelSegments.cities,
+          createdAt: travelSegments.createdAt,
+        })
+        .from(travelSegments)
+        .innerJoin(travelStops, eq(travelSegments.fromStopId, travelStops.id))
+        .where(and(
+          eq(travelSegments.userId, userId),
+          eq(travelStops.datasetId, datasetId)
+        ))
+        .orderBy(desc(travelSegments.start));
+      
+      return result as TravelSegment[];
+    }
+    
+    return await db
+      .select()
+      .from(travelSegments)
+      .where(eq(travelSegments.userId, userId))
+      .orderBy(desc(travelSegments.start));
+  }
+
+  async getUserTravelSegmentsByDateRange(userId: string, startDate: Date, endDate: Date, datasetId?: string): Promise<TravelSegment[]> {
+    if (datasetId) {
+      const result = await db
+        .select({
+          id: travelSegments.id,
+          userId: travelSegments.userId,
+          fromStopId: travelSegments.fromStopId,
+          toStopId: travelSegments.toStopId,
+          start: travelSegments.start,
+          end: travelSegments.end,
+          distanceMiles: travelSegments.distanceMiles,
+          polyline: travelSegments.polyline,
+          cities: travelSegments.cities,
+          createdAt: travelSegments.createdAt,
+        })
+        .from(travelSegments)
+        .innerJoin(travelStops, eq(travelSegments.fromStopId, travelStops.id))
+        .where(and(
+          eq(travelSegments.userId, userId),
+          eq(travelStops.datasetId, datasetId),
+          gte(travelSegments.start, startDate),
+          lte(travelSegments.end, endDate)
+        ))
+        .orderBy(desc(travelSegments.start));
+      
+      return result as TravelSegment[];
+    }
+    
+    const conditions = [
+      eq(travelSegments.userId, userId),
+      gte(travelSegments.start, startDate),
+      lte(travelSegments.end, endDate)
+    ];
+    
+    return await db
+      .select()
+      .from(travelSegments)
+      .where(and(...conditions))
+      .orderBy(desc(travelSegments.start));
+  }
+
+  // ================== CORE ALGORITHMS ==================
+
+  // Distance calculation utility using Haversine formula (returns meters)
+  private calculateDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const R = 6371000; // Earth's radius in meters
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLng = (lng2 - lng1) * (Math.PI / 180);
+    const a = 
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
+  // Distance calculation in miles (for travel segments)
+  private calculateDistanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    return this.calculateDistanceMeters(lat1, lng1, lat2, lng2) * 0.000621371; // Convert meters to miles
+  }
+
+  // **STOP DETECTION ALGORITHM**
+  // Identifies places where user stayed ≥minDwellMinutes within maxDistanceMeters radius
+  async computeTravelStopsFromPoints(
+    userId: string,
+    datasetId: string,
+    minDwellMinutes: number = 15,
+    maxDistanceMeters: number = 150
+  ): Promise<number> {
+    console.log(`🔍 Computing travel stops for user ${userId}, dataset ${datasetId} (min dwell: ${minDwellMinutes}min, max distance: ${maxDistanceMeters}m)`);
+    
+    // Get all location points for this dataset, ordered by time
+    const points = await db
+      .select()
+      .from(locationPoints)
+      .where(and(
+        eq(locationPoints.userId, userId),
+        eq(locationPoints.datasetId, datasetId)
+      ))
+      .orderBy(locationPoints.timestamp);
+
+    if (points.length === 0) {
+      console.log(`❌ No location points found for dataset ${datasetId}`);
+      return 0;
+    }
+
+    console.log(`📍 Processing ${points.length} location points for stop detection`);
+
+    const stops: InsertTravelStop[] = [];
+    let currentCluster: typeof points = [];
+
+    for (let i = 0; i < points.length; i++) {
+      const point = points[i];
+      
+      if (currentCluster.length === 0) {
+        // Start new cluster
+        currentCluster = [point];
+        continue;
+      }
+
+      // Check if point is within distance threshold of cluster centroid
+      const clusterCentroid = this.calculateClusterCentroid(currentCluster);
+      const distanceToCluster = this.calculateDistanceMeters(
+        point.lat, point.lng,
+        clusterCentroid.lat, clusterCentroid.lng
+      );
+
+      if (distanceToCluster <= maxDistanceMeters) {
+        // Add to current cluster
+        currentCluster.push(point);
+      } else {
+        // Process current cluster if it meets dwell time requirement
+        const stop = await this.processCluster(currentCluster, userId, datasetId, minDwellMinutes);
+        if (stop) {
+          stops.push(stop);
+        }
+        
+        // Start new cluster with current point
+        currentCluster = [point];
+      }
+    }
+
+    // Process final cluster
+    if (currentCluster.length > 0) {
+      const stop = await this.processCluster(currentCluster, userId, datasetId, minDwellMinutes);
+      if (stop) {
+        stops.push(stop);
+      }
+    }
+
+    // Insert all detected stops
+    if (stops.length > 0) {
+      await this.insertTravelStops(stops);
+      console.log(`✅ Created ${stops.length} travel stops`);
+    } else {
+      console.log(`❌ No significant stops detected (min dwell: ${minDwellMinutes} minutes)`);
+    }
+
+    return stops.length;
+  }
+
+  // Helper: Calculate centroid of a cluster of points
+  private calculateClusterCentroid(cluster: LocationPoint[]): { lat: number; lng: number } {
+    const lat = cluster.reduce((sum, p) => sum + p.lat, 0) / cluster.length;
+    const lng = cluster.reduce((sum, p) => sum + p.lng, 0) / cluster.length;
+    return { lat, lng };
+  }
+
+  // Helper: Process a cluster to determine if it's a significant stop
+  private async processCluster(
+    cluster: LocationPoint[],
+    userId: string,
+    datasetId: string,
+    minDwellMinutes: number
+  ): Promise<InsertTravelStop | null> {
+    if (cluster.length === 0) return null;
+
+    const startTime = new Date(Math.min(...cluster.map(p => p.timestamp.getTime())));
+    const endTime = new Date(Math.max(...cluster.map(p => p.timestamp.getTime())));
+    const dwellMinutes = (endTime.getTime() - startTime.getTime()) / (1000 * 60);
+
+    // Only create stop if dwell time meets minimum requirement
+    if (dwellMinutes < minDwellMinutes) {
+      return null;
+    }
+
+    const centroid = this.calculateClusterCentroid(cluster);
+
+    return {
+      userId,
+      datasetId,
+      start: startTime,
+      end: endTime,
+      lat: centroid.lat,
+      lng: centroid.lng,
+      pointCount: cluster.length,
+      dwellMinutes: Math.round(dwellMinutes),
+    };
+  }
+
+  // **TRIP SEGMENTATION ALGORITHM**
+  // Creates travel segments between consecutive stops
+  async computeTravelSegmentsFromStops(userId: string, datasetId: string): Promise<number> {
+    console.log(`🛤️  Computing travel segments for user ${userId}, dataset ${datasetId}`);
+    
+    // Get all stops for this dataset, ordered by start time
+    const stops = await db
+      .select()
+      .from(travelStops)
+      .where(and(
+        eq(travelStops.userId, userId),
+        eq(travelStops.datasetId, datasetId)
+      ))
+      .orderBy(travelStops.start);
+
+    if (stops.length < 2) {
+      console.log(`❌ Need at least 2 stops to create segments. Found: ${stops.length}`);
+      return 0;
+    }
+
+    const segments: InsertTravelSegment[] = [];
+
+    for (let i = 0; i < stops.length - 1; i++) {
+      const fromStop = stops[i];
+      const toStop = stops[i + 1];
+
+      // Calculate distance between stops
+      const distanceMiles = this.calculateDistanceMiles(
+        fromStop.lat, fromStop.lng,
+        toStop.lat, toStop.lng
+      );
+
+      // Get intermediate cities along the route
+      const intermediateCities = await this.getIntermediateCities(
+        fromStop, toStop, userId, datasetId
+      );
+
+      const segment: InsertTravelSegment = {
+        userId,
+        fromStopId: fromStop.id,
+        toStopId: toStop.id,
+        start: fromStop.end, // Travel starts when previous stop ends
+        end: toStop.start,   // Travel ends when next stop starts
+        distanceMiles,
+        cities: intermediateCities,
+      };
+
+      segments.push(segment);
+    }
+
+    // Insert all segments
+    if (segments.length > 0) {
+      await this.insertTravelSegments(segments);
+      console.log(`✅ Created ${segments.length} travel segments`);
+    }
+
+    return segments.length;
+  }
+
+  // Helper: Get intermediate cities along a travel route
+  private async getIntermediateCities(
+    fromStop: TravelStop,
+    toStop: TravelStop,
+    userId: string,
+    datasetId: string
+  ): Promise<string[]> {
+    // Get GPS points between the two stops
+    const routePoints = await db
+      .select()
+      .from(locationPoints)
+      .where(and(
+        eq(locationPoints.userId, userId),
+        eq(locationPoints.datasetId, datasetId),
+        gte(locationPoints.timestamp, fromStop.end),
+        lte(locationPoints.timestamp, toStop.start)
+      ))
+      .orderBy(locationPoints.timestamp);
+
+    // Sample points every 25-50km for intermediate city detection
+    const sampledPoints = this.sampleRoutePoints(routePoints, 40000); // 40km intervals in meters
+    
+    // Extract unique cities from sampled points
+    const cities = new Set<string>();
+    
+    for (const point of sampledPoints) {
+      if (point.city && point.city.trim() !== '') {
+        cities.add(point.city.trim());
+      }
+    }
+
+    // Exclude the from/to cities if they're already known
+    if (fromStop.city) cities.delete(fromStop.city);
+    if (toStop.city) cities.delete(toStop.city);
+
+    return Array.from(cities).sort();
+  }
+
+  // Helper: Sample GPS points along route at regular distance intervals
+  private sampleRoutePoints(points: LocationPoint[], intervalMeters: number): LocationPoint[] {
+    if (points.length === 0) return [];
+    
+    const sampled: LocationPoint[] = [points[0]]; // Always include first point
+    let lastSampledPoint = points[0];
+    let accumulatedDistance = 0;
+
+    for (let i = 1; i < points.length; i++) {
+      const currentPoint = points[i];
+      const segmentDistance = this.calculateDistanceMeters(
+        lastSampledPoint.lat, lastSampledPoint.lng,
+        currentPoint.lat, currentPoint.lng
+      );
+      
+      accumulatedDistance += segmentDistance;
+      
+      if (accumulatedDistance >= intervalMeters) {
+        sampled.push(currentPoint);
+        lastSampledPoint = currentPoint;
+        accumulatedDistance = 0;
+      }
+    }
+
+    // Always include last point
+    if (points.length > 1 && sampled[sampled.length - 1]?.id !== points[points.length - 1].id) {
+      sampled.push(points[points.length - 1]);
+    }
+
+    return sampled;
+  }
+
+  // **COMPLETE WAYPOINT COMPUTATION PIPELINE**
+  async computeWaypointAnalytics(userId: string, datasetId: string): Promise<{ stopsCreated: number; segmentsCreated: number }> {
+    console.log(`🚀 Starting complete waypoint analytics pipeline for user ${userId}, dataset ${datasetId}`);
+    
+    // Step 1: Detect travel stops
+    const stopsCreated = await this.computeTravelStopsFromPoints(userId, datasetId);
+    
+    // Step 2: Create travel segments between stops
+    const segmentsCreated = await this.computeTravelSegmentsFromStops(userId, datasetId);
+    
+    console.log(`✅ Waypoint analytics complete: ${stopsCreated} stops, ${segmentsCreated} segments`);
+    
+    return { stopsCreated, segmentsCreated };
+  }
+
+  // **ANALYTICS FROM WAYPOINTS** (replaces centroid-based city jumps)
+  async getWaypointCityJumpsByDateRange(userId: string, startDate: Date, endDate: Date): Promise<Array<{
+    fromCity: string;
+    fromState?: string;
+    fromCountry: string;
+    fromCoords: { lat: number; lng: number };
+    toCity: string;
+    toState?: string;
+    toCountry: string;
+    toCoords: { lat: number; lng: number };
+    date: string;
+    mode: string;
+    distance: number;
+  }>> {
+    // Get travel segments within date range with stop information
+    const result = await db
+      .select({
+        segment: travelSegments,
+        fromStop: travelStops,
+        toStop: {
+          id: sql`to_stop.id`,
+          city: sql`to_stop.city`,
+          state: sql`to_stop.state`,
+          country: sql`to_stop.country`,
+          lat: sql`to_stop.lat`,
+          lng: sql`to_stop.lng`,
+        }
+      })
+      .from(travelSegments)
+      .innerJoin(travelStops, eq(travelSegments.fromStopId, travelStops.id))
+      .innerJoin(sql`travel_stops as to_stop`, sql`${travelSegments.toStopId} = to_stop.id`)
+      .where(and(
+        eq(travelSegments.userId, userId),
+        gte(travelSegments.start, startDate),
+        lte(travelSegments.end, endDate),
+        // Only include segments where both stops have city information
+        sql`${travelStops.city} IS NOT NULL`,
+        sql`to_stop.city IS NOT NULL`
+      ))
+      .orderBy(travelSegments.start);
+
+    return result.map(row => ({
+      fromCity: row.fromStop.city || 'Unknown',
+      fromState: row.fromStop.state,
+      fromCountry: row.fromStop.country || 'Unknown',
+      fromCoords: { lat: row.fromStop.lat, lng: row.fromStop.lng },
+      toCity: row.toStop.city as string || 'Unknown',
+      toState: row.toStop.state as string,
+      toCountry: row.toStop.country as string || 'Unknown',
+      toCoords: { lat: row.toStop.lat as number, lng: row.toStop.lng as number },
+      date: row.segment.start.toISOString().split('T')[0],
+      mode: 'travel', // Could be enhanced to detect transportation mode
+      distance: row.segment.distanceMiles,
+    }));
   }
 }
 
