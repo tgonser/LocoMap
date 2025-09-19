@@ -74,43 +74,53 @@ function normalizeCountryName(country?: string): string | undefined {
 
 // Reverse geocoding using GeoApify API - more reliable than Nominatim
 export async function reverseGeocode(lat: number, lng: number): Promise<GeocodeResult> {
+  console.log(`🔍 [DEBUG-2016] Geocoding request: lat=${lat}, lng=${lng}`);
+  
   const apiKey = process.env.GEOAPIFY_API_KEY;
   
   if (!apiKey) {
-    console.error('GEOAPIFY_API_KEY not found, falling back to Nominatim');
+    console.log('🔍 [DEBUG-2016] GEOAPIFY_API_KEY not found, falling back to Nominatim');
     return reverseGeocodeNominatim(lat, lng);
   }
 
   try {
-    const response = await fetch(
-      `https://api.geoapify.com/v1/geocode/reverse?lat=${lat}&lon=${lng}&apiKey=${apiKey}&format=json`
-    );
+    const url = `https://api.geoapify.com/v1/geocode/reverse?lat=${lat}&lon=${lng}&apiKey=${apiKey}&format=json`;
+    console.log(`🔍 [DEBUG-2016] Requesting geocoding for lat/lng: ${lat},${lng} via GeoApify API`);
+    
+    const response = await fetch(url);
+    console.log(`🔍 [DEBUG-2016] GeoApify response status: ${response.status}`);
 
     if (!response.ok) {
       if (response.status === 429) {
-        console.warn('GeoApify rate limit exceeded, falling back to Nominatim');
+        console.log('🔍 [DEBUG-2016] GeoApify rate limit exceeded, falling back to Nominatim');
         return reverseGeocodeNominatim(lat, lng);
       }
       throw new Error(`GeoApify API returned ${response.status}`);
     }
 
     const data = await response.json();
+    console.log(`🔍 [DEBUG-2016] GeoApify response data: ${JSON.stringify(data)}`);
     
     if (!data.results || data.results.length === 0) {
+      console.log(`🔍 [DEBUG-2016] GeoApify returned no results`);
       return {};
     }
 
     const result = data.results[0];
+    console.log(`🔍 [DEBUG-2016] GeoApify first result: ${JSON.stringify(result)}`);
     
-    return {
+    const geocodeResult = {
       city: result.city || result.town || result.village,
       state: result.state,
       country: normalizeCountryName(result.country),
       address: result.formatted
     };
+    
+    console.log(`🔍 [DEBUG-2016] GeoApify processed result: ${JSON.stringify(geocodeResult)}`);
+    return geocodeResult;
   } catch (error) {
-    console.error('GeoApify geocoding error:', error);
-    console.log('Falling back to Nominatim');
+    console.error('🔍 [DEBUG-2016] GeoApify geocoding error:', error);
+    console.log('🔍 [DEBUG-2016] Falling back to Nominatim');
     return reverseGeocodeNominatim(lat, lng);
   }
 }
@@ -118,37 +128,47 @@ export async function reverseGeocode(lat: number, lng: number): Promise<GeocodeR
 // Fallback to Nominatim (OpenStreetMap) - free service
 // Respects Nominatim's usage policy: 1 request per second, proper headers
 export async function reverseGeocodeNominatim(lat: number, lng: number): Promise<GeocodeResult> {
+  console.log(`🔍 [DEBUG-2016] Nominatim geocoding request: lat=${lat}, lng=${lng}`);
+  
   try {
-    const response = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`,
-      {
-        headers: {
-          'User-Agent': 'LocationHistoryAnalyzer/1.0 (contact: replit-user@example.com)',
-          'Referer': 'https://your-app.replit.app'
-        }
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`;
+    console.log(`🔍 [DEBUG-2016] Nominatim request URL: ${url}`);
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'LocationHistoryAnalyzer/1.0 (contact: replit-user@example.com)',
+        'Referer': 'https://your-app.replit.app'
       }
-    );
+    });
+
+    console.log(`🔍 [DEBUG-2016] Nominatim response status: ${response.status}`);
 
     if (!response.ok) {
       throw new Error(`Nominatim API returned ${response.status}`);
     }
 
     const data = await response.json();
+    console.log(`🔍 [DEBUG-2016] Nominatim response data: ${JSON.stringify(data)}`);
     
     if (!data.address) {
+      console.log(`🔍 [DEBUG-2016] Nominatim returned no address data`);
       return {};
     }
 
     const address = data.address;
+    console.log(`🔍 [DEBUG-2016] Nominatim address object: ${JSON.stringify(address)}`);
     
-    return {
+    const geocodeResult = {
       city: address.city || address.town || address.village || address.hamlet,
       state: address.state,
       country: normalizeCountryName(address.country),
       address: data.display_name
     };
+    
+    console.log(`🔍 [DEBUG-2016] Nominatim processed result: ${JSON.stringify(geocodeResult)}`);
+    return geocodeResult;
   } catch (error) {
-    console.error('Nominatim geocoding error:', error);
+    console.error('🔍 [DEBUG-2016] Nominatim geocoding error:', error);
     return {};
   }
 }
@@ -159,15 +179,50 @@ export async function batchReverseGeocode(coordinates: Array<{lat: number, lng: 
     return [];
   }
 
-  console.log(`Starting batch geocoding for ${coordinates.length} coordinates`);
+  console.log(`🔍 [DEBUG-2016] Starting batch geocoding for ${coordinates.length} coordinates`);
+  
+  // Filter out invalid coordinates before processing
+  console.log(`🔍 [DEBUG-2016] Input coordinates validation:`);
+  const validCoordinates: Array<{lat: number, lng: number}> = [];
+  const invalidCoordinates: Array<{index: number, lat: number, lng: number, reason: string}> = [];
+  
+  coordinates.forEach((coord, index) => {
+    let reason = "";
+    const isValidNumber = !isNaN(coord.lat) && !isNaN(coord.lng);
+    const isNonZero = coord.lat !== 0 && coord.lng !== 0;
+    const isInRange = coord.lat >= -90 && coord.lat <= 90 && coord.lng >= -180 && coord.lng <= 180;
+    
+    if (!isValidNumber) reason = "NaN values";
+    else if (!isNonZero) reason = "zero coordinates";
+    else if (!isInRange) reason = "out of valid range";
+    
+    if (isValidNumber && isNonZero && isInRange) {
+      console.log(`   [${index}] ✅ VALID: lat=${coord.lat}, lng=${coord.lng}`);
+      validCoordinates.push(coord);
+    } else {
+      console.log(`   [${index}] ❌ INVALID (${reason}): lat=${coord.lat}, lng=${coord.lng}`);
+      invalidCoordinates.push({ index, lat: coord.lat, lng: coord.lng, reason });
+    }
+  });
+  
+  if (invalidCoordinates.length > 0) {
+    console.log(`🔍 [DEBUG-2016] Filtered out ${invalidCoordinates.length} invalid coordinates, processing ${validCoordinates.length} valid ones`);
+  }
+  
+  // If no valid coordinates, return empty results array matching original length
+  if (validCoordinates.length === 0) {
+    console.log(`🔍 [DEBUG-2016] No valid coordinates to process, returning empty results`);
+    return new Array(coordinates.length).fill({});
+  }
 
-  // Step 1: Prepare coordinate keys with rounding and deduplication
-  const coordinateKeys = prepareCoordinateKeys(coordinates);
+  // Step 1: Prepare coordinate keys with rounding and deduplication (using valid coordinates only)
+  const coordinateKeys = prepareCoordinateKeys(validCoordinates);
+  console.log(`🔍 [DEBUG-2016] Prepared ${coordinateKeys.length} unique coordinate keys after deduplication`);
   
   // Step 2: Bulk check cache for existing results
   const { cached, uncached } = await bulkCheckGeocodeCache(coordinateKeys);
   
-  console.log(`Found ${cached.length} cached results, need to geocode ${uncached.length} unique coordinates`);
+  console.log(`🔍 [DEBUG-2016] Cache results: ${cached.length} cached, ${uncached.length} uncached`);
   
   // Step 3: Geocode uncached coordinates using deduplicated single requests
   const newResults: Array<{ key: CoordinateKey; result: GeocodeResult }> = [];
@@ -181,8 +236,24 @@ export async function batchReverseGeocode(coordinates: Array<{lat: number, lng: 
     await cacheSuccessfulResults(newResults);
   }
   
-  // Step 5: Merge cached and new results in original order
-  return mergeResultsInOrder(coordinates, cached, newResults);
+  // Step 5: Merge cached and new results in original order, accounting for filtered coordinates
+  const finalResults = mergeResultsInOrder(coordinates, validCoordinates, cached, newResults, invalidCoordinates);
+  
+  // Debug: Log final results summary
+  console.log(`🔍 [DEBUG-2016] Final results summary:`);
+  const geocodedResults = finalResults.filter(result => result.country); // Analytics counts only results with country
+  const geocodingCoverage = coordinates.length > 0 ? (geocodedResults.length / coordinates.length * 100).toFixed(1) : '0.0';
+  console.log(`   Geocoded results (with country): ${geocodedResults.length}/${coordinates.length} (${geocodingCoverage}% coverage)`);
+  console.log(`   Invalid coordinates filtered: ${invalidCoordinates.length}`);
+  
+  finalResults.forEach((result, index) => {
+    const coord = coordinates[index];
+    const hasCountry = result.country;
+    const status = hasCountry ? "✅ GEOCODED" : "❌ NOT_GEOCODED";
+    console.log(`   [${index}] ${status}: lat=${coord.lat}, lng=${coord.lng} -> ${result.country || 'No country'}, ${result.city || 'No city'}`);
+  });
+  
+  return finalResults;
 }
 
 // Fallback: Sequential geocoding respecting Nominatim's 1 req/sec policy
@@ -268,16 +339,30 @@ async function bulkCheckGeocodeCache(coordinateKeys: CoordinateKey[]): Promise<C
     return { cached: [], uncached: [] };
   }
 
+  console.log(`🔍 [DEBUG-2016] Checking cache for ${coordinateKeys.length} coordinate keys`);
+  coordinateKeys.forEach((key, index) => {
+    console.log(`   [${index}] Key: lat=${key.latRounded}, lng=${key.lngRounded} (original: ${key.lat}, ${key.lng})`);
+  });
+
   try {
     // Single bulk query to get all cached results
+    // Filter by both lat AND lng for more efficient lookup
+    const latValues = coordinateKeys.map(k => k.latRounded);
+    const lngValues = coordinateKeys.map(k => k.lngRounded);
+    
     const cachedResults = await db.select()
       .from(geocodeCache)
       .where(
-        inArray(
-          geocodeCache.latRounded, 
-          coordinateKeys.map(k => k.latRounded)
+        and(
+          inArray(geocodeCache.latRounded, latValues),
+          inArray(geocodeCache.lngRounded, lngValues)
         )
       );
+    
+    console.log(`🔍 [DEBUG-2016] Found ${cachedResults.length} potential cache matches from database`);
+    cachedResults.forEach((cache, index) => {
+      console.log(`   DB[${index}] lat=${cache.latRounded}, lng=${cache.lngRounded} -> city=${cache.city}, country=${cache.country}`);
+    });
     
     // Filter results to exact matches and create cache map
     const cacheMap = new Map<string, GeocodeResult>();
@@ -295,6 +380,7 @@ async function bulkCheckGeocodeCache(coordinateKeys: CoordinateKey[]): Promise<C
           country: cache.country || undefined,
           address: cache.address || undefined
         });
+        console.log(`🔍 [DEBUG-2016] Exact match found for ${key} -> city=${cache.city}, country=${cache.country}`);
       }
     });
     
@@ -306,17 +392,27 @@ async function bulkCheckGeocodeCache(coordinateKeys: CoordinateKey[]): Promise<C
       const cacheKey = `${key.latRounded},${key.lngRounded}`;
       const cachedResult = cacheMap.get(cacheKey);
       
-      if (cachedResult) {
+      console.log(`🔍 [DEBUG-2016] Checking key ${cacheKey}:`);
+      console.log(`   Cached result: ${JSON.stringify(cachedResult)}`);
+      
+      // Only treat as cached if the result has COUNTRY data
+      // This aligns with analytics which only counts geocoded if country is present
+      // This prevents city-only cache entries from blocking re-geocoding
+      if (cachedResult && cachedResult.country) {
+        console.log(`   ✅ Treating as CACHED (has country: ${cachedResult.country})`);
         cached.push({ index: key.originalIndex, result: cachedResult });
       } else {
+        const reason = cachedResult ? 'no country data' : 'no cached result';
+        console.log(`   ❌ Treating as UNCACHED (${reason})`);
         uncached.push(key);
       }
     });
     
+    console.log(`🔍 [DEBUG-2016] Final cache decision: ${cached.length} cached, ${uncached.length} uncached`);
     return { cached, uncached };
     
   } catch (error) {
-    console.error('Bulk cache lookup error:', error);
+    console.error('🔍 [DEBUG-2016] Bulk cache lookup error:', error);
     // On error, treat all as uncached
     return { cached: [], uncached: coordinateKeys };
   }
@@ -359,10 +455,12 @@ async function geocodeWithDeduplicatedRequests(
   return results;
 }
 
-// Cache only successful geocode results (not empty results)
+// Cache only successful geocode results with meaningful location data
 async function cacheSuccessfulResults(results: Array<{ key: CoordinateKey; result: GeocodeResult }>): Promise<void> {
+  // Only cache results that have COUNTRY to align with analytics requirements
+  // This prevents city-only results from being treated as "geocoded" when they shouldn't be
   const successfulResults = results.filter(({ result }) => 
-    result.city || result.state || result.country || result.address
+    result.country
   );
   
   if (successfulResults.length === 0) {
@@ -398,26 +496,51 @@ async function cacheSuccessfulResults(results: Array<{ key: CoordinateKey; resul
   }
 }
 
-// Merge results back in original coordinate order
+// Merge results back in original coordinate order, handling filtered invalid coordinates
 function mergeResultsInOrder(
   originalCoordinates: Array<{lat: number, lng: number}>,
+  validCoordinates: Array<{lat: number, lng: number}>,
   cached: Array<{ index: number; result: GeocodeResult }>,
-  newResults: Array<{ key: CoordinateKey; result: GeocodeResult }>
+  newResults: Array<{ key: CoordinateKey; result: GeocodeResult }>,
+  invalidCoordinates: Array<{index: number, lat: number, lng: number, reason: string}>
 ): GeocodeResult[] {
   const results: GeocodeResult[] = new Array(originalCoordinates.length).fill({});
   
-  // Place cached results
+  // Mark invalid coordinates with empty results (they stay as empty objects)
+  console.log(`🔍 [DEBUG-2016] Marking ${invalidCoordinates.length} invalid coordinates as empty results`);
+  
+  // Create mapping from valid coordinates back to original indices
+  const validToOriginalMapping: number[] = [];
+  let validIndex = 0;
+  
+  originalCoordinates.forEach((originalCoord, originalIndex) => {
+    const isInvalid = invalidCoordinates.some(inv => inv.index === originalIndex);
+    if (!isInvalid) {
+      validToOriginalMapping[validIndex] = originalIndex;
+      validIndex++;
+    }
+  });
+  
+  // Place cached results (these indices refer to valid coordinates)
   cached.forEach(({ index, result }) => {
-    results[index] = result;
+    const originalIndex = validToOriginalMapping[index];
+    if (originalIndex !== undefined) {
+      results[originalIndex] = result;
+      console.log(`🔍 [DEBUG-2016] Placed cached result at original index ${originalIndex}`);
+    }
   });
   
   // Place new results for coordinates that match the deduplicated keys
   newResults.forEach(({ key, result }) => {
-    // Find all original coordinates that match this deduplicated key
-    originalCoordinates.forEach((coord, index) => {
+    // Find all valid coordinates that match this deduplicated key
+    validCoordinates.forEach((coord, validIndex) => {
       const { latRounded, lngRounded } = roundCoordinates(coord.lat, coord.lng);
       if (latRounded === key.latRounded && lngRounded === key.lngRounded) {
-        results[index] = result;
+        const originalIndex = validToOriginalMapping[validIndex];
+        if (originalIndex !== undefined) {
+          results[originalIndex] = result;
+          console.log(`🔍 [DEBUG-2016] Placed new result at original index ${originalIndex}`);
+        }
       }
     });
   });

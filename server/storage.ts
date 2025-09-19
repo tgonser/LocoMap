@@ -236,6 +236,8 @@ export class DatabaseStorage implements IStorage {
 
   // Daily centroid analytics pipeline methods
   async computeAndUpsertDailyCentroids(userId: string, datasetId: string): Promise<number> {
+    console.log(`🔍 [DEBUG-2016] Computing daily centroids for user ${userId}, dataset ${datasetId}`);
+    
     // SQL-first approach: compute daily centroids using date_trunc
     const dailyCentroids = await db
       .select({
@@ -257,9 +259,23 @@ export class DatabaseStorage implements IStorage {
         sql`date_trunc('day', ${locationPoints.timestamp})`
       );
 
+    console.log(`🔍 [DEBUG-2016] Found ${dailyCentroids.length} daily centroids`);
+    
     if (dailyCentroids.length === 0) {
+      console.log(`🔍 [DEBUG-2016] No daily centroids found, returning 0`);
       return 0;
     }
+
+    // Debug: Log all computed centroids and validate them
+    console.log(`🔍 [DEBUG-2016] Daily centroid validation:`);
+    dailyCentroids.forEach((centroid, index) => {
+      const isValid = !isNaN(centroid.lat) && !isNaN(centroid.lng) && 
+                     centroid.lat !== 0 && centroid.lng !== 0 &&
+                     centroid.lat >= -90 && centroid.lat <= 90 &&
+                     centroid.lng >= -180 && centroid.lng <= 180;
+      const status = isValid ? "✅ VALID" : "❌ INVALID";
+      console.log(`   [${index}] ${status}: date=${centroid.date}, lat=${centroid.lat}, lng=${centroid.lng}, points=${centroid.pointCount}`);
+    });
 
     // Convert string dates to proper Date objects and prepare for batch upsert
     const insertData = dailyCentroids.map((centroid: { userId: string; datasetId: string; date: string; lat: number; lng: number; pointCount: number }) => ({
@@ -494,6 +510,27 @@ export class DatabaseStorage implements IStorage {
     state?: string,
     country?: string
   ): Promise<void> {
+    console.log(`🔍 [DEBUG-2016] updateDailyCentroidGeocoding called for ID: ${id}`);
+    console.log(`   Address: ${address}`);
+    console.log(`   City: ${city || 'None'}`);
+    console.log(`   State: ${state || 'None'}`);
+    console.log(`   Country: ${country || 'None'}`);
+    
+    // Log the decision criteria
+    const willMarkAsGeocoded = true; // Always true since this method is called when geocoding succeeds
+    const hasCountry = !!country;
+    const analyticsWillCount = hasCountry; // Analytics only counts entries with country
+    
+    console.log(`   Will mark as geocoded: ${willMarkAsGeocoded}`);
+    console.log(`   Has country data: ${hasCountry}`);
+    console.log(`   Analytics will count this: ${analyticsWillCount}`);
+    
+    if (!hasCountry) {
+      console.log(`   ⚠️  WARNING: Marking as geocoded but analytics won't count it (no country data)`);
+    } else {
+      console.log(`   ✅ GOOD: Marking as geocoded and analytics will count it (country: ${country})`);
+    }
+    
     await db
       .update(dailyGeocodes)
       .set({
@@ -505,6 +542,8 @@ export class DatabaseStorage implements IStorage {
         geocodedAt: new Date(),
       })
       .where(eq(dailyGeocodes.id, id));
+      
+    console.log(`   ✅ Successfully updated daily centroid ${id} as geocoded`);
   }
 
   async getLocationStatsByDateRange(
@@ -519,7 +558,12 @@ export class DatabaseStorage implements IStorage {
     usStates: Array<{ state: string; days: number; percent: number }>;
     dateRange: { start: Date; end: Date };
   }> {
+    console.log(`🔍 [DEBUG-2016] getLocationStatsByDateRange called:`);
+    console.log(`   User ID: ${userId}`);
+    console.log(`   Date range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
+    
     // Get deduplicated daily centroids within date range (highest pointCount per day wins)
+    console.log(`🔍 [DEBUG-2016] Querying geocoded daily centroids...`);
     const deduplicatedCentroids = await db
       .select({
         date: dailyGeocodes.date,
@@ -536,7 +580,31 @@ export class DatabaseStorage implements IStorage {
       ))
       .groupBy(dailyGeocodes.date, dailyGeocodes.country, dailyGeocodes.state);
 
+    console.log(`🔍 [DEBUG-2016] Found ${deduplicatedCentroids.length} geocoded daily centroids`);
+    
+    // Debug: Log details about geocoded centroids
+    console.log(`🔍 [DEBUG-2016] Geocoded centroids breakdown:`);
+    const withCountry = deduplicatedCentroids.filter(c => c.country);
+    const withoutCountry = deduplicatedCentroids.filter(c => !c.country);
+    console.log(`   With country: ${withCountry.length}`);
+    console.log(`   Without country: ${withoutCountry.length}`);
+    
+    if (withCountry.length > 0) {
+      console.log(`   Sample geocoded centroids with country:`);
+      withCountry.slice(0, 5).forEach((c, i) => {
+        console.log(`     [${i}] Date: ${c.date.toISOString().split('T')[0]}, Country: ${c.country}, State: ${c.state || 'None'}`);
+      });
+    }
+    
+    if (withoutCountry.length > 0) {
+      console.log(`   ⚠️  Sample geocoded centroids WITHOUT country (analytics won't count these):`);
+      withoutCountry.slice(0, 5).forEach((c, i) => {
+        console.log(`     [${i}] Date: ${c.date.toISOString().split('T')[0]}, State: ${c.state || 'None'}`);
+      });
+    }
+
     // Get true total days from location_points (not just geocoded ones) - moved up first
+    console.log(`🔍 [DEBUG-2016] Querying actual days with location data...`);
     const actualDaysResult = await db
       .select({
         date: sql<Date>`date_trunc('day', ${locationPoints.timestamp})`,
@@ -551,6 +619,17 @@ export class DatabaseStorage implements IStorage {
     
     const actualTotalDays = actualDaysResult.length;
     const geocodedDays = deduplicatedCentroids.length;
+    
+    console.log(`🔍 [DEBUG-2016] Location stats computation:`);
+    console.log(`   Total days with location data: ${actualTotalDays}`);
+    console.log(`   Days marked as geocoded: ${geocodedDays}`);
+    console.log(`   Days with country data: ${withCountry.length}`);
+    
+    // Show the critical mismatch
+    if (geocodedDays !== withCountry.length) {
+      console.log(`   🚨 MISMATCH DETECTED: ${geocodedDays} geocoded but only ${withCountry.length} have country data!`);
+      console.log(`   This explains why analytics coverage might be lower than expected.`);
+    }
     
     if (actualTotalDays === 0) {
       return {
@@ -595,6 +674,15 @@ export class DatabaseStorage implements IStorage {
       }))
       .sort((a, b) => b.days - a.days);
     const geocodingCoverage = actualTotalDays > 0 ? Math.round((geocodedDays / actualTotalDays) * 100 * 100) / 100 : 0;
+    const actualAnalyticsCoverage = actualTotalDays > 0 ? Math.round((withCountry.length / actualTotalDays) * 100 * 100) / 100 : 0;
+    
+    console.log(`🔍 [DEBUG-2016] Final coverage calculations:`);
+    console.log(`   Reported geocoding coverage: ${geocodingCoverage}% (${geocodedDays}/${actualTotalDays})`);
+    console.log(`   Actual analytics coverage: ${actualAnalyticsCoverage}% (${withCountry.length}/${actualTotalDays})`);
+    
+    if (geocodingCoverage !== actualAnalyticsCoverage) {
+      console.log(`   🚨 COVERAGE MISMATCH: Reported ${geocodingCoverage}% but analytics will show ${actualAnalyticsCoverage}%`);
+    }
 
     return {
       totalDays: actualTotalDays,
