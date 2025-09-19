@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -49,6 +49,67 @@ export default function LocationSummary({
   const [error, setError] = useState<string | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   const { toast } = useToast();
+
+  // Helper functions for localStorage persistence
+  const loadInterestingPlacesFromStorage = (): { places: InterestingPlace[]; tokenUsage: TokenUsage | null } => {
+    try {
+      const saved = localStorage.getItem('interestingPlaces_cache');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          places: parsed.places || [],
+          tokenUsage: parsed.tokenUsage || null
+        };
+      }
+    } catch (error) {
+      // Clear corrupted data
+      localStorage.removeItem('interestingPlaces_cache');
+    }
+    return { places: [], tokenUsage: null };
+  };
+
+  const saveInterestingPlacesToStorage = (places: InterestingPlace[], tokenUsage: TokenUsage | null, citiesDataKey: string) => {
+    try {
+      localStorage.setItem('interestingPlaces_cache', JSON.stringify({
+        places,
+        tokenUsage,
+        citiesDataKey,
+        savedAt: new Date().toISOString()
+      }));
+    } catch (error) {
+      // Silently fail if localStorage is not available
+      console.warn('Failed to save interesting places to localStorage:', error);
+    }
+  };
+
+  // Create a key from citiesData to detect when the data has changed
+  const createCitiesDataKey = (citiesData: Record<string, number>): string => {
+    return JSON.stringify(Object.keys(citiesData).sort());
+  };
+
+  // Load interesting places from localStorage on component mount
+  useEffect(() => {
+    const saved = loadInterestingPlacesFromStorage();
+    const currentCitiesKey = createCitiesDataKey(citiesData);
+    
+    // Only restore if we have saved data and cities data matches
+    if (saved.places.length > 0 && Object.keys(citiesData).length > 0) {
+      try {
+        const savedData = localStorage.getItem('interestingPlaces_cache');
+        if (savedData) {
+          const parsed = JSON.parse(savedData);
+          // Check if the cities data matches what was used to generate the places
+          if (parsed.citiesDataKey === currentCitiesKey) {
+            setInterestingPlaces(saved.places);
+            setTokenUsage(saved.tokenUsage);
+          }
+        }
+      } catch (error) {
+        // If there's any error reading the saved data, continue with empty state
+        console.warn('Failed to restore interesting places:', error);
+      }
+    }
+  }, [citiesData]);
   // Group by country and state
   const countries = Array.from(new Set(locations.map(l => l.country))).length;
   const states = Array.from(new Set(locations.map(l => l.state))).length;
@@ -98,12 +159,19 @@ export default function LocationSummary({
       }
 
       const data = await response.json();
-      setInterestingPlaces(data.places || []);
-      setTokenUsage(data.tokenUsage || null);
+      const places = data.places || [];
+      const tokenUsage = data.tokenUsage || null;
+      
+      setInterestingPlaces(places);
+      setTokenUsage(tokenUsage);
+      
+      // Save to localStorage for persistence
+      const citiesDataKey = createCitiesDataKey(citiesData);
+      saveInterestingPlacesToStorage(places, tokenUsage, citiesDataKey);
 
       toast({
         title: "Interesting Places Found!",
-        description: `Discovered ${data.places?.length || 0} interesting places near your travels`,
+        description: `Discovered ${places.length} interesting places near your travels`,
       });
 
     } catch (err) {
@@ -164,36 +232,37 @@ export default function LocationSummary({
       </CardHeader>
       
       <CardContent className="space-y-6">
-        {/* Summary Stats */}
-        <div className="grid grid-cols-3 gap-4">
-          <div className="text-center space-y-2">
-            <Globe2 className="w-6 h-6 mx-auto text-muted-foreground" />
-            <p className="text-2xl font-bold" data-testid="text-countries-count">
-              {countries}
-            </p>
-            <p className="text-xs text-muted-foreground">Countries</p>
+        {/* Summary Stats - Only show when there's meaningful data */}
+        {(countries > 0 || states > 0 || cities > 0) && (
+          <div className="grid grid-cols-3 gap-4">
+            <div className="text-center space-y-2">
+              <Globe2 className="w-6 h-6 mx-auto text-muted-foreground" />
+              <p className="text-2xl font-bold" data-testid="text-countries-count">
+                {countries}
+              </p>
+              <p className="text-xs text-muted-foreground">Countries</p>
+            </div>
+            
+            <div className="text-center space-y-2">
+              <Building className="w-6 h-6 mx-auto text-muted-foreground" />
+              <p className="text-2xl font-bold" data-testid="text-states-count">
+                {states}
+              </p>
+              <p className="text-xs text-muted-foreground">States</p>
+            </div>
+            
+            <div className="text-center space-y-2">
+              <MapPin className="w-6 h-6 mx-auto text-muted-foreground" />
+              <p className="text-2xl font-bold" data-testid="text-cities-count">
+                {cities}
+              </p>
+              <p className="text-xs text-muted-foreground">Cities</p>
+            </div>
           </div>
-          
-          <div className="text-center space-y-2">
-            <Building className="w-6 h-6 mx-auto text-muted-foreground" />
-            <p className="text-2xl font-bold" data-testid="text-states-count">
-              {states}
-            </p>
-            <p className="text-xs text-muted-foreground">States</p>
-          </div>
-          
-          <div className="text-center space-y-2">
-            <MapPin className="w-6 h-6 mx-auto text-muted-foreground" />
-            <p className="text-2xl font-bold" data-testid="text-cities-count">
-              {cities}
-            </p>
-            <p className="text-xs text-muted-foreground">Cities</p>
-          </div>
-        </div>
+        )}
 
         {/* Top Cities List */}
         <div className="space-y-3">
-          <h4 className="font-medium text-sm">Most Visited Cities</h4>
           <ScrollArea className="h-64">
             <div className="space-y-3">
               {sortedLocations.map((location, index) => (
