@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Calendar, CalendarDays } from 'lucide-react';
+import { Calendar, CalendarDays, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
@@ -44,7 +44,7 @@ export default function DateRangePicker({
   description = "Choose the date range for loading location data."
 }: DateRangePickerProps) {
   const [selectedRange, setSelectedRange] = useState<DateRange | undefined>(undefined);
-  const [validationError, setValidationError] = useState<string>('');
+  const [validationResult, setValidationResult] = useState<{ error: string; isBackwards: boolean; suggestion?: string }>({ error: '', isBackwards: false });
 
   // Helper function to normalize a date to start of day (00:00:00.000)
   const normalizeToStartOfDay = (date: Date): Date => {
@@ -76,58 +76,80 @@ export default function DateRangePicker({
           ? { from: defaultStartDate, to: defaultEndDate }
           : undefined
       );
-      setValidationError('');
+      setValidationResult({ error: '', isBackwards: false });
     }
   }, [open, defaultStartDate, defaultEndDate]);
 
-  // Validate date range
-  const validateDateRange = (range: DateRange | undefined): string => {
+  // Validate date range with enhanced feedback
+  const validateDateRange = (range: DateRange | undefined): { error: string; isBackwards: boolean; suggestion?: string } => {
     if (!range?.from || !range?.to) {
-      return 'Please select both start and end dates';
+      return { error: 'Please select both start and end dates', isBackwards: false };
     }
 
     if (range.from > range.to) {
-      return 'Start date must be before or equal to end date';
+      const suggestion = `Did you mean ${range.to.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      })} to ${range.from.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      })}?`;
+      return { 
+        error: 'Start date must be before or equal to end date', 
+        isBackwards: true, 
+        suggestion 
+      };
     }
 
     if (minDate && range.from < minDate) {
-      return `Start date cannot be before ${minDate.toLocaleDateString()}`;
+      return { 
+        error: `Start date cannot be before ${minDate.toLocaleDateString()}`, 
+        isBackwards: false 
+      };
     }
 
     if (maxDate && range.to > maxDate) {
-      return `End date cannot be after ${maxDate.toLocaleDateString()}`;
+      return { 
+        error: `End date cannot be after ${maxDate.toLocaleDateString()}`, 
+        isBackwards: false 
+      };
     }
 
     // Check if range is too large (more than 2 years)
     const daysDiff = Math.ceil((range.to.getTime() - range.from.getTime()) / (1000 * 60 * 60 * 24));
     if (daysDiff > 730) {
-      return 'Date range cannot exceed 2 years';
+      return { 
+        error: 'Date range cannot exceed 2 years (730 days). Try selecting a smaller range.', 
+        isBackwards: false 
+      };
     }
 
-    return '';
+    return { error: '', isBackwards: false };
   };
 
   // Handle date range selection
   const handleRangeSelect = (range: DateRange | undefined) => {
     if (!range) {
       setSelectedRange(undefined);
-      setValidationError('');
+      setValidationResult({ error: '', isBackwards: false });
       return;
     }
 
     setSelectedRange(range);
 
     // Validate and set error if any
-    const error = validateDateRange(range);
-    setValidationError(error);
+    const result = validateDateRange(range);
+    setValidationResult(result);
   };
 
   // Handle confirm button click
   const handleConfirm = () => {
     if (selectedRange?.from && selectedRange?.to) {
-      const error = validateDateRange(selectedRange);
-      if (error) {
-        setValidationError(error);
+      const result = validateDateRange(selectedRange);
+      if (result.error) {
+        setValidationResult(result);
         return;
       }
 
@@ -143,13 +165,23 @@ export default function DateRangePicker({
   // Handle cancel/close
   const handleCancel = () => {
     setSelectedRange(undefined);
-    setValidationError('');
+    setValidationResult({ error: '', isBackwards: false });
     onCancel();
     setOpen(false);
   };
 
+  // Handle swapping dates when backwards range is detected
+  const handleSwapDates = () => {
+    if (selectedRange?.from && selectedRange?.to && validationResult.isBackwards) {
+      const swappedRange = { from: selectedRange.to, to: selectedRange.from };
+      setSelectedRange(swappedRange);
+      const result = validateDateRange(swappedRange);
+      setValidationResult(result);
+    }
+  };
+
   // Check if Load Data button should be enabled
-  const isLoadDataEnabled = Boolean(selectedRange?.from && selectedRange?.to && !validationError);
+  const isLoadDataEnabled = Boolean(selectedRange?.from && selectedRange?.to && !validationResult.error);
 
   // Format date range for display
   const formatDateRange = () => {
@@ -227,7 +259,7 @@ export default function DateRangePicker({
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Selected Range:</span>
               <Badge 
-                variant={isLoadDataEnabled ? "default" : "secondary"}
+                variant={isLoadDataEnabled ? "default" : validationResult.error ? "destructive" : "secondary"}
                 data-testid="badge-selected-range"
               >
                 {getDaysCount() > 0 ? `${getDaysCount()} day${getDaysCount() === 1 ? '' : 's'}` : 'None'}
@@ -235,19 +267,50 @@ export default function DateRangePicker({
             </div>
             <div 
               className={cn(
-                "text-sm p-3 rounded-md border",
-                isLoadDataEnabled ? "bg-accent/10 border-accent" : "bg-muted/50 border-border"
+                "text-sm p-3 rounded-md border flex items-center gap-2",
+                validationResult.error 
+                  ? "bg-destructive/10 border-destructive text-destructive" 
+                  : isLoadDataEnabled 
+                    ? "bg-accent/10 border-accent" 
+                    : "bg-muted/50 border-border"
               )}
               data-testid="text-date-range-display"
             >
-              {formatDateRange()}
+              {validationResult.error && (
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              )}
+              <span className="flex-1">{formatDateRange()}</span>
             </div>
           </div>
 
           {/* Validation Error */}
-          {validationError && (
-            <div className="p-3 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md" data-testid="error-validation">
-              {validationError}
+          {validationResult.error && (
+            <div className="space-y-3">
+              <div className="p-3 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md" data-testid="error-validation">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  <span>{validationResult.error}</span>
+                </div>
+              </div>
+              
+              {/* Auto-correction options */}
+              {validationResult.isBackwards && validationResult.suggestion && (
+                <div className="space-y-2">
+                  <div className="text-xs text-muted-foreground" data-testid="text-suggestion">
+                    {validationResult.suggestion}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSwapDates}
+                    className="w-full text-xs"
+                    data-testid="button-swap-dates"
+                  >
+                    <RefreshCw className="w-3 h-3 mr-2" />
+                    Swap Dates
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 
