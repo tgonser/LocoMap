@@ -35,7 +35,8 @@ export default function LocationHistoryApp() {
         if (response.ok) {
           const datasets = await response.json();
           if (datasets && datasets.length > 0) {
-            // User has existing data - default to analytics view
+            // User has existing data - load it and default to analytics view
+            await loadFullLocationData();
             setViewMode('analytics');
           } else {
             // No data exists - show upload view
@@ -170,9 +171,17 @@ export default function LocationHistoryApp() {
 
   // Handle view mode changes and load data only when needed
   const handleViewModeChange = async (mode: ViewMode) => {
-    // If switching to map view and we don't have location data yet, load it
-    if (mode === 'map' && locationData.length === 0) {
-      await loadFullLocationData();
+    // If switching to map view, ensure we have location data loaded
+    // This handles cases where we might be coming from analytics view
+    // or where data loading was interrupted
+    if (mode === 'map') {
+      // Always check if we have valid location data for the map
+      // If we don't have location data, or if we have very little data
+      // (which might indicate partial loading), reload it
+      if (locationData.length === 0 || validLocationData.length === 0) {
+        console.log('Loading location data for map view...');
+        await loadFullLocationData();
+      }
     }
     setViewMode(mode);
   };
