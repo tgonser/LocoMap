@@ -261,45 +261,47 @@ export default function LocationSummary({
           </div>
         )}
 
-        {/* Top Cities List */}
-        <div className="space-y-3">
-          <ScrollArea className="h-64">
-            <div className="space-y-3">
-              {sortedLocations.map((location, index) => (
-                <div 
-                  key={`${location.city}-${location.state}`}
-                  className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover-elevate"
-                  data-testid={`card-location-${index}`}
-                >
-                  <div className="space-y-1 flex-1">
-                    <p className="font-medium text-sm">
-                      {location.city}, {location.state}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {location.country}
-                    </p>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <span>
-                        {location.firstVisit.toLocaleDateString()} - {location.lastVisit.toLocaleDateString()}
-                      </span>
+        {/* Top Cities List - Only show when we have location data */}
+        {sortedLocations.length > 0 && (
+          <div className="space-y-3">
+            <ScrollArea className="h-64">
+              <div className="space-y-3">
+                {sortedLocations.map((location, index) => (
+                  <div 
+                    key={`${location.city}-${location.state}`}
+                    className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover-elevate"
+                    data-testid={`card-location-${index}`}
+                  >
+                    <div className="space-y-1 flex-1">
+                      <p className="font-medium text-sm">
+                        {location.city}, {location.state}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {location.country}
+                      </p>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>
+                          {location.firstVisit.toLocaleDateString()} - {location.lastVisit.toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div className="text-right space-y-1">
+                      <Badge variant="secondary" className="text-xs">
+                        {location.visitCount} visits
+                      </Badge>
+                      {index < 3 && (
+                        <Badge variant="outline" className="text-xs">
+                          Top {index + 1}
+                        </Badge>
+                      )}
                     </div>
                   </div>
-                  
-                  <div className="text-right space-y-1">
-                    <Badge variant="secondary" className="text-xs">
-                      {location.visitCount} visits
-                    </Badge>
-                    {index < 3 && (
-                      <Badge variant="outline" className="text-xs">
-                        Top {index + 1}
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </ScrollArea>
-        </div>
+                ))}
+              </div>
+            </ScrollArea>
+          </div>
+        )}
 
         {/* Error Message */}
         {error && (
