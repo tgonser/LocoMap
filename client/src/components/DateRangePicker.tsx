@@ -189,8 +189,8 @@ export default function DateRangePicker({
 
     let updatedRange = range;
     
-    // Smart end date suggestion: if only start date is selected, suggest start + 1 month
-    if (range.from && !range.to && !selectedRange?.to) {
+    // Smart end date suggestion: if user just picked a start date, suggest start + 1 month
+    if (range.from && (!range.to || range.from.getTime() === range.to.getTime())) {
       const suggestedEndDate = addMonths(range.from, 1);
       updatedRange = { from: range.from, to: suggestedEndDate };
     }
