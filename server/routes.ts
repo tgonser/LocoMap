@@ -1007,11 +1007,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Add ALL movement to total travel distance (no more gaps!)
           totalTravelDistance += distance;
 
-          // Only create named city jumps when BOTH centroids have complete city data
+          // Create city jumps with more flexible logic to show complete travel chain
+          let shouldCreateJump = false;
+          let jumpType = '';
+
+          // Case 1: Both locations have complete city data (original logic)
           if (prevCentroid.city && currCentroid.city && 
               prevCentroid.country && currCentroid.country) {
             
-            // Create city keys for comparison
             const prevCityKey = prevCentroid.state ? 
               `${prevCentroid.city}, ${prevCentroid.state}` : 
               `${prevCentroid.city}, ${prevCentroid.country}`;
@@ -1019,30 +1022,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
               `${currCentroid.city}, ${currCentroid.state}` : 
               `${currCentroid.city}, ${currCentroid.country}`;
 
-            // Only record city jump if the cities actually changed
+            // Only create jump if cities are different
             if (prevCityKey !== currCityKey) {
-              // Determine transportation mode based on distance
-              let mode = 'driving';
-              if (distance > 500) {
-                mode = 'flying';
-              } else if (distance < 10) {
-                mode = 'walking';
-              }
-
-              cityJumps.push({
-                fromCity: prevCentroid.city,
-                fromState: prevCentroid.state || undefined,
-                fromCountry: prevCentroid.country,
-                fromCoords: { lat: prevCentroid.lat, lng: prevCentroid.lng },
-                toCity: currCentroid.city,
-                toState: currCentroid.state || undefined,
-                toCountry: currCentroid.country,
-                toCoords: { lat: currCentroid.lat, lng: currCentroid.lng },
-                date: currCentroid.date.toISOString().split('T')[0],
-                mode,
-                distance: Math.round(distance * 10) / 10
-              });
+              shouldCreateJump = true;
+              jumpType = 'complete';
             }
+          }
+          // Case 2: Only one location has city data - still show partial jumps
+          else if ((prevCentroid.city && prevCentroid.country) || (currCentroid.city && currCentroid.country)) {
+            shouldCreateJump = true;
+            jumpType = 'partial';
+          }
+          // Case 3: Neither has city data, but significant movement (50+ miles) - show coordinate jumps
+          else if (distance >= 50) {
+            shouldCreateJump = true;
+            jumpType = 'coordinate';
+          }
+
+          if (shouldCreateJump) {
+            // Determine transportation mode based on distance
+            let mode = 'driving';
+            if (distance > 500) {
+              mode = 'flying';
+            } else if (distance < 10) {
+              mode = 'walking';
+            }
+
+            // Create jump with available data, fallback to coordinates when needed
+            const fromCity = prevCentroid.city || `${prevCentroid.lat.toFixed(3)}, ${prevCentroid.lng.toFixed(3)}`;
+            const fromCountry = prevCentroid.country || 'Unknown';
+            const toCity = currCentroid.city || `${currCentroid.lat.toFixed(3)}, ${currCentroid.lng.toFixed(3)}`;
+            const toCountry = currCentroid.country || 'Unknown';
+
+            cityJumps.push({
+              fromCity,
+              fromState: prevCentroid.state || undefined,
+              fromCountry,
+              fromCoords: { lat: prevCentroid.lat, lng: prevCentroid.lng },
+              toCity,
+              toState: currCentroid.state || undefined,
+              toCountry,
+              toCoords: { lat: currCentroid.lat, lng: currCentroid.lng },
+              date: currCentroid.date.toISOString().split('T')[0],
+              mode,
+              distance: Math.round(distance * 10) / 10
+            });
           }
         }
 
