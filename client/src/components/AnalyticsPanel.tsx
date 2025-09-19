@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import DateRangePicker from "@/components/DateRangePicker";
+import LocationSummary from "@/components/LocationSummary";
 
 interface AnalyticsData {
   totalDays: number;
@@ -593,59 +594,17 @@ export default function AnalyticsPanel({
           </CardContent>
         </Card>
 
-        {/* Interesting Places - AI Curated */}
-        {analytics.curatedPlaces.length > 0 && (
-          <Card data-testid="card-interesting-places">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BarChart3 className="h-5 w-5" />
-                Interesting Places
-                <Badge variant="secondary" className="ml-2">AI Curated</Badge>
-              </CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">
-                Highlighted places from your travels based on cultural significance, natural beauty, and uniqueness.
-              </p>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {analytics.curatedPlaces.map((place, index) => (
-                  <div
-                    key={`${place.city}-${index}`}
-                    className="p-4 border rounded-lg hover-elevate"
-                    data-testid={`card-interesting-place-${index}`}
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <h4 className="font-medium" data-testid={`text-place-name-${index}`}>
-                          {place.city}{place.state && `, ${place.state}`}
-                        </h4>
-                        <p className="text-sm text-muted-foreground">
-                          {place.country}
-                        </p>
-                      </div>
-                      <Badge variant="outline" data-testid={`badge-place-days-${index}`}>
-                        {place.visitDays} day{place.visitDays !== 1 ? 's' : ''}
-                      </Badge>
-                    </div>
-                    <p className="text-sm mb-3" data-testid={`text-place-reason-${index}`}>
-                      {place.reason}
-                    </p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => window.open(place.mapsLink, '_blank')}
-                      className="flex items-center gap-2 w-full"
-                      data-testid={`button-view-on-maps-${index}`}
-                    >
-                      <Globe className="h-4 w-4" />
-                      View on Google Maps
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        {/* Interesting Places - AI Powered */}
+        <LocationSummary
+          locations={[]} // Empty since we're using analytics.cities data instead
+          dateRange={{
+            start: fromLocalYmd(analytics.dateRange.start),
+            end: fromLocalYmd(analytics.dateRange.end)
+          }}
+          analyticsComplete={true}
+          citiesData={analytics.cities}
+          onExport={exportData}
+        />
       </div>
     );
   }

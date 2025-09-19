@@ -7,6 +7,12 @@ import { setupAuth, isAuthenticated } from "./replitAuth";
 import { parseGoogleLocationHistory, validateGoogleLocationHistory } from "./googleLocationParser";
 import { batchReverseGeocode, deduplicateCoordinates } from "./geocodingService";
 import { z } from "zod";
+import OpenAI from "openai";
+
+// OpenAI client setup for interesting places feature
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 // OpenAI curation removed for performance - analytics now return in under 2 seconds
 
@@ -1146,6 +1152,178 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         error: "Failed to process geocoded places analytics request",
         details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Interesting Places endpoint: AI-powered recommendations
+  app.post('/api/interesting-places', isAuthenticated, async (req, res) => {
+    try {
+      const user = getAuthenticatedUser(req);
+      const userId = user.claims.sub;
+      
+      console.log(`🎯 Interesting places request for user ${userId}`);
+      
+      // Validate request body
+      const requestSchema = z.object({
+        cities: z.record(z.string(), z.number()).optional().default({})
+      });
+      
+      let validatedInput;
+      try {
+        validatedInput = requestSchema.parse(req.body);
+      } catch (validationError) {
+        console.log(`❌ Validation failed for user ${userId}:`, validationError);
+        return res.status(400).json({ 
+          error: "Invalid request format. Expected { cities: Record<string, number> }",
+          details: validationError instanceof z.ZodError ? validationError.errors : undefined
+        });
+      }
+      
+      const { cities } = validatedInput;
+      
+      if (Object.keys(cities).length === 0) {
+        return res.json({
+          places: [],
+          tokenUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+          message: "No cities provided"
+        });
+      }
+      
+      // Get top 10 visited cities for AI input (sorted by visit count)
+      const topCities = Object.entries(cities)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 10)
+        .map(([city, count]) => `${city} (visited ${count} days)`);
+      
+      console.log(`🚀 Generating AI recommendations for ${topCities.length} cities`);
+      
+      // Construct AI prompt for interesting places
+      const prompt = `You are a travel expert helping someone discover interesting places near cities they've visited. 
+
+Based on these visited cities:
+${topCities.join('\n')}
+
+Find exactly 5 interesting tourist attractions, landmarks, or unique spots that are:
+- Near or accessible from these visited cities
+- Well-known, publicly accessible places
+- Worth visiting for tourists
+- Diverse (different types of attractions)
+
+For each place, provide:
+- A brief description (1-2 sentences)
+- The location/city it's near
+- A Google Maps search URL
+
+Return your response as a JSON object with this exact structure:
+{
+  "places": [
+    {
+      "description": "Brief description of the place",
+      "location": "City/Location Name",
+      "googleMapsUrl": "https://www.google.com/maps/search/Place+Name+Location"
+    }
+  ]
+}`;
+
+      try {
+        // Call OpenAI API with GPT-4o mini for cost efficiency
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: "You are a helpful travel expert assistant. Always respond with valid JSON in the exact format requested."
+            },
+            {
+              role: "user",
+              content: prompt
+            }
+          ],
+          response_format: { type: "json_object" },
+          max_tokens: 1000,
+          temperature: 0.7
+        });
+        
+        const aiResponse = completion.choices[0]?.message?.content;
+        const tokenUsage = {
+          promptTokens: completion.usage?.prompt_tokens || 0,
+          completionTokens: completion.usage?.completion_tokens || 0,
+          totalTokens: completion.usage?.total_tokens || 0
+        };
+        
+        console.log(`✅ OpenAI response received for user ${userId}:`, {
+          tokenUsage,
+          responseLength: aiResponse?.length || 0
+        });
+        
+        if (!aiResponse) {
+          throw new Error("No response from OpenAI");
+        }
+        
+        // Parse AI response
+        let parsedResponse;
+        try {
+          parsedResponse = JSON.parse(aiResponse);
+        } catch (parseError) {
+          console.error(`❌ Failed to parse AI response for user ${userId}:`, parseError);
+          throw new Error("Invalid response format from AI");
+        }
+        
+        // Validate the AI response structure
+        const placesSchema = z.object({
+          places: z.array(z.object({
+            description: z.string(),
+            location: z.string(),
+            googleMapsUrl: z.string().url()
+          })).min(1).max(5)
+        });
+        
+        let validatedPlaces;
+        try {
+          validatedPlaces = placesSchema.parse(parsedResponse);
+        } catch (validationError) {
+          console.error(`❌ AI response validation failed for user ${userId}:`, validationError);
+          throw new Error("AI response doesn't match expected format");
+        }
+        
+        console.log(`🎉 Successfully generated ${validatedPlaces.places.length} interesting places for user ${userId}`);
+        
+        // Return successful response
+        res.json({
+          places: validatedPlaces.places,
+          tokenUsage,
+          model: "gpt-4o-mini"
+        });
+        
+      } catch (aiError) {
+        console.error(`💥 OpenAI API error for user ${userId}:`, aiError);
+        
+        // Return specific error messages for different AI failures
+        let errorMessage = "Failed to generate interesting places";
+        if (aiError instanceof Error) {
+          if (aiError.message.includes("API key")) {
+            errorMessage = "OpenAI API configuration error";
+          } else if (aiError.message.includes("quota") || aiError.message.includes("billing")) {
+            errorMessage = "OpenAI API quota exceeded";
+          } else if (aiError.message.includes("rate limit")) {
+            errorMessage = "OpenAI API rate limit exceeded. Please try again in a moment.";
+          } else {
+            errorMessage = aiError.message;
+          }
+        }
+        
+        return res.status(500).json({
+          error: errorMessage,
+          details: aiError instanceof Error ? aiError.message : "Unknown AI error"
+        });
+      }
+      
+    } catch (error) {
+      console.error(`💥 Interesting places endpoint failed for user:`, error);
+      res.status(500).json({ 
+        error: "Failed to process interesting places request",
+        details: error instanceof Error ? error.message : "Unknown error"
       });
     }
   });
