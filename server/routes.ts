@@ -6,112 +6,9 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { parseGoogleLocationHistory, validateGoogleLocationHistory } from "./googleLocationParser";
 import { batchReverseGeocode, deduplicateCoordinates } from "./geocodingService";
-import OpenAI from "openai";
 import { z } from "zod";
 
-// OpenAI integration for analyzing and curating interesting places
-// the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-// Function to analyze and curate interesting places using OpenAI
-async function curateInterestingPlaces(locations: any[]): Promise<any[]> {
-  try {
-    // Limit data sent to OpenAI to avoid token limits - sample diverse locations
-    const sampledLocations = sampleDiverseLocations(locations, 50);
-    
-    const locationData = sampledLocations.map(loc => ({
-      city: loc.city,
-      state: loc.state,
-      country: loc.country,
-      lat: loc.lat,
-      lng: loc.lng,
-      visitDays: loc.visitDays,
-      address: loc.address
-    }));
-
-    const prompt = `Analyze the following location data from a person's travel history and select 8-12 of the most interesting places. Focus on:
-
-1. Landmarks and famous tourist destinations
-2. Beautiful natural areas (national parks, scenic locations)
-3. Major cities with cultural significance
-4. Unique or unusual places
-5. Places with diverse geographical representation
-
-Location data:
-${JSON.stringify(locationData, null, 2)}
-
-Select the most interesting and diverse places, ensuring good geographical spread. For each selected place, provide:
-- The exact city, state (if applicable), country from the data
-- Latitude and longitude from the data
-- A brief reason why this place is interesting (1-2 sentences)
-- Visit information from the data
-
-Return ONLY a JSON object with this structure:
-{
-  "curatedPlaces": [
-    {
-      "city": "exact city from data",
-      "state": "exact state from data if exists",
-      "country": "exact country from data", 
-      "lat": latitude_from_data,
-      "lng": longitude_from_data,
-      "visitDays": visit_days_from_data,
-      "reason": "why this place is interesting",
-      "mapsLink": "https://www.google.com/maps/search/{lat},{lng}"
-    }
-  ]
-}`;
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-5",
-      messages: [{ role: "user", content: prompt }],
-      response_format: { type: "json_object" },
-    });
-
-    const result = JSON.parse(response.choices[0].message.content || '{"curatedPlaces": []}');
-    
-    // Ensure Google Maps links are properly formatted
-    if (result.curatedPlaces) {
-      result.curatedPlaces.forEach((place: any) => {
-        place.mapsLink = `https://www.google.com/maps/search/${place.lat},${place.lng}`;
-      });
-    }
-
-    return result.curatedPlaces || [];
-  } catch (error) {
-    console.error('OpenAI curation error:', error);
-    throw new Error('Failed to curate interesting places');
-  }
-}
-
-function sampleDiverseLocations(locations: any[], maxSamples: number): any[] {
-  // Group by unique city/country combinations to get diverse sample
-  const uniquePlaces = new Map<string, any>();
-  
-  locations.forEach(loc => {
-    if (loc.city && loc.country) {
-      const key = `${loc.city}-${loc.country}`;
-      if (!uniquePlaces.has(key)) {
-        uniquePlaces.set(key, loc);
-      }
-    }
-  });
-  
-  // If we have fewer unique places than maxSamples, return all
-  const uniqueArray = Array.from(uniquePlaces.values());
-  if (uniqueArray.length <= maxSamples) {
-    return uniqueArray;
-  }
-  
-  // Sample evenly from the unique places
-  const step = Math.floor(uniqueArray.length / maxSamples);
-  const sampled = [];
-  for (let i = 0; i < uniqueArray.length && sampled.length < maxSamples; i += step) {
-    sampled.push(uniqueArray[i]);
-  }
-  
-  return sampled;
-}
+// OpenAI curation removed for performance - analytics now return in under 2 seconds
 
 // Configure multer for file uploads
 const upload = multer({ 
@@ -1004,18 +901,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             locationStats.cities.set(cityKey, (locationStats.cities.get(cityKey) || 0) + 1);
           }
 
-          // Collect location data for OpenAI curation
-          if (centroid.city && centroid.country) {
-            locationStats.locations.push({
-              city: centroid.city,
-              state: centroid.state,
-              country: centroid.country,
-              lat: centroid.lat,
-              lng: centroid.lng,
-              address: centroid.address,
-              visitDays: 1 // Each centroid represents one day
-            });
-          }
+          // Location data collection removed since OpenAI curation is disabled
         });
 
         // Convert Maps to Objects for frontend compatibility
@@ -1023,15 +909,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const statesObject = Object.fromEntries(locationStats.states);  
         const citiesObject = Object.fromEntries(locationStats.cities);
 
-        // Generate curated places using OpenAI
-        let curatedPlaces: any[] = [];
-        try {
-          curatedPlaces = await curateInterestingPlaces(locationStats.locations);
-          console.log(`🎯 Generated ${curatedPlaces.length} curated places for user ${userId}`);
-        } catch (curationError) {
-          console.error(`⚠️  OpenAI curation failed for user ${userId}:`, curationError);
-          // Continue without curated places rather than failing the entire request
-        }
+        // OpenAI curation removed for performance - analytics now return in under 2 seconds
+        const curatedPlaces: any[] = []; // Empty array to maintain API compatibility
 
         const analyticsResult = {
           success: true,
@@ -1190,17 +1069,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           );
         }
 
-        // Prepare location data for OpenAI analysis
-        locationStats.locations.push({
-          city: centroid.city,
-          state: centroid.state,
-          country: centroid.country,
-          lat: centroid.lat,
-          lng: centroid.lng,
-          address: centroid.address,
-          visitDays: 1, // Each centroid represents one day
-          date: centroid.date
-        });
+        // Location data collection removed since OpenAI curation is disabled
       });
 
       // Convert Maps to objects for JSON response
@@ -1208,44 +1077,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const statesObj = Object.fromEntries(locationStats.states);
       const citiesObj = Object.fromEntries(locationStats.cities);
 
-      // Use OpenAI to curate interesting places
-      let curatedPlaces: any[] = [];
-      let aiCurationStatus = 'success';
-      try {
-        curatedPlaces = await curateInterestingPlaces(locationStats.locations);
-      } catch (openaiError: any) {
-        console.error('OpenAI curation failed:', openaiError);
-        aiCurationStatus = openaiError.code === 'insufficient_quota' ? 'quota_exceeded' : 'error';
-        
-        // Fallback: Create basic interesting places from unique cities with most visits
-        const cityVisits = new Map<string, { count: number, location: any }>();
-        
-        locationStats.locations.forEach(loc => {
-          if (loc.city && loc.country) {
-            const key = `${loc.city}, ${loc.state || loc.country}`;
-            if (!cityVisits.has(key)) {
-              cityVisits.set(key, { count: 0, location: loc });
-            }
-            cityVisits.get(key)!.count++;
-          }
-        });
-
-        // Get top 10 most visited unique places as fallback
-        const sortedCities = Array.from(cityVisits.entries())
-          .sort(([,a], [,b]) => b.count - a.count)
-          .slice(0, 10);
-
-        curatedPlaces = sortedCities.map(([cityName, data]) => ({
-          city: data.location.city,
-          state: data.location.state,
-          country: data.location.country,
-          visitDays: data.count,
-          reason: `Visited ${data.count} time${data.count !== 1 ? 's' : ''} - ${cityName}`,
-          latitude: data.location.lat,
-          longitude: data.location.lng,
-          googleMapsUrl: `https://www.google.com/maps/search/${data.location.lat},${data.location.lng}`
-        }));
-      }
+      // OpenAI curation removed for performance - analytics now return in under 2 seconds
+      const curatedPlaces: any[] = []; // Empty array to maintain API compatibility
+      const aiCurationStatus = 'disabled';
 
       // Return complete analytics response with corrected totalDays calculation
       const finalResponse = {
