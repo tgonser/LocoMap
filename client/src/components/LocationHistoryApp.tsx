@@ -35,8 +35,7 @@ export default function LocationHistoryApp() {
         if (response.ok) {
           const datasets = await response.json();
           if (datasets && datasets.length > 0) {
-            // User has existing data - load it and default to analytics view
-            await loadFullLocationData();
+            // User has existing data - default to analytics view but don't load data yet
             setViewMode('analytics');
           } else {
             // No data exists - show upload view
@@ -91,10 +90,12 @@ export default function LocationHistoryApp() {
     setIsProcessing(true);
     
     try {
-      await loadFullLocationData();
-      setViewMode('map');
+      // File has been uploaded and stored successfully
+      // Navigate to analytics view where user can select date range for processing
+      setViewMode('analytics');
+      console.log('File uploaded successfully:', result.message);
     } catch (error) {
-      console.error('Error loading location data:', error);
+      console.error('Error handling file upload:', error);
     } finally {
       setIsProcessing(false);
     }
@@ -169,20 +170,8 @@ export default function LocationHistoryApp() {
     </Button>
   );
 
-  // Handle view mode changes and load data only when needed
-  const handleViewModeChange = async (mode: ViewMode) => {
-    // If switching to map view, ensure we have location data loaded
-    // This handles cases where we might be coming from analytics view
-    // or where data loading was interrupted
-    if (mode === 'map') {
-      // Always check if we have valid location data for the map
-      // If we don't have location data, or if we have very little data
-      // (which might indicate partial loading), reload it
-      if (locationData.length === 0 || validLocationData.length === 0) {
-        console.log('Loading location data for map view...');
-        await loadFullLocationData();
-      }
-    }
+  // Handle view mode changes - instant switching without automatic data loading
+  const handleViewModeChange = (mode: ViewMode) => {
     setViewMode(mode);
   };
 
@@ -194,7 +183,7 @@ export default function LocationHistoryApp() {
           <div className="h-full flex items-center justify-center">
             <div className="text-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-              <p className="text-muted-foreground">Loading your location data...</p>
+              <p className="text-muted-foreground">Checking for existing data...</p>
             </div>
           </div>
         ) : viewMode === 'upload' ? (
