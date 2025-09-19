@@ -286,7 +286,8 @@ export default function DateRangePicker({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange} data-testid="dialog-date-range-picker">
-      <DialogContent className="max-w-md w-full sm:max-w-lg" data-testid="content-date-range-picker">
+      <div className="fixed inset-0 z-[9998] bg-black/80" />
+      <DialogContent className="max-w-md w-full sm:max-w-lg !z-[9999]" data-testid="content-date-range-picker">
         <DialogHeader className="pb-4">
           <DialogTitle className="flex items-center gap-2 text-lg font-semibold" data-testid="title-date-range-picker">
             <CalendarDays className="w-5 h-5 text-primary" />
