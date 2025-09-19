@@ -756,7 +756,7 @@ export default function AnalyticsPanel({
             end: fromLocalYmd(analytics.dateRange.end)
           }}
           analyticsComplete={true}
-          citiesData={{}} // Empty cities data since we're using city jumps now
+          citiesData={analytics.cities} // Restore cities data for interesting places functionality
           onExport={exportData}
         />
       </div>
