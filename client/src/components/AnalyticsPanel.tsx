@@ -9,6 +9,26 @@ import { useToast } from "@/hooks/use-toast";
 import DateRangePicker from "@/components/DateRangePicker";
 import LocationSummary from "@/components/LocationSummary";
 
+interface CityJump {
+  fromCity: string;
+  fromState?: string;
+  fromCountry: string;
+  fromCoords: { lat: number; lng: number };
+  toCity: string;
+  toState?: string;
+  toCountry: string;
+  toCoords: { lat: number; lng: number };
+  date: string;
+  mode: string;
+  distance: number;
+}
+
+interface CityJumpsData {
+  cityJumps: CityJump[];
+  totalTravelDistance: number;
+  totalJumps: number;
+}
+
 interface AnalyticsData {
   totalDays: number;
   geocodedDays: number;
@@ -18,7 +38,7 @@ interface AnalyticsData {
   dateRange: { start: string; end: string };
   countries: Record<string, number>;
   states: Record<string, number>;
-  cities: Record<string, number>;
+  cityJumps: CityJumpsData;
   curatedPlaces: Array<{
     city: string;
     state?: string;
@@ -300,11 +320,11 @@ export default function AnalyticsPanel({
         dateRange: analytics.dateRange,
         uniqueCountries: Object.keys(analytics.countries).length,
         uniqueStates: Object.keys(analytics.states).length,
-        uniqueCities: Object.keys(analytics.cities).length
+        uniqueJumps: analytics.cityJumps.totalJumps
       },
       countries: analytics.countries,
       states: analytics.states,
-      cities: analytics.cities,
+      cityJumps: analytics.cityJumps,
       curatedPlaces: analytics.curatedPlaces,
       generatedAt: new Date().toISOString()
     };
@@ -558,14 +578,14 @@ export default function AnalyticsPanel({
             </CardContent>
           </Card>
 
-          <Card data-testid="card-cities-count">
+          <Card data-testid="card-city-jumps-count">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Cities</CardTitle>
+              <CardTitle className="text-sm font-medium">City Jumps</CardTitle>
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold" data-testid="text-cities-count">
-                {Object.keys(analytics.cities).length}
+              <div className="text-2xl font-bold" data-testid="text-city-jumps-count">
+                {analytics.cityJumps.totalJumps}
               </div>
             </CardContent>
           </Card>
@@ -661,54 +681,82 @@ export default function AnalyticsPanel({
           </Card>
         </div>
 
-        {/* Cities */}
-        <Card data-testid="card-cities">
+        {/* City Jumps */}
+        <Card data-testid="card-city-jumps">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="h-5 w-5" />
-              Cities Visited
+              City Jumps
             </CardTitle>
           </CardHeader>
           <CardContent className="max-h-96 overflow-y-auto">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {Object.entries(analytics.cities)
-                .sort(([,a], [,b]) => b - a)
-                .slice(0, 50) // Show top 50 cities
-                .map(([city, days], index) => (
-                <div
-                  key={`${city}-${index}`}
-                  className="flex items-center justify-between p-3 bg-muted/30 rounded-md"
-                  data-testid={`row-city-${index}`}
-                >
-                  <div className="text-sm" data-testid={`text-city-details-${index}`}>
-                    <span className="font-medium">{city}</span>
-                    <div className="text-muted-foreground text-xs">
-                      {days} day{days !== 1 ? 's' : ''}
-                    </div>
+            {analytics.cityJumps.totalJumps > 0 ? (
+              <div className="space-y-3">
+                {/* Total Travel Distance Summary */}
+                <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Total Travel Distance</span>
+                    <Badge variant="outline" className="font-semibold">
+                      {analytics.cityJumps.totalTravelDistance.toLocaleString()} miles
+                    </Badge>
                   </div>
-                  <Badge variant="outline" data-testid={`badge-city-days-${index}`}>
-                    {days}
-                  </Badge>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-xs text-muted-foreground">Total Jumps</span>
+                    <span className="text-xs text-muted-foreground">
+                      {analytics.cityJumps.totalJumps} {analytics.cityJumps.totalJumps === 1 ? 'jump' : 'jumps'}
+                    </span>
+                  </div>
                 </div>
-              ))}
-            </div>
-            {Object.keys(analytics.cities).length > 50 && (
-              <p className="text-sm text-muted-foreground mt-4 text-center">
-                Showing top 50 cities of {Object.keys(analytics.cities).length} total
-              </p>
+
+                {/* City Jumps List */}
+                <div className="space-y-2">
+                  {analytics.cityJumps.cityJumps.map((jump, index) => (
+                    <div 
+                      key={index} 
+                      className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover-elevate"
+                      data-testid={`card-city-jump-${index}`}
+                    >
+                      <div className="flex-1 space-y-1">
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="font-medium">
+                            {jump.fromCity}{jump.fromState ? `, ${jump.fromState}` : `, ${jump.fromCountry}`}
+                          </span>
+                          <span className="text-muted-foreground">→</span>
+                          <span className="font-medium">
+                            {jump.toCity}{jump.toState ? `, ${jump.toState}` : `, ${jump.toCountry}`}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                          <span>{new Date(jump.date).toLocaleDateString()}</span>
+                          <Badge variant="outline" className="text-xs capitalize">
+                            {jump.mode}
+                          </Badge>
+                          <span className="font-medium">{jump.distance.toLocaleString()} miles</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>No city changes detected in selected date range</p>
+                <p className="text-sm mt-1">You stayed in the same location throughout the period</p>
+              </div>
             )}
           </CardContent>
         </Card>
 
         {/* Interesting Places - AI Powered */}
         <LocationSummary
-          locations={[]} // Empty since we're using analytics.cities data instead
+          locations={[]}
           dateRange={{
             start: fromLocalYmd(analytics.dateRange.start),
             end: fromLocalYmd(analytics.dateRange.end)
           }}
           analyticsComplete={true}
-          citiesData={analytics.cities}
+          citiesData={{}} // Empty cities data since we're using city jumps now
           onExport={exportData}
         />
       </div>

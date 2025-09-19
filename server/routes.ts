@@ -924,7 +924,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ungeocodedCount: ungeocodedCount, // Count of locations being processed
               countries: {},
               states: {},
-              cities: {},
+              cityJumps: {
+                cityJumps: [],
+                totalTravelDistance: 0,
+                totalJumps: 0
+              },
               curatedPlaces: [],
               dateRange: {
                 start: startDate.toISOString().split('T')[0],
@@ -935,15 +939,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
 
-        // Group locations by city/state/country and calculate visit statistics
+        // Group locations by country/state and calculate city jumps
         const locationStats = {
           countries: new Map<string, number>(),
-          states: new Map<string, number>(),
-          cities: new Map<string, number>(),
-          locations: [] as any[]
+          states: new Map<string, number>()
         };
 
-        geocodedCentroids.forEach(centroid => {
+        // Sort centroids chronologically for city jumps detection
+        const sortedCentroids = geocodedCentroids.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        
+        // Calculate country and state statistics
+        sortedCentroids.forEach(centroid => {
           if (centroid.country) {
             locationStats.countries.set(centroid.country, (locationStats.countries.get(centroid.country) || 0) + 1);
           }
@@ -951,19 +957,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (centroid.state && centroid.country === 'United States') {
             locationStats.states.set(centroid.state, (locationStats.states.get(centroid.state) || 0) + 1);
           }
-          
-          if (centroid.city) {
-            const cityKey = centroid.state ? `${centroid.city}, ${centroid.state}` : `${centroid.city}, ${centroid.country}`;
-            locationStats.cities.set(cityKey, (locationStats.cities.get(cityKey) || 0) + 1);
-          }
-
-          // Location data collection removed since OpenAI curation is disabled
         });
+
+        // Calculate city jumps from chronologically sorted centroids
+        const cityJumps: Array<{
+          fromCity: string;
+          fromState?: string;
+          fromCountry: string;
+          fromCoords: { lat: number; lng: number };
+          toCity: string;
+          toState?: string;
+          toCountry: string;
+          toCoords: { lat: number; lng: number };
+          date: string;
+          mode: string;
+          distance: number;
+        }> = [];
+
+        let totalTravelDistance = 0;
+
+        // Detect city changes between consecutive days
+        for (let i = 1; i < sortedCentroids.length; i++) {
+          const prevCentroid = sortedCentroids[i - 1];
+          const currCentroid = sortedCentroids[i];
+
+          // Skip if either centroid lacks city or country data
+          if (!prevCentroid.city || !currCentroid.city || !prevCentroid.country || !currCentroid.country) continue;
+
+          // Create city keys for comparison
+          const prevCityKey = prevCentroid.state ? `${prevCentroid.city}, ${prevCentroid.state}` : `${prevCentroid.city}, ${prevCentroid.country}`;
+          const currCityKey = currCentroid.state ? `${currCentroid.city}, ${currCentroid.state}` : `${currCentroid.city}, ${currCentroid.country}`;
+
+          // If city changed, record the jump
+          if (prevCityKey !== currCityKey) {
+            const distance = calculateDistance(
+              prevCentroid.lat, 
+              prevCentroid.lng, 
+              currCentroid.lat, 
+              currCentroid.lng
+            );
+
+            // Determine transportation mode based on distance (simple heuristic for now)
+            let mode = 'driving';
+            if (distance > 500) {
+              mode = 'flying';
+            } else if (distance < 10) {
+              mode = 'walking';
+            }
+
+            cityJumps.push({
+              fromCity: prevCentroid.city!, // Non-null assertion - we checked above
+              fromState: prevCentroid.state || undefined,
+              fromCountry: prevCentroid.country!, // Non-null assertion - we checked above
+              fromCoords: { lat: prevCentroid.lat, lng: prevCentroid.lng },
+              toCity: currCentroid.city!, // Non-null assertion - we checked above
+              toState: currCentroid.state || undefined,
+              toCountry: currCentroid.country!, // Non-null assertion - we checked above
+              toCoords: { lat: currCentroid.lat, lng: currCentroid.lng },
+              date: currCentroid.date.toISOString().split('T')[0],
+              mode,
+              distance: Math.round(distance * 10) / 10 // Round to 1 decimal place
+            });
+
+            totalTravelDistance += distance;
+          }
+        }
+
+        // Prepare city jumps data
+        const cityJumpsData = {
+          cityJumps,
+          totalTravelDistance: Math.round(totalTravelDistance * 10) / 10,
+          totalJumps: cityJumps.length
+        };
 
         // Convert Maps to Objects for frontend compatibility
         const countriesObject = Object.fromEntries(locationStats.countries);
-        const statesObject = Object.fromEntries(locationStats.states);  
-        const citiesObject = Object.fromEntries(locationStats.cities);
+        const statesObject = Object.fromEntries(locationStats.states);
 
         // OpenAI curation removed for performance - analytics now return in under 2 seconds
         const curatedPlaces: any[] = []; // Empty array to maintain API compatibility
@@ -986,7 +1055,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ungeocodedCount: ungeocodedCount, // Count of locations being processed
             countries: countriesObject,
             states: statesObject,
-            cities: citiesObject,
+            cityJumps: cityJumpsData,
             curatedPlaces,
             dateRange: {
               start: startDate.toISOString().split('T')[0],
