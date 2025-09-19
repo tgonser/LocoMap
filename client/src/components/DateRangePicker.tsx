@@ -181,8 +181,6 @@ export default function DateRangePicker({
 
   // Handle date range selection with smart end date suggestion
   const handleRangeSelect = (range: DateRange | undefined) => {
-    console.log('DateRangePicker handleRangeSelect called with:', range);
-    
     if (!range) {
       setSelectedRange(undefined);
       setValidationResult({ error: '', isBackwards: false });
@@ -191,24 +189,9 @@ export default function DateRangePicker({
 
     let updatedRange = range;
     
-    // Smart end date suggestion: if user just picked a start date, suggest start + 1 month
-    // Check multiple conditions to catch when user clicks a single date
-    const shouldSuggestEndDate = range.from && (
-      !range.to || // No end date selected
-      range.from.getTime() === range.to.getTime() || // Same date selected
-      (!selectedRange?.from || selectedRange.from.getTime() !== range.from.getTime()) // Start date changed
-    );
-    
-    console.log('Should suggest end date?', shouldSuggestEndDate, {
-      hasFrom: !!range.from,
-      hasTo: !!range.to,
-      sameDate: range.from && range.to ? range.from.getTime() === range.to.getTime() : false,
-      startDateChanged: selectedRange?.from ? selectedRange.from.getTime() !== range.from?.getTime() : true
-    });
-    
-    if (shouldSuggestEndDate) {
+    // Smart end date suggestion: if user just clicked a single date (from=to), suggest start + 1 month
+    if (range.from && range.to && range.from.getTime() === range.to.getTime()) {
       const suggestedEndDate = addMonths(range.from, 1);
-      console.log('Suggesting end date:', range.from, '->', suggestedEndDate);
       updatedRange = { from: range.from, to: suggestedEndDate };
     }
 
