@@ -53,23 +53,52 @@ export default function MapDisplay({
     .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
     .map(loc => [loc.lat, loc.lng]);
 
-  // Use first location as center if available
+  // Use first location as center if available, ensure valid coordinates
   const mapCenter = filteredLocations.length > 0 
     ? [filteredLocations[0].lat, filteredLocations[0].lng] as [number, number]
     : center;
 
+  // Validate coordinates to prevent rendering issues
+  const isValidCenter = mapCenter[0] !== undefined && 
+                       mapCenter[1] !== undefined && 
+                       !isNaN(mapCenter[0]) && 
+                       !isNaN(mapCenter[1]) &&
+                       mapCenter[0] >= -90 && mapCenter[0] <= 90 &&
+                       mapCenter[1] >= -180 && mapCenter[1] <= 180;
+
+  if (!isValidCenter) {
+    console.error('Invalid map center coordinates:', mapCenter);
+    return (
+      <Card className={`h-full relative ${className}`}>
+        <div className="h-full flex items-center justify-center">
+          <div className="text-center">
+            <p className="text-destructive">Invalid map coordinates</p>
+            <p className="text-sm text-muted-foreground">Center: [{mapCenter[0]}, {mapCenter[1]}]</p>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
   return (
     <Card className={`h-full relative ${className}`}>
-      <div className="h-full rounded-lg">
+      <div className="h-full rounded-lg" style={{ minHeight: '400px' }}>
         <MapContainer
           center={mapCenter}
           zoom={zoom}
-          style={{ height: '100%', width: '100%' }}
+          style={{ height: '100%', width: '100%', minHeight: '400px' }}
           data-testid="map-container"
+          scrollWheelZoom={true}
+          zoomControl={true}
+          attributionControl={true}
+          preferCanvas={false}
         >
           <TileLayer
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            maxZoom={19}
+            tileSize={256}
+            zoomOffset={0}
           />
           
           {/* Draw path line connecting locations in chronological sequence */}
