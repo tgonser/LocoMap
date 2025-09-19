@@ -1,5 +1,6 @@
-import { MapContainer, TileLayer, Marker, Polyline, Popup } from 'react-leaflet';
-import { Icon } from 'leaflet';
+import { useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from 'react-leaflet';
+import { Icon, LatLngBounds } from 'leaflet';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import CalendarOverlay from './CalendarOverlay';
@@ -18,6 +19,56 @@ interface LocationPoint {
   timestamp: Date;
   accuracy?: number;
   activity?: string;
+}
+
+// Component to handle auto-pan and auto-zoom functionality
+interface MapViewControllerProps {
+  locations: LocationPoint[];
+  selectedDate?: Date;
+}
+
+function MapViewController({ locations, selectedDate }: MapViewControllerProps) {
+  const map = useMap();
+
+  useEffect(() => {
+    // Filter locations by selected date
+    const filteredLocations = selectedDate 
+      ? locations.filter(loc => 
+          loc.timestamp.toDateString() === selectedDate.toDateString()
+        )
+      : locations;
+
+    if (filteredLocations.length === 0) {
+      return; // Keep current view if no locations
+    }
+
+    // Handle single location case
+    if (filteredLocations.length === 1) {
+      const location = filteredLocations[0];
+      map.setView([location.lat, location.lng], 16, {
+        animate: true,
+        duration: 0.8
+      });
+      return;
+    }
+
+    // Handle multiple locations - calculate bounds
+    const bounds = new LatLngBounds([]);
+    filteredLocations.forEach(location => {
+      bounds.extend([location.lat, location.lng]);
+    });
+
+    // Fit bounds with padding and constraints
+    map.fitBounds(bounds, {
+      padding: [20, 20], // Add 20px padding on all sides
+      maxZoom: 17, // Don't zoom in too close for multiple locations
+      animate: true,
+      duration: 0.8
+    });
+
+  }, [map, locations, selectedDate]);
+
+  return null; // This component doesn't render anything
 }
 
 interface MapDisplayProps {
@@ -111,6 +162,12 @@ export default function MapDisplay({
               dashArray="5, 5"
             />
           )}
+          
+          {/* Auto-pan and auto-zoom controller */}
+          <MapViewController 
+            locations={locations} 
+            selectedDate={selectedDate}
+          />
           
           {/* Show markers with start/end indicators */}
           {filteredLocations.slice(0, 100).map((location, index) => {
