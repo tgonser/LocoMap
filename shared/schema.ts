@@ -68,6 +68,8 @@ export const locationPoints = pgTable("location_points", {
   index('idx_location_points_user_timestamp').on(table.userId, table.timestamp),
   index('idx_location_points_dataset').on(table.datasetId),
   index('idx_location_points_timestamp').on(table.timestamp), // For date range filtering
+  // Unique constraint to prevent duplicate location points
+  unique('unique_location_point').on(table.userId, table.datasetId, table.timestamp, table.lat, table.lng),
 ]);
 
 // Unique locations table - stores deduplicated locations with geocoding (user-specific)
