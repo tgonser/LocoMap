@@ -99,10 +99,62 @@ export default function MapDisplay({
       )
     : locations;
 
-  // Create path for polyline
-  const pathCoords: [number, number][] = filteredLocations
-    .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
-    .map(loc => [loc.lat, loc.lng]);
+  // Create clean path segments for realistic track visualization
+  const createCleanPathSegments = (locations: LocationPoint[]): [number, number][][] => {
+    if (locations.length < 2) return [];
+    
+    // Sort chronologically and filter for accuracy (defensive copy to avoid mutation)
+    const sortedLocations = [...locations]
+      .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+      .filter(loc => {
+        // Filter out poor GPS accuracy (>100m) and invalid coordinates
+        return loc.accuracy ? loc.accuracy <= 100 : true;
+      });
+
+    if (sortedLocations.length < 2) return [];
+
+    const segments: [number, number][][] = [];
+    let currentSegment: [number, number][] = [];
+    
+    for (let i = 0; i < sortedLocations.length; i++) {
+      const current = sortedLocations[i];
+      const coords: [number, number] = [current.lat, current.lng];
+      
+      if (i === 0) {
+        currentSegment = [coords];
+        continue;
+      }
+      
+      const previous = sortedLocations[i - 1];
+      const timeDiffMinutes = (current.timestamp.getTime() - previous.timestamp.getTime()) / (1000 * 60);
+      
+      // Calculate distance between points (rough estimate)
+      const latDiff = current.lat - previous.lat;
+      const lngDiff = current.lng - previous.lng;
+      const distanceKm = Math.sqrt(latDiff * latDiff + lngDiff * lngDiff) * 111; // Rough km conversion
+      
+      // Detect gaps: >30 minutes OR >5km distance suggests a gap (flight, drive, etc.)
+      const isGap = timeDiffMinutes > 30 || distanceKm > 5;
+      
+      if (isGap && currentSegment.length > 1) {
+        // End current segment and start new one
+        segments.push([...currentSegment]);
+        currentSegment = [coords];
+      } else {
+        // Continue current segment
+        currentSegment.push(coords);
+      }
+    }
+    
+    // Add final segment if it has multiple points
+    if (currentSegment.length > 1) {
+      segments.push(currentSegment);
+    }
+    
+    return segments;
+  };
+
+  const pathSegments = createCleanPathSegments(filteredLocations);
 
   // Use first location as center if available, ensure valid coordinates
   const mapCenter = filteredLocations.length > 0 
@@ -152,16 +204,17 @@ export default function MapDisplay({
             zoomOffset={0}
           />
           
-          {/* Draw path line connecting locations in chronological sequence */}
-          {pathCoords.length > 1 && (
-            <Polyline 
-              positions={pathCoords} 
-              color="#3b82f6" 
-              weight={4}
-              opacity={0.8}
-              dashArray="5, 5"
+          {/* Draw clean path segments (multiple polylines for gaps) */}
+          {pathSegments.map((segment, segmentIndex) => (
+            <Polyline
+              key={segmentIndex}
+              positions={segment}
+              color="#3b82f6"
+              weight={3}
+              opacity={0.9}
+              smoothFactor={1.0}
             />
-          )}
+          ))}
           
           {/* Auto-pan and auto-zoom controller */}
           <MapViewController 
