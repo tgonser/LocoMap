@@ -107,10 +107,14 @@ export default function MapDisplay({
     const sortedLocations = [...locations]
       .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
       .filter(loc => {
-        // Filter out poor GPS accuracy (>100m) and invalid coordinates
-        return loc.accuracy ? loc.accuracy <= 100 : true;
+        // Be more permissive with timelinePath points - allow up to 200m accuracy
+        // TimelinePath points are invaluable for route definition as user noted
+        return loc.accuracy ? loc.accuracy <= 200 : true;
       });
 
+    // Debug logging to see what we're working with
+    console.log(`Path creation: ${locations.length} total points, ${sortedLocations.length} after filtering`);
+    
     if (sortedLocations.length < 2) return [];
 
     const segments: [number, number][][] = [];
@@ -222,57 +226,7 @@ export default function MapDisplay({
             selectedDate={selectedDate}
           />
           
-          {/* Show markers with start/end indicators */}
-          {filteredLocations.slice(0, 100).map((location, index) => {
-            const isFirst = index === 0;
-            const isLast = index === filteredLocations.length - 1;
-            
-            return (
-              <Marker 
-                key={index} 
-                position={[location.lat, location.lng]}
-                icon={new Icon({
-                  iconUrl: isFirst ? 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png' 
-                    : isLast ? 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png'
-                    : 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-                  iconRetinaUrl: isFirst ? 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png' 
-                    : isLast ? 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png'
-                    : 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-                  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-                  iconSize: [25, 41],
-                  iconAnchor: [12, 41],
-                  popupAnchor: [1, -34],
-                  shadowSize: [41, 41]
-                })}
-              >
-                <Popup>
-                  <div className="space-y-2">
-                    <div className="font-medium">
-                      {location.timestamp.toLocaleTimeString()}
-                      {isFirst && <Badge variant="default" className="ml-2 text-xs">Start</Badge>}
-                      {isLast && <Badge variant="destructive" className="ml-2 text-xs">End</Badge>}
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
-                    </div>
-                    {location.accuracy && (
-                      <Badge variant="secondary" className="text-xs">
-                        ±{location.accuracy}m accuracy
-                      </Badge>
-                    )}
-                    {location.activity && (
-                      <Badge variant="outline" className="text-xs">
-                        {location.activity.replace('_', ' ')}
-                      </Badge>
-                    )}
-                    <div className="text-xs text-muted-foreground">
-                      Point {index + 1} of {filteredLocations.length}
-                    </div>
-                  </div>
-                </Popup>
-              </Marker>
-            );
-          })}
+          {/* No markers - just clean lines as requested */}
         </MapContainer>
       </div>
 
