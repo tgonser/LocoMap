@@ -584,6 +584,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 🎯 CRITICAL: Process stored raw JSON files into location points using enhanced parser
+  app.post("/api/datasets/:datasetId/process", isAuthenticated, async (req, res) => {
+    const { claims } = getAuthenticatedUser(req);
+    const userId = claims.sub;
+    const { datasetId } = req.params;
+
+    try {
+      console.log(`🚀 Processing dataset ${datasetId} for user ${userId}`);
+
+      // Get the dataset to verify ownership
+      const dataset = await storage.getLocationDataset(datasetId, userId);
+      if (!dataset) {
+        return res.status(404).json({ error: "Dataset not found" });
+      }
+
+      // Check if already processed
+      if (dataset.processedAt) {
+        console.log(`⚠️ Dataset ${datasetId} already processed at ${dataset.processedAt}`);
+        return res.status(400).json({ 
+          error: "Dataset already processed",
+          processedAt: dataset.processedAt
+        });
+      }
+
+      // Get raw JSON content
+      console.log(`📁 Retrieving raw content for dataset ${datasetId}`);
+      const rawContent = await storage.getRawFile(datasetId, userId);
+      if (!rawContent) {
+        return res.status(400).json({ error: "No raw content found for dataset" });
+      }
+
+      // Parse raw JSON
+      let jsonData;
+      try {
+        jsonData = JSON.parse(rawContent);
+      } catch (parseError) {
+        console.error("Error parsing stored JSON:", parseError);
+        return res.status(500).json({ error: "Failed to parse stored JSON content" });
+      }
+
+      // 🎯 CRITICAL: Call enhanced parser with standalone timelinePath support
+      console.log(`🔥 Calling enhanced parseGoogleLocationHistory with ${Array.isArray(jsonData) ? jsonData.length : 'unknown'} elements`);
+      const parsedPoints = parseGoogleLocationHistory(jsonData);
+      
+      if (parsedPoints.length === 0) {
+        console.log(`❌ No location points extracted from dataset ${datasetId}`);
+        return res.status(400).json({ error: "No valid location points found in the data" });
+      }
+
+      console.log(`✅ Enhanced parser extracted ${parsedPoints.length} location points`);
+
+      // Convert to database format and insert
+      const locationPoints = parsedPoints.map(point => ({
+        userId,
+        datasetId,
+        lat: point.lat,
+        lng: point.lng,
+        timestamp: point.timestamp,
+        accuracy: point.accuracy,
+        activity: point.activity,
+      }));
+
+      // Insert location points in batches
+      console.log(`💾 Inserting ${locationPoints.length} location points into database`);
+      await storage.insertLocationPoints(locationPoints);
+
+      // Mark dataset as processed
+      await storage.updateDatasetProcessed(datasetId, locationPoints.length);
+
+      console.log(`🎉 Successfully processed dataset ${datasetId}: ${locationPoints.length} points`);
+
+      res.json({
+        success: true,
+        message: `Successfully processed ${locationPoints.length} location points`,
+        pointsProcessed: locationPoints.length,
+        datasetId: datasetId
+      });
+
+    } catch (error) {
+      console.error(`❌ Error processing dataset ${datasetId}:`, error);
+      res.status(500).json({ 
+        error: "Failed to process dataset",
+        details: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   // Protected route: Get user's location points with optional date range filtering
   app.get("/api/locations", isAuthenticated, async (req, res) => {
     try {
