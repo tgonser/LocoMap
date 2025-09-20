@@ -135,9 +135,9 @@ export default function MapDisplay({
       const timeDiffMinutes = (location.timestamp.getTime() - lastAcceptedPoint.timestamp.getTime()) / (1000 * 60);
       
       // Filter out points that don't add value:
-      // - Same place (< 100m apart) OR 
-      // - Rapid-fire points (< 5 min apart)
-      const isRedundant = distanceMeters < 100 || timeDiffMinutes < 5;
+      // - Only remove points that are truly redundant (very close AND very recent)
+      // Changed from OR to AND to be much less aggressive
+      const isRedundant = distanceMeters < 20 && timeDiffMinutes < 2;
       
       if (!isRedundant) {
         smartFilteredLocations.push(location);
