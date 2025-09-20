@@ -348,7 +348,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: errorMsg });
       }
 
-      // Parse the location data
+      // Parse the location data with FIXED timelinePath parsing
       const parsedLocations = parseGoogleLocationHistory(jsonData);
       
       if (parsedLocations.length === 0) {
@@ -392,7 +392,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({
         success: true,
-        message: `Successfully imported ${savedPoints.length} location points`,
+        message: `Successfully imported ${savedPoints.length} location points with FIXED timelinePath parsing`,
         pointCount: savedPoints.length,
         datasetId: dataset.id,
         dateRange: {
@@ -401,10 +401,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
 
-      // NOTE: All geocoding and analytics processing is now handled by the POST /api/analytics/run endpoint
-      // Upload only stores raw data - no processing
-
-      console.log(`Successfully imported ${savedPoints.length} points for user ${userId}`);
+      console.log(`Successfully imported ${savedPoints.length} points for user ${userId} with fixed timelinePath parsing`);
 
     } catch (error) {
       console.error("Error processing location history:", error);

@@ -310,7 +310,18 @@ function parseMobileArrayFormat(jsonData: GoogleLocationHistoryMobileArray): Par
     }
   }
   
-  console.log(`Successfully parsed ${results.length} location points from mobile format`);
+  // Debug: Count points by source for troubleshooting  
+  const visitPoints = results.filter(r => r.activity === 'still').length;
+  const visitTimelinePoints = results.filter(r => r.activity === 'walking').length; 
+  const activityPoints = results.filter(r => r.activity && r.activity !== 'still' && r.activity !== 'walking').length;
+  
+  console.log(`=== PARSING RESULTS ===`);
+  console.log(`Visit points: ${visitPoints}`);
+  console.log(`Visit timelinePath points: ${visitTimelinePoints}`); 
+  console.log(`Activity points: ${activityPoints}`);
+  console.log(`Total parsed: ${results.length} location points from mobile format`);
+  console.log(`======================`);
+  
   return results;
 }
 
