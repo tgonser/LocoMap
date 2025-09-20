@@ -116,24 +116,19 @@ export interface ParsedLocationPoint {
   activity?: string;
 }
 
-// Helper function to normalize timestamps with different timezone formats
-function normalizeTimestamp(timestamp: string): Date {
-  // Handle both UTC offsets (-06:00) and Z format
-  try {
-    return new Date(timestamp);
-  } catch (error) {
-    console.warn('Invalid timestamp format:', timestamp);
-    return new Date();
-  }
+// Unified timestamp parser - ensures consistent UTC interpretation everywhere
+function parseToUTCDate(timestamp: string): Date | null {
+  // Robust timezone detection: check for trailing offset/UTC markers
+  const hasTimezoneInfo = /(?:Z|[+-]\d{2}:\d{2})$/.test(timestamp);
+  const normalized = hasTimezoneInfo ? timestamp : timestamp + 'Z';
+  const ms = Date.parse(normalized);
+  return Number.isNaN(ms) ? null : new Date(ms);
 }
 
-// Helper function to convert timestamps to UTC milliseconds for proper comparison
-function toUTCMillis(timestamp: string): number {
-  // Ensure UTC interpretation - convert 'Z' and timezone offsets properly
-  const normalized = timestamp.endsWith('Z') 
-    ? timestamp 
-    : (timestamp.includes('+') || timestamp.includes('-') ? timestamp : timestamp + 'Z');
-  return new Date(normalized).getTime();
+// Helper function to get UTC milliseconds (for comparisons)
+function toUTCMillis(timestamp: string): number | null {
+  const date = parseToUTCDate(timestamp);
+  return date ? date.getTime() : null;
 }
 
 // Interface for activity/visit segments with UTC boundaries  
@@ -145,8 +140,188 @@ interface ActivitySegment {
   activityType: string;
 }
 
-// NEW: Two-phase UTC matching implementation based on user's Python example
-function parseMobileArrayFormatWithUTCMatching(jsonData: GoogleLocationHistoryMobileArray): ParsedLocationPoint[] {
+// Modern Google Location History parser based on timelineObjects schema
+function parseModernTimelineObjects(jsonData: any): ParsedLocationPoint[] {
+  const results: ParsedLocationPoint[] = [];
+  
+  console.log(`🎯 Starting modern timeline parser`);
+
+  // Extract timelineObjects array (may be at root or in timelineObjects field)
+  const timelineObjects = jsonData.timelineObjects || (Array.isArray(jsonData) ? jsonData : []);
+  
+  if (!Array.isArray(timelineObjects)) {
+    console.warn('⚠️ No timelineObjects array found in modern format');
+    return results;
+  }
+
+  console.log(`📍 Found ${timelineObjects.length} timeline objects`);
+
+  // PHASE 1: Extract segments (activitySegment and placeVisit)
+  interface ModernSegment {
+    kind: 'activity' | 'visit';
+    startUTC: number;
+    endUTC: number;
+    obj: any;
+    activityType: string;
+  }
+
+  const segments: ModernSegment[] = [];
+
+  timelineObjects.forEach((obj, index) => {
+    // Handle activitySegment
+    if (obj.activitySegment) {
+      const seg = obj.activitySegment;
+      const duration = seg.duration || {};
+      const startTime = duration.startTimestamp;
+      const endTime = duration.endTimestamp;
+      
+      if (startTime && endTime) {
+        const startUTC = parseToUTCDate(startTime)?.getTime();
+        const endUTC = parseToUTCDate(endTime)?.getTime();
+        
+        if (startUTC && endUTC && endUTC >= startUTC) {
+          const activityType = seg.activities?.[0]?.activityType || seg.activityType || 'unknown';
+          segments.push({
+            kind: 'activity',
+            startUTC,
+            endUTC,
+            obj: seg,
+            activityType: activityType.toLowerCase()
+          });
+          
+          console.log(`🚗 Activity: ${activityType} (${new Date(startUTC).toISOString()} - ${new Date(endUTC).toISOString()})`);
+        }
+      }
+    }
+
+    // Handle placeVisit
+    if (obj.placeVisit) {
+      const seg = obj.placeVisit;
+      const duration = seg.duration || {};
+      const startTime = duration.startTimestamp;
+      const endTime = duration.endTimestamp;
+      
+      if (startTime && endTime) {
+        const startUTC = parseToUTCDate(startTime)?.getTime();
+        const endUTC = parseToUTCDate(endTime)?.getTime();
+        
+        if (startUTC && endUTC && endUTC >= startUTC) {
+          segments.push({
+            kind: 'visit',
+            startUTC,
+            endUTC,
+            obj: seg,
+            activityType: 'still'
+          });
+          
+          console.log(`📍 Visit: ${new Date(startUTC).toISOString()} - ${new Date(endUTC).toISOString()}`);
+          
+          // Extract place location if available
+          const location = seg.location;
+          if (location && location.latitudeE7 && location.longitudeE7) {
+            const lat = location.latitudeE7 / 1e7;
+            const lng = location.longitudeE7 / 1e7;
+            
+            results.push({
+              lat,
+              lng,
+              timestamp: new Date(startUTC),
+              activity: 'still'
+            });
+
+            if (endUTC !== startUTC) {
+              results.push({
+                lat,
+                lng,
+                timestamp: new Date(endUTC),
+                activity: 'still'
+              });
+            }
+          }
+        }
+      }
+    }
+  });
+
+  // Sort segments by start time
+  segments.sort((a, b) => a.startUTC - b.startUTC);
+  console.log(`✅ Extracted ${segments.length} segments`);
+
+  // PHASE 2: Extract timeline path points and associate with segments
+  const timelinePoints: Array<{lat: number, lng: number, tUTC: number, carrier: any}> = [];
+
+  timelineObjects.forEach((obj) => {
+    const timelinePath = obj.timelinePath;
+    if (!timelinePath?.point || !Array.isArray(timelinePath.point)) {
+      return;
+    }
+
+    timelinePath.point.forEach((point: any) => {
+      const latE7 = point.latE7;
+      const lngE7 = point.lngE7;
+      const timeStr = point.time;
+
+      if (typeof latE7 === 'number' && typeof lngE7 === 'number' && timeStr) {
+        const lat = latE7 / 1e7;
+        const lng = lngE7 / 1e7;
+        const pointDate = parseToUTCDate(timeStr);
+        
+        if (pointDate) {
+          timelinePoints.push({
+            lat,
+            lng,
+            tUTC: pointDate.getTime(),
+            carrier: obj
+          });
+        }
+      }
+    });
+  });
+
+  // Sort points by time
+  timelinePoints.sort((a, b) => a.tUTC - b.tUTC);
+  console.log(`🎯 Extracted ${timelinePoints.length} timeline path points`);
+
+  // PHASE 3: Associate points with segments using UTC windowing
+  timelinePoints.forEach((point) => {
+    let bestSegment: ModernSegment | null = null;
+    let smallestWindow = Infinity;
+
+    // Find segments that contain this point
+    for (const segment of segments) {
+      if (point.tUTC >= segment.startUTC && point.tUTC <= segment.endUTC) {
+        const windowSize = segment.endUTC - segment.startUTC;
+        if (windowSize < smallestWindow) {
+          smallestWindow = windowSize;
+          bestSegment = segment;
+        }
+      }
+    }
+
+    if (bestSegment) {
+      results.push({
+        lat: point.lat,
+        lng: point.lng,
+        timestamp: new Date(point.tUTC),
+        activity: bestSegment.activityType
+      });
+    } else {
+      // Unassigned point - use generic 'route' activity
+      results.push({
+        lat: point.lat,
+        lng: point.lng,
+        timestamp: new Date(point.tUTC),
+        activity: 'route'
+      });
+    }
+  });
+
+  console.log(`🎯 Modern parser extracted ${results.length} total points`);
+  return results;
+}
+
+// Fallback parser for legacy mobile array format
+function parseLegacyMobileArrayFormat(jsonData: GoogleLocationHistoryMobileArray): ParsedLocationPoint[] {
   const results: ParsedLocationPoint[] = [];
   
   console.log(`🎯 Starting two-phase UTC matching for ${jsonData.length} elements`);
@@ -161,6 +336,11 @@ function parseMobileArrayFormatWithUTCMatching(jsonData: GoogleLocationHistoryMo
       const startTimeUTC = toUTCMillis(element.startTime);
       const endTimeUTC = toUTCMillis(element.endTime);
       
+      if (!startTimeUTC || !endTimeUTC) {
+        console.warn(`⚠️ Invalid visit timestamps: ${element.startTime} to ${element.endTime}`);
+        return;
+      }
+      
       activitySegments.push({
         type: 'visit',
         data: element.visit,
@@ -174,13 +354,58 @@ function parseMobileArrayFormatWithUTCMatching(jsonData: GoogleLocationHistoryMo
       if (placeLocation) {
         const coords = parseGeoString(placeLocation);
         if (coords) {
-          results.push({
-            lat: coords.lat,
-            lng: coords.lng,
-            timestamp: normalizeTimestamp(element.startTime),
-            activity: 'still'
-          });
+          const startDate = parseToUTCDate(element.startTime);
+          const endDate = element.endTime !== element.startTime ? parseToUTCDate(element.endTime) : null;
+          
+          if (startDate) {
+            results.push({
+              lat: coords.lat,
+              lng: coords.lng,
+              timestamp: startDate,
+              activity: 'still'
+            });
+          }
+          
+          // Add end point if different
+          if (endDate) {
+            results.push({
+              lat: coords.lat,
+              lng: coords.lng,
+              timestamp: endDate,
+              activity: 'still'
+            });
+          }
         }
+      }
+      
+      // Extract nested timeline paths from visits
+      const nestedPoints = element.visit.timelinePath?.points || element.visit.points;
+      if (Array.isArray(nestedPoints)) {
+        const baseDate = parseToUTCDate(element.startTime);
+        if (!baseDate) {
+          console.warn(`⚠️ Invalid visit startTime: ${element.startTime}`);
+          return;
+        }
+        nestedPoints.forEach((pathPoint: any) => {
+          if (pathPoint.point) {
+            const coords = parseGeoString(pathPoint.point);
+            if (coords) {
+              let timestamp = baseDate;
+              if (pathPoint.durationMinutesOffsetFromStartTime) {
+                const offsetMinutes = parseInt(pathPoint.durationMinutesOffsetFromStartTime);
+                if (!isNaN(offsetMinutes)) {
+                  timestamp = new Date(baseDate.getTime() + offsetMinutes * 60 * 1000);
+                }
+              }
+              results.push({
+                lat: coords.lat,
+                lng: coords.lng,
+                timestamp: timestamp,
+                activity: 'still'
+              });
+            }
+          }
+        });
       }
     }
     
@@ -188,6 +413,12 @@ function parseMobileArrayFormatWithUTCMatching(jsonData: GoogleLocationHistoryMo
     if (element.activity && element.startTime && element.endTime) {
       const startTimeUTC = toUTCMillis(element.startTime);
       const endTimeUTC = toUTCMillis(element.endTime);
+      
+      if (!startTimeUTC || !endTimeUTC) {
+        console.warn(`⚠️ Invalid activity timestamps: ${element.startTime} to ${element.endTime}`);
+        return;
+      }
+      
       const activityType = element.activity.topCandidate?.type?.toLowerCase() || 'unknown';
       
       activitySegments.push({
@@ -202,13 +433,62 @@ function parseMobileArrayFormatWithUTCMatching(jsonData: GoogleLocationHistoryMo
       if (element.activity.start) {
         const coords = parseGeoString(element.activity.start);
         if (coords) {
-          results.push({
-            lat: coords.lat,
-            lng: coords.lng,
-            timestamp: normalizeTimestamp(element.startTime),
-            activity: activityType
-          });
+          const startDate = parseToUTCDate(element.startTime);
+          if (startDate) {
+            results.push({
+              lat: coords.lat,
+              lng: coords.lng,
+              timestamp: startDate,
+              activity: activityType
+            });
+          }
         }
+      }
+      
+      // Add activity end point
+      if (element.activity.end && element.endTime !== element.startTime) {
+        const coords = parseGeoString(element.activity.end);
+        if (coords) {
+          const endDate = parseToUTCDate(element.endTime);
+          if (endDate) {
+            results.push({
+              lat: coords.lat,
+              lng: coords.lng,
+              timestamp: endDate,
+              activity: activityType
+            });
+          }
+        }
+      }
+      
+      // Extract nested timeline paths from activities
+      if ((element as any).timelinePath?.points) {
+        const baseDate = parseToUTCDate(element.startTime);
+        if (!baseDate) {
+          console.warn(`⚠️ Invalid activity startTime: ${element.startTime}`);
+          return;
+        }
+        
+        (element as any).timelinePath.points.forEach((pathPoint: any) => {
+          if (pathPoint.point) {
+            const coords = parseGeoString(pathPoint.point);
+            if (coords) {
+              let timestamp = baseDate;
+              if (pathPoint.durationMinutesOffsetFromStartTime) {
+                const offsetMinutes = parseInt(pathPoint.durationMinutesOffsetFromStartTime);
+                if (!isNaN(offsetMinutes)) {
+                  timestamp = new Date(baseDate.getTime() + offsetMinutes * 60 * 1000);
+                }
+              }
+              results.push({
+                lat: coords.lat,
+                lng: coords.lng,
+                timestamp: timestamp,
+                activity: activityType
+              });
+            }
+          }
+        });
       }
     }
     
@@ -225,48 +505,73 @@ function parseMobileArrayFormatWithUTCMatching(jsonData: GoogleLocationHistoryMo
   standaloneTimelinePaths.forEach(({ element, index }) => {
     let matchedSegment: ActivitySegment | null = null;
     
-    // Check path points for temporal overlap
-    const pathPoints = element.timelinePath.points || [];
-    for (const pathPoint of pathPoints) {
-      if (!pathPoint.point || !pathPoint.time) continue;
+    // Find the nearest surrounding activity segments by index position
+    const nearbySegments = activitySegments.filter(segment => Math.abs(segment.startTimeUTC - Date.now()) > 0);
+    
+    // Try to find a segment by looking at surrounding JSON elements
+    let surroundingElement: any = null;
+    for (let offset = 1; offset <= 10; offset++) {
+      const beforeIndex = index - offset;
+      const afterIndex = index + offset;
       
-      const pathTimeStr = pathPoint.time.endsWith('Z') ? pathPoint.time : pathPoint.time + 'Z';
-      const pathTimeUTC = toUTCMillis(pathTimeStr);
-      
-      // Find matching activity segment
-      for (const segment of activitySegments) {
-        if (pathTimeUTC >= segment.startTimeUTC && pathTimeUTC <= segment.endTimeUTC) {
-          matchedSegment = segment;
-          console.log(`✅ Matched timelinePath to ${segment.activityType} (${new Date(segment.startTimeUTC).toISOString()})`);
-          break;
-        }
+      if (beforeIndex >= 0 && jsonData[beforeIndex]?.startTime && jsonData[beforeIndex]?.endTime) {
+        surroundingElement = jsonData[beforeIndex];
+        break;
       }
-      
-      if (matchedSegment) break;
+      if (afterIndex < jsonData.length && jsonData[afterIndex]?.startTime && jsonData[afterIndex]?.endTime) {
+        surroundingElement = jsonData[afterIndex];
+        break;
+      }
     }
     
-    // Extract path points with proper activity assignment
+    // Match to activity segment if surrounding element found
+    if (surroundingElement) {
+      const surroundingStartUTC = toUTCMillis(surroundingElement.startTime);
+      const surroundingEndUTC = toUTCMillis(surroundingElement.endTime);
+      
+      matchedSegment = activitySegments.find(segment => 
+        segment.startTimeUTC === surroundingStartUTC && segment.endTimeUTC === surroundingEndUTC
+      ) || null;
+      
+      if (matchedSegment) {
+        console.log(`✅ Matched timelinePath to ${matchedSegment.activityType} via surrounding element at index ${index}`);
+      }
+    }
+    
+    // Extract path points with proper timestamp derivation
+    const pathPoints = element.timelinePath.points || [];
     const activityType = matchedSegment?.activityType || 'route';
     
     pathPoints.forEach((pathPoint: any) => {
       if (pathPoint.point) {
         const coords = parseGeoString(pathPoint.point);
         if (coords) {
-          let timestamp: Date;
+          let timestamp: Date | null = null;
           
-          if (pathPoint.time) {
-            const timeStr = pathPoint.time.endsWith('Z') ? pathPoint.time : pathPoint.time + 'Z';
-            timestamp = normalizeTimestamp(timeStr);
-          } else {
-            timestamp = matchedSegment ? new Date(matchedSegment.startTimeUTC) : new Date();
+          // Use offset-based timestamp calculation if we have a matched segment
+          if (matchedSegment && pathPoint.durationMinutesOffsetFromStartTime) {
+            const offsetMinutes = parseInt(pathPoint.durationMinutesOffsetFromStartTime);
+            if (!isNaN(offsetMinutes)) {
+              const derivedUTC = matchedSegment.startTimeUTC + offsetMinutes * 60 * 1000;
+              
+              // Clamp derived time within segment bounds
+              if (derivedUTC >= matchedSegment.startTimeUTC && derivedUTC <= matchedSegment.endTimeUTC) {
+                timestamp = new Date(derivedUTC);
+              }
+            }
           }
           
-          results.push({
-            lat: coords.lat,
-            lng: coords.lng,
-            timestamp: timestamp,
-            activity: activityType
-          });
+          // Skip points without valid timestamps rather than using Date.now()
+          if (timestamp) {
+            results.push({
+              lat: coords.lat,
+              lng: coords.lng,
+              timestamp: timestamp,
+              activity: activityType
+            });
+          } else {
+            console.warn(`⚠️ Skipped point without valid timestamp at standalone timelinePath ${index}`);
+          }
         }
       }
     });
@@ -531,7 +836,7 @@ export function parseGoogleLocationHistory(jsonData: any): ParsedLocationPoint[]
       }
     }
     
-    const mobileResults = parseMobileArrayFormatWithUTCMatching(jsonData as GoogleLocationHistoryMobileArray);
+    const mobileResults = parseLegacyMobileArrayFormat(jsonData as GoogleLocationHistoryMobileArray);
     console.log(`✅ Mobile parser extracted ${mobileResults.length} total points`);
     results.push(...mobileResults);
   }

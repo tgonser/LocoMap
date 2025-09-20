@@ -1,0 +1,273 @@
+You’re right: in the newer Google Location History (“Semantic Location History”) exports, a lot of the raw GPS samples live under timelinePath points. The trick is:
+	1.	build a time-indexed list of all segments that have a start/end (both activitySegment and placeVisit),
+	2.	harvest every point under any timelinePath you find,
+	3.	convert everything to UTC instants,
+	4.	drop each point into the segment whose UTC window contains that point’s UTC time.
+
+Below is a robust, timezone-aware parser that does exactly that and safely handles common schema variants you’ll see in the wild.
+
+⸻
+
+How it works (short + practical)
+	•	Where to look
+	•	Top-level container: data["timelineObjects"]
+	•	Segments:
+	•	obj["activitySegment"] (has duration.startTimestamp / duration.endTimestamp)
+	•	obj["placeVisit"] (has duration.startTimestamp / duration.endTimestamp)
+	•	GPS samples:
+	•	obj["timelinePath"]["point"] → list of points with latE7, lngE7, and time
+	•	(Some files also include activitySegment.waypointPath.waypoints—optional; you can merge them if present.)
+	•	Time handling
+	•	Most timestamps are ISO8601 with a Z suffix (UTC). Some may be ISO without Z. Some older fields show timestampMs (milliseconds since epoch).
+	•	Normalize everything to a POSIX float timestamp (UTC) before comparing.
+	•	Association rule
+	•	For each timelinePath point:
+	•	Find the segment whose [start_utc, end_utc] window contains point_utc.
+	•	If multiple overlap (rare), pick the narrowest segment window to avoid misassignment.
+
+⸻
+
+Drop-in code
+
+import json
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
+
+# ---------- Time parsing helpers ----------
+
+def _parse_iso_utc(ts: str) -> Optional[float]:
+    """
+    Parse an ISO8601 timestamp into a UTC epoch (float seconds).
+    Accepts values with or without 'Z'. Returns None if unparsable.
+    """
+    if not ts or not isinstance(ts, str):
+        return None
+    s = ts.strip()
+    # Normalize trailing Z to +00:00 to satisfy fromisoformat
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+        # If naive, assume UTC
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except Exception:
+        return None
+
+def _parse_timestamp_ms(ms: Any) -> Optional[float]:
+    """
+    Parse a millisecond-since-epoch string/int to float seconds.
+    """
+    if ms is None:
+        return None
+    try:
+        val = int(ms)
+        return val / 1000.0
+    except Exception:
+        return None
+
+def parse_any_ts(obj: Any) -> Optional[float]:
+    """
+    Best-effort parse of a timestamp from:
+      - ISO fields: 'time', 'startTimestamp', 'endTimestamp', 'timestamp'
+      - Millis fields: 'timestampMs'
+    Returns UTC epoch seconds or None.
+    """
+    # Common ISO fields
+    for key in ("time", "startTimestamp", "endTimestamp", "timestamp"):
+        if isinstance(obj, dict) and key in obj:
+            v = obj.get(key)
+            if isinstance(v, str):
+                t = _parse_iso_utc(v)
+                if t is not None:
+                    return t
+    # Millis field
+    if isinstance(obj, dict) and "timestampMs" in obj:
+        return _parse_timestamp_ms(obj.get("timestampMs"))
+    # Direct ISO string
+    if isinstance(obj, str):
+        return _parse_iso_utc(obj)
+    # Direct millis
+    return _parse_timestamp_ms(obj)
+
+# ---------- Core extraction ----------
+
+def extract_segments(timeline_objects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Build a flat list of time-windowed segments from activitySegment and placeVisit.
+    Each entry:
+      {
+        'kind': 'activity' | 'visit',
+        'obj': <original segment dict>,
+        'start_utc': float,
+        'end_utc': float
+      }
+    """
+    segments: List[Dict[str, Any]] = []
+    for obj in timeline_objects:
+        if "activitySegment" in obj:
+            seg = obj["activitySegment"]
+            dur = seg.get("duration", {})
+            start = parse_any_ts({"startTimestamp": dur.get("startTimestamp")})
+            end = parse_any_ts({"endTimestamp": dur.get("endTimestamp")})
+            if start is not None and end is not None and end >= start:
+                segments.append({
+                    "kind": "activity",
+                    "obj": seg,
+                    "start_utc": start,
+                    "end_utc": end,
+                })
+        if "placeVisit" in obj:
+            seg = obj["placeVisit"]
+            dur = seg.get("duration", {})
+            start = parse_any_ts({"startTimestamp": dur.get("startTimestamp")})
+            end = parse_any_ts({"endTimestamp": dur.get("endTimestamp")})
+            if start is not None and end is not None and end >= start:
+                segments.append({
+                    "kind": "visit",
+                    "obj": seg,
+                    "start_utc": start,
+                    "end_utc": end,
+                })
+    # Sort by start time to speed up lookups
+    segments.sort(key=lambda s: (s["start_utc"], s["end_utc"]))
+    return segments
+
+def extract_timeline_points(timeline_objects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Collect *all* points found in any 'timelinePath' object.
+    Each returned point is normalized to:
+      {
+        'lat': float,
+        'lng': float,
+        't_utc': float,
+        'raw': <original point dict>,
+        'carrier': <the container object holding 'timelinePath'>,
+      }
+    """
+    points: List[Dict[str, Any]] = []
+    for obj in timeline_objects:
+        tlp = obj.get("timelinePath")
+        if not tlp:
+            continue
+        pts = tlp.get("point")
+        if not isinstance(pts, list):
+            continue
+        for p in pts:
+            # lat/lng are usually E7 integers
+            lat_raw = p.get("latE7")
+            lng_raw = p.get("lngE7")
+            lat = (lat_raw / 1e7) if isinstance(lat_raw, (int, float)) else None
+            lng = (lng_raw / 1e7) if isinstance(lng_raw, (int, float)) else None
+            t_utc = parse_any_ts(p)  # 'time' or 'timestampMs'
+            if lat is None or lng is None or t_utc is None:
+                continue
+            points.append({
+                "lat": float(lat),
+                "lng": float(lng),
+                "t_utc": float(t_utc),
+                "raw": p,
+                "carrier": obj  # keep a reference to the object that held the path
+            })
+    # Sort by time for nicer downstream logic
+    points.sort(key=lambda x: x["t_utc"])
+    return points
+
+# ---------- Association (point -> segment) ----------
+
+def _window_size(seg: Dict[str, Any]) -> float:
+    return seg["end_utc"] - seg["start_utc"]
+
+def associate_points_to_segments(
+    segments: List[Dict[str, Any]],
+    points: List[Dict[str, Any]],
+) -> List[Tuple[Dict[str, Any], List[Dict[str, Any]]]]:
+    """
+    For each segment, gather all timelinePath points whose t_utc falls inside the segment window.
+    If a point fits multiple overlapping segments, assign it to the *narrowest* window.
+    Returns a list of (segment, [points]) pairs ordered by segment start time.
+    """
+    # Prepare buckets
+    assignments = [(seg, []) for seg in segments]
+
+    # Precompute window sizes for tie-breaking
+    sizes = [(_window_size(seg), idx) for idx, (seg, _) in enumerate(assignments)]
+
+    for pt in points:
+        t = pt["t_utc"]
+        candidates = []
+        for idx, (seg, _) in enumerate(assignments):
+            if seg["start_utc"] <= t <= seg["end_utc"]:
+                candidates.append(idx)
+        if not candidates:
+            continue
+        # If more than one candidate, pick the segment with the smallest window
+        if len(candidates) > 1:
+            best_idx = min(candidates, key=lambda i: _window_size(assignments[i][0]))
+        else:
+            best_idx = candidates[0]
+        assignments[best_idx][1].append(pt)
+
+    return assignments
+
+# ---------- Public API ----------
+
+def load_and_assign_timeline_paths(json_path: str):
+    """
+    Load a Google Timeline JSON and return association results:
+      [
+        {
+          'kind': 'activity'|'visit',
+          'start_utc': float,
+          'end_utc': float,
+          'segment': <original segment dict>,
+          'points': [ {lat,lng,t_utc,raw,carrier}, ... ],
+          'point_count': int
+        },
+        ...
+      ]
+    """
+    with open(json_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    # Some exports have the array at the top; others use 'timelineObjects'
+    timeline_objects = data.get("timelineObjects", data if isinstance(data, list) else [])
+
+    segments = extract_segments(timeline_objects)
+    points = extract_timeline_points(timeline_objects)
+
+    paired = associate_points_to_segments(segments, points)
+    results = []
+    for seg, pts in paired:
+        results.append({
+            "kind": seg["kind"],
+            "start_utc": seg["start_utc"],
+            "end_utc": seg["end_utc"],
+            "segment": seg["obj"],
+            "points": pts,
+            "point_count": len(pts),
+        })
+    return results
+
+if __name__ == "__main__":
+    # Demo
+    assignments = load_and_assign_timeline_paths("Timeline.json")
+    for a in assignments[:10]:  # preview first 10
+        print(f"{a['kind']:>8}  "
+              f"{datetime.utcfromtimestamp(a['start_utc']).isoformat()}Z  →  "
+              f"{datetime.utcfromtimestamp(a['end_utc']).isoformat()}Z   "
+              f"points={a['point_count']}")
+
+
+⸻
+
+Notes you’ll care about
+	•	This code does not assume activities, visits, or startTime/endTime keys (which are common older-format examples). Instead it uses the modern structure (timelineObjects, activitySegment, placeVisit, duration.startTimestamp / endTimestamp) and the standalone timelinePath.point arrays.
+	•	If your files also include activitySegment.waypointPath.waypoints, you can treat those similarly—parse their timestamps with parse_any_ts and merge into points.
+	•	Honolulu’s offset doesn’t matter once you convert everything to UTC for matching. You can always render back to local display later if you want.
+	•	If you also want to attach mode of transport when available, look at:
+	•	activitySegment["activity"]["topCandidate"]["type"] (e.g., "IN_TRAIN", "IN_PASSENGER_VEHICLE")
+and store it alongside each segment.
+
+If you paste this into your project, it’ll find all timelinePath points and correctly associate them to the right activity/visit windows with solid timezone handling.
