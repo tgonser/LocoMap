@@ -1437,7 +1437,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // ========== CONTINUOUS CITY JUMPS CHAIN (FIXES BROKEN TRAVEL SEQUENCES) ==========
         // Get travel stops in chronological order to build connected travel chain
-        const travelStops = await storage.getUserTravelStopsByDateRange(userId, startDate, endDate);
+        let travelStops = await storage.getUserTravelStopsByDateRange(userId, startDate, endDate);
+        
+        // Auto-compute travel stops if none exist for this date range
+        if (travelStops.length === 0) {
+          console.log(`🔄 No travel stops found for date range - computing waypoints to generate travel stops...`);
+          
+          // Get user's datasets and compute waypoints for the selected date range
+          const datasets = await storage.getUserLocationDatasets(userId);
+          if (datasets.length > 0) {
+            const primaryDataset = datasets[0]; // Use first dataset
+            try {
+              // Compute waypoints which generates travel stops
+              const waypointResult = await storage.computeWaypointAnalyticsByDateRange(
+                userId, 
+                primaryDataset.id, 
+                startDate, 
+                endDate
+              );
+              console.log(`✅ Auto-computed waypoints for date range: ${waypointResult.stopsCreated} stops, ${waypointResult.segmentsCreated} segments`);
+              
+              // Re-fetch travel stops after computation
+              travelStops = await storage.getUserTravelStopsByDateRange(userId, startDate, endDate);
+              console.log(`🎯 Found ${travelStops.length} travel stops after waypoint computation`);
+            } catch (waypointError) {
+              console.error(`❌ Failed to compute waypoints for date range:`, waypointError);
+              // Continue with empty travel stops
+            }
+          }
+        }
+        
         console.log(`🔄 Building continuous city jumps from ${travelStops.length} travel stops...`);
         
         // Helper function to normalize city keys for comparison
