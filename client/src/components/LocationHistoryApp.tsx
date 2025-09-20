@@ -276,21 +276,6 @@ export default function LocationHistoryApp() {
               <p className="text-muted-foreground">Checking for existing data...</p>
             </div>
           </div>
-        ) : viewMode === 'files' ? (
-          <div className="h-full flex items-center justify-center p-6">
-            <div className="w-full max-w-2xl">
-              <div className="text-center mb-6">
-                <Upload className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                <h2 className="text-2xl font-semibold mb-2">
-                  Upload Your Location History
-                </h2>
-                <p className="text-muted-foreground">
-                  Select your Google location history JSON file to visualize your travels
-                </p>
-              </div>
-              <FileManager onFileUpload={handleFileUpload} />
-            </div>
-          </div>
         ) : (
           <div className="h-full flex flex-col">
             {/* Toolbar */}
@@ -389,6 +374,8 @@ export default function LocationHistoryApp() {
                     </div>
                   </Card>
                 )
+              ) : viewMode === 'files' ? (
+                <FileManager onFileUpload={handleFileUpload} />
               ) : (
                 <AnalyticsPanel
                   onBack={() => setViewMode('map')}
