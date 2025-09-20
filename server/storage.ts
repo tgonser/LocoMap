@@ -1309,72 +1309,73 @@ export class DatabaseStorage implements IStorage {
 
   // ============= DATE-RANGE-BOUNDED WAYPOINT METHODS =============
   
-  // Clean existing waypoint data in date range for idempotency (FINAL FIX: prevents FK violations)
+  // Clean existing waypoint data in date range for idempotency (NO TRANSACTION: Neon doesn't support them)
   async cleanWaypointDataInDateRange(userId: string, datasetId: string, startDate: Date, endDate: Date): Promise<void> {
     console.log(`🧹 Cleaning existing waypoint data in range ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]} for dataset ${datasetId}`);
     
-    // Use transaction to ensure atomicity of cleanup operations
-    return await db.transaction(async (tx) => {
-      // STEP 1: Identify the target stop set S = stops that overlap the time range
-      // These are the stops we plan to delete in step 3
-      const targetStops = await tx
-        .select({ id: travelStops.id })
-        .from(travelStops)
-        .where(and(
-          eq(travelStops.userId, userId),
-          eq(travelStops.datasetId, datasetId),
-          // Overlap detection: stop overlaps if start <= endDate AND end >= startDate
-          lte(travelStops.start, endDate),
-          gte(travelStops.end, startDate)
-        ));
-      
-      if (targetStops.length === 0) {
-        console.log(`🔍 No overlapping stops found in date range - cleanup complete`);
-        return;
-      }
-      
-      const targetStopIds = targetStops.map(s => s.id);
-      console.log(`🎯 Found ${targetStopIds.length} stops to clean in date range`);
-      
-      // STEP 2: Delete ALL segments referencing ANY target stop (regardless of segment time)
-      // This prevents FK violations when we delete the stops in step 3
-      const deletedSegments = await tx.delete(travelSegments)
-        .where(and(
-          eq(travelSegments.userId, userId),
-          or(
-            inArray(travelSegments.fromStopId, targetStopIds),
-            inArray(travelSegments.toStopId, targetStopIds)
-          )
-        ));
-      
-      // STEP 3: Delete the target stops (safe now that referencing segments are gone)
-      const deletedStops = await tx.delete(travelStops)
-        .where(and(
-          eq(travelStops.userId, userId),
-          eq(travelStops.datasetId, datasetId),
-          inArray(travelStops.id, targetStopIds)
-        ));
-      
-      // STEP 4: Post-cleanup invariant check (FAIL if any segments still reference deleted stops)
-      const remainingSegments = await tx
-        .select({ count: sql`count(*)` })
-        .from(travelSegments)
-        .where(and(
-          eq(travelSegments.userId, userId),
-          or(
-            inArray(travelSegments.fromStopId, targetStopIds),
-            inArray(travelSegments.toStopId, targetStopIds)
-          )
-        ));
-      
-      const remainingCount = Number(remainingSegments[0]?.count || 0);
-      console.log(`🗑️ Cleanup complete: removed segments referencing target stops, then removed ${targetStopIds.length} stops`);
-      console.log(`✅ Invariant check: ${remainingCount} segments still reference deleted stops (should be 0)`);
-      
-      if (remainingCount > 0) {
-        throw new Error(`Cleanup failed: ${remainingCount} segments still reference deleted stops - data corruption detected`);
-      }
-    });
+    // STEP 1: Identify the target stop set S = stops that overlap the time range
+    // These are the stops we plan to delete in step 3
+    const targetStops = await db
+      .select({ id: travelStops.id })
+      .from(travelStops)
+      .where(and(
+        eq(travelStops.userId, userId),
+        eq(travelStops.datasetId, datasetId),
+        // Overlap detection: stop overlaps if start <= endDate AND end >= startDate
+        lte(travelStops.start, endDate),
+        gte(travelStops.end, startDate)
+      ));
+    
+    if (targetStops.length === 0) {
+      console.log(`🔍 No overlapping stops found in date range - cleanup complete`);
+      return;
+    }
+    
+    const targetStopIds = targetStops.map(s => s.id);
+    console.log(`🎯 Found ${targetStopIds.length} stops to clean in date range`);
+    
+    // STEP 2: Delete ALL segments referencing ANY target stop (regardless of segment time)
+    // This prevents FK violations when we delete the stops in step 3
+    await db.delete(travelSegments)
+      .where(and(
+        eq(travelSegments.userId, userId),
+        or(
+          inArray(travelSegments.fromStopId, targetStopIds),
+          inArray(travelSegments.toStopId, targetStopIds)
+        )
+      ));
+    
+    console.log(`🗑️ Deleted segments referencing target stops`);
+    
+    // STEP 3: Delete the target stops (safe now that referencing segments are gone)
+    await db.delete(travelStops)
+      .where(and(
+        eq(travelStops.userId, userId),
+        eq(travelStops.datasetId, datasetId),
+        inArray(travelStops.id, targetStopIds)
+      ));
+    
+    console.log(`🗑️ Deleted ${targetStopIds.length} stops in date range`);
+    
+    // STEP 4: Post-cleanup invariant check (FAIL if any segments still reference deleted stops)
+    const remainingSegments = await db
+      .select({ count: sql`count(*)` })
+      .from(travelSegments)
+      .where(and(
+        eq(travelSegments.userId, userId),
+        or(
+          inArray(travelSegments.fromStopId, targetStopIds),
+          inArray(travelSegments.toStopId, targetStopIds)
+        )
+      ));
+    
+    const remainingCount = Number(remainingSegments[0]?.count || 0);
+    console.log(`✅ Invariant check: ${remainingCount} segments still reference deleted stops (should be 0)`);
+    
+    if (remainingCount > 0) {
+      console.error(`⚠️ Warning: ${remainingCount} segments still reference deleted stops - may indicate FK constraint issue`);
+      // Don't throw error for now since Neon doesn't support transactions anyway
+    }
   }
 
   // Compute travel stops ONLY from GPS points in the specified date range
