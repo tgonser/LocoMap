@@ -1,0 +1,149 @@
+Here’s the whole thing—clean, “new mobile export only”—boiled down into what a programmer needs to build and wire it up.
+
+What file format we target
+	•	Only the new Google Maps mobile/device export (current format).
+	•	Top-level: data["timelineObjects"] → list of objects where each object may contain:
+	•	activitySegment (trip) with duration.startTimestamp / duration.endTimestamp, and sometimes:
+	•	activity.topCandidate.type (transport mode, e.g., IN_PASSENGER_VEHICLE)
+	•	waypointPath.waypoints (optional extra points)
+	•	placeVisit (stay) with duration.startTimestamp / duration.endTimestamp
+	•	timelinePath.point → dense GPS samples with latE7, lngE7, time (ISO8601, usually Z)
+
+Old Takeout (locations[], timestampMs, latitudeE7) is not supported.
+
+Data model (in your code)
+	•	Segment (either activity or visit)
+	•	kind: "activity" | "visit"
+	•	start_utc, end_utc: float seconds since epoch (UTC)
+	•	mode: optional string (from activitySegment.activity.topCandidate.type)
+	•	raw: original segment dict (keep for extra fields you might later use)
+	•	Point (from timelinePath.point and optionally waypointPath.waypoints)
+	•	lat, lng: float degrees
+	•	t_utc: float seconds since epoch (UTC)
+	•	later enriched with:
+	•	tz: IANA tz name (e.g., Europe/Rome)
+	•	local_dt: timezone-aware datetime
+	•	local_date: date of local_dt
+
+Core pipeline (4 steps)
+
+1) Parse & normalize
+	•	Read data["timelineObjects"] (must be a list).
+	•	Extract segments:
+	•	For each activitySegment/placeVisit, read duration.startTimestamp and duration.endTimestamp.
+	•	Normalize timestamps to UTC → float seconds.
+	•	If end < start or missing → skip.
+	•	Extract mode from activitySegment.activity.topCandidate.type when present.
+	•	Extract points:
+	•	From every timelinePath.point:
+	•	Convert latE7, lngE7 → float degrees.
+	•	Parse time to UTC epoch seconds.
+	•	(Optionally also pull waypointPath.waypoints if present: treat similarly, using their timestamp if available.)
+
+2) Associate points → segments (in UTC)
+	•	For each point time t_utc, find the segment(s) whose [start_utc, end_utc] contains t_utc.
+	•	If multiple overlap, choose the narrowest time window (smallest end_utc - start_utc).
+	•	Result: list of (segment, [points]), sorted by segment start.
+
+3) Localize by where the point happened
+	•	For each point, determine its IANA timezone from coordinates (e.g., timezonefinder), then:
+	•	local_dt = datetime.fromtimestamp(t_utc, ZoneInfo(tzname))
+	•	local_date = local_dt.date()
+	•	This is per-point, so segments that cross time zones (drives, flights) remain correct.
+
+4) Daily attribution & midnight crossings
+	•	For each segment’s localized points:
+	•	Group by local_date → {date: [points_on_that_date]}.
+	•	Detect midnight crossings: scan consecutive points; when local_date changes, you crossed midnight.
+	•	Use these daily buckets for reports (e.g., daily CSVs) so points land on the correct local day.
+
+Function skeletons (drop-in)
+
+def load_mobile_export(json_path: str) -> dict: ...
+def extract_segments(timeline_objects: list) -> list[dict]: ...
+def extract_timeline_points(timeline_objects: list) -> list[dict]: ...
+def associate_points_to_segments(segments: list[dict], points: list[dict]) -> list[tuple[dict, list[dict]]]: ...
+def enrich_points_with_local_time(points: list[dict]) -> list[dict]: ...
+def detect_local_midnight_crossings(points_local: list[dict]) -> list[tuple[int, date, date]]: ...
+def split_segment_by_local_day(points_local: list[dict]) -> dict[date, list[dict]]: ...
+
+Return shape from your top-level “assigner”:
+
+[
+  {
+    "kind": "activity"|"visit",
+    "start_utc": float,
+    "end_utc": float,
+    "mode": Optional[str],
+    "segment": <original segment dict>,
+    "points": [  # enriched per-point list
+      {"lat": float, "lng": float, "t_utc": float, "tz": str, "local_dt": datetime, "local_date": date, ...},
+      ...
+    ],
+    "point_count": int,
+    "local_midnight_crossings": [(index, prev_date, curr_date), ...],
+    "by_local_day": { date_obj: [points for that date in local order], ... }
+  },
+  ...
+]
+
+Edge cases you must handle
+	•	Missing or malformed timestamps → skip safely.
+	•	Overlapping segments (rare, but happens) → resolve by narrowest window rule.
+	•	Points with no matching segment → ignore or put in a “unassigned” bucket if you need QA.
+	•	Time zones fails (e.g., ocean) → fallback to UTC; still compute local_date from UTC.
+	•	Sparse segments with zero points (e.g., visits without timelinePath coverage) → keep segment for context but it will have point_count = 0.
+
+Performance tips
+	•	Use a tiny cache for timezone lookups keyed by rounded (lat, lng) (e.g., 3–4 decimal places) to avoid repeated timezonefinder calls in dense clusters.
+	•	Sort segments by start_utc; as you iterate points in time order, you can maintain a moving index/pointer to cut down membership checks.
+	•	If you have millions of points, consider binning segments by hour/day to pre-filter candidates.
+
+Dependencies
+	•	Python 3.9+
+	•	timezonefinder for lat/lng → tz name
+pip install timezonefinder
+	•	tzdata (Windows) for IANA db if missing
+pip install tzdata
+	•	zoneinfo (stdlib) for timezone arithmetic
+
+Minimal pseudocode glue
+
+data = load_mobile_export(path)
+objs = data["timelineObjects"]
+
+segments = extract_segments(objs)           # build UTC windows (+mode)
+points = extract_timeline_points(objs)      # all timelinePath points, UTC
+
+paired = associate_points_to_segments(segments, points)
+
+assignments = []
+for seg, pts in paired:
+    pts_local = enrich_points_with_local_time(pts)      # tz, local_dt, local_date
+    crossings = detect_local_midnight_crossings(pts_local)
+    by_day = split_segment_by_local_day(pts_local)
+    assignments.append({
+        "kind": seg["kind"],
+        "start_utc": seg["start_utc"],
+        "end_utc": seg["end_utc"],
+        "mode": seg.get("mode"),
+        "segment": seg["raw"],
+        "points": pts_local,
+        "point_count": len(pts_local),
+        "local_midnight_crossings": crossings,
+        "by_local_day": by_day
+    })
+
+How to build outputs with this
+	•	Daily CSV (per point): iterate each segment’s by_local_day[date] → write rows with local_dt.isoformat(), tz, lat, lng, kind, mode.
+	•	City jumps with mode: once you’ve mapped points to cities, sort by t_utc and emit transitions; mode comes from the surrounding activitySegment (or your inference rules) while dates come from local_date at each point.
+	•	Monthly rollups: bucket days by month of their local_date (not UTC date).
+
+Test checklist (quick)
+	•	A file with timelinePath points entirely inside one activitySegment → all points assigned to that segment.
+	•	A file where a segment spans midnight in local time → points split across two local_date buckets; crossings detected once.
+	•	A route crossing time zones (drive/flight) → tz changes mid-segment; local_date attribution stays correct.
+	•	Overlapping segments (synthetic) → points assigned to the narrower window.
+	•	Missing timelinePath for a short placeVisit → segment exists, point_count = 0.
+
+That’s it. Implement these pieces and you’ll have a robust, new-format-only, timezone-correct pipeline that bins points to the day where they actually happened and cleanly flags midnight crossings.
