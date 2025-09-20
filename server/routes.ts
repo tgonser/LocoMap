@@ -917,12 +917,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Step 1: Ensure centroids exist for the requested date range ONLY (OPTIMIZED)
-      console.log(`🚀 Step 2/4 - Computing daily centroids for date range ONLY (optimized)`);
+      // Step 1: SKIP centroid computation - we're using waypoints now
+      console.log(`🚀 Step 2/4 - SKIPPING daily centroids (waypoint-based analytics)`);
       let centroidsCreated = 0;
       
       try {
-        // Check if we need to create centroids for any datasets
+        // Check if we have datasets (basic validation)
         const datasets = await storage.getUserLocationDatasets(userId);
         
         if (datasets.length === 0) {
@@ -931,15 +931,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
 
-        // OPTIMIZED: Create centroids ONLY for the requested date range instead of all datasets
-        const startTime = Date.now();
-        centroidsCreated = await storage.computeDailyCentroidsByDateRange(userId, startDate, endDate);
-        const computeTime = (Date.now() - startTime) / 1000;
-        console.log(`✅ OPTIMIZED: Computed ${centroidsCreated} centroids for date range in ${computeTime.toFixed(1)}s (instead of processing all ${datasets.length} datasets)`);
+        console.log(`✅ SKIPPED: Centroid computation (using waypoint-based analytics instead)`);
       } catch (error) {
-        console.error(`❌ Failed to compute centroids for date range for user ${userId}:`, error);
+        console.error(`❌ Failed to check datasets for user ${userId}:`, error);
         return res.status(500).json({
-          error: "Failed to compute daily centroids for date range",
+          error: "Failed to check user datasets",
           details: error instanceof Error ? error.message : "Unknown error"
         });
       }
