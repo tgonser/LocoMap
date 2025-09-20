@@ -682,6 +682,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(500).json({ error: "Failed to parse stored JSON content" });
       }
 
+      // 🔧 Apply the same normalization logic as during upload
+      // Fix: Normalize array-like objects with numeric keys back to arrays
+      if (!Array.isArray(jsonData) && typeof jsonData === 'object' && jsonData) {
+        const keys = Object.keys(jsonData);
+        const isNumericKeyObject = keys.length > 0 && keys.every(key => !isNaN(Number(key)));
+        
+        if (isNumericKeyObject) {
+          console.log(`🔧 Processing: Converting numeric-key object with ${keys.length} elements back to array`);
+          const sortedKeys = keys.sort((a, b) => Number(a) - Number(b));
+          const arrayData = sortedKeys.map(key => jsonData[key]);
+          
+          // Check if this looks like a modern format that got coerced
+          if (arrayData.length > 0 && arrayData[0] && typeof arrayData[0] === 'object') {
+            const firstItem = arrayData[0];
+            console.log(`🔍 Processing first item keys: ${Object.keys(firstItem).join(', ')}`);
+            
+            // Modern format indicators - these are timelineObjects elements
+            const hasModernIndicators = firstItem.timelinePath || firstItem.activitySegment || firstItem.placeVisit ||
+              // Modern visit format (has startTime/endTime with visit)
+              (firstItem.startTime && firstItem.endTime && firstItem.visit) ||
+              // Modern activity segment format
+              (firstItem.startTime && firstItem.endTime && firstItem.activitySegment);
+            
+            if (hasModernIndicators) {
+              console.log(`✅ Processing: Restored modern timelineObjects format from coerced object`);
+              jsonData = { timelineObjects: arrayData };
+            } else {
+              console.log(`📊 Processing: Detected legacy array format (no modern format indicators)`);
+              jsonData = arrayData;
+            }
+          } else {
+            console.log(`📊 Processing: Converting to array format`);
+            jsonData = arrayData;
+          }
+        }
+      }
+
       // 🎯 CRITICAL: Call enhanced parser with standalone timelinePath support
       console.log(`🔥 Calling enhanced parseGoogleLocationHistory with ${Array.isArray(jsonData) ? jsonData.length : 'unknown'} elements`);
       const parsedPoints = parseGoogleLocationHistory(jsonData);
