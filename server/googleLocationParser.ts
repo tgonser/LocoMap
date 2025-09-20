@@ -77,76 +77,13 @@ function toUTCMillis(timestamp: string): number | null {
   return date ? date.getTime() : null;
 }
 
-// Parse modern Google Location History timelineObjects format
+// Parse modern Google Location History timelineObjects format - timelinePath points only
 function parseModernFormat(jsonData: ModernExport): ParsedLocationPoint[] {
   const results: ParsedLocationPoint[] = [];
   
-  console.log(`🎯 Starting modern format parser for ${jsonData.timelineObjects.length} timeline objects`);
+  console.log(`🎯 Starting timelinePath-only parser for ${jsonData.timelineObjects.length} timeline objects`);
 
-  // PHASE 1: Extract segments from activitySegment and placeVisit
-  const segments: Segment[] = [];
-  
-  jsonData.timelineObjects.forEach((obj) => {
-    // Handle activitySegment
-    if (obj.activitySegment) {
-      const seg = obj.activitySegment;
-      const duration = seg.duration;
-      
-      if (duration?.startTimestamp && duration?.endTimestamp) {
-        const startUTC = toUTCMillis(duration.startTimestamp);
-        const endUTC = toUTCMillis(duration.endTimestamp);
-        
-        if (startUTC !== null && endUTC !== null && endUTC >= startUTC) {
-          // Get activity type from topCandidate.type, not activities array
-          const activityType = seg.activity?.topCandidate?.type?.toLowerCase() || 
-                              seg.activityType?.toLowerCase() || 'unknown';
-          
-          segments.push({
-            kind: 'activity',
-            startUTC,
-            endUTC,
-            activityType,
-            raw: seg
-          });
-          
-          console.log(`🚗 Activity: ${activityType} (${new Date(startUTC).toISOString()})`);
-        }
-      }
-    }
-    
-    // Handle placeVisit
-    if (obj.placeVisit) {
-      const visit = obj.placeVisit;
-      const duration = visit.duration;
-      
-      if (duration?.startTimestamp && duration?.endTimestamp) {
-        const startUTC = toUTCMillis(duration.startTimestamp);
-        const endUTC = toUTCMillis(duration.endTimestamp);
-        
-        if (startUTC !== null && endUTC !== null && endUTC >= startUTC) {
-          segments.push({
-            kind: 'visit',
-            startUTC,
-            endUTC,
-            activityType: 'still',
-            raw: visit
-          });
-          
-          console.log(`📍 Visit: ${new Date(startUTC).toISOString()}`);
-          
-          // Skip visit markers - we only want timelinePath points for route visualization
-        }
-      }
-    }
-  });
-
-  // Sort segments by start time for efficient lookup
-  segments.sort((a, b) => a.startUTC - b.startUTC);
-  console.log(`✅ Extracted ${segments.length} segments`);
-
-  // PHASE 2: Extract timeline path points from timelinePath.point[]
-  const pathPoints: Array<{lat: number, lng: number, tUTC: number}> = [];
-  
+  // Extract ONLY timelinePath.point[] elements - ignore visits and activities
   jsonData.timelineObjects.forEach((obj) => {
     // Handle timelinePath.point[] with latE7, lngE7, time (ISO)
     if (obj.timelinePath?.point && Array.isArray(obj.timelinePath.point)) {
@@ -154,13 +91,14 @@ function parseModernFormat(jsonData: ModernExport): ParsedLocationPoint[] {
         if (point.latE7 !== undefined && point.lngE7 !== undefined && point.time) {
           const lat = point.latE7 / 1e7;
           const lng = point.lngE7 / 1e7;
-          const timestamp = parseToUTCDate(point.time); // Use proper UTC parsing
+          const timestamp = parseToUTCDate(point.time);
           
           if (timestamp) {
-            pathPoints.push({
+            results.push({
               lat,
               lng,
-              tUTC: timestamp.getTime()
+              timestamp,
+              activity: 'route'  // Simple activity type for all timeline points
             });
           }
         }
@@ -168,40 +106,10 @@ function parseModernFormat(jsonData: ModernExport): ParsedLocationPoint[] {
     }
   });
 
-  // Sort path points by time
-  pathPoints.sort((a, b) => a.tUTC - b.tUTC);
-  console.log(`🎯 Extracted ${pathPoints.length} timeline path points`);
-
-  // PHASE 3: Associate path points with segments, avoiding double counting in visit windows
-  pathPoints.forEach((point) => {
-    let bestSegment: Segment | null = null;
-    let smallestWindow = Infinity;
-
-    // Find segments that contain this point
-    for (const segment of segments) {
-      if (point.tUTC >= segment.startUTC && point.tUTC <= segment.endUTC) {
-        const windowSize = segment.endUTC - segment.startUTC;
-        if (windowSize < smallestWindow) {
-          smallestWindow = windowSize;
-          bestSegment = segment;
-        }
-      }
-    }
-
-    // Include all timelinePath points - no visit markers to avoid double counting with
-
-    // Add point with appropriate activity type
-    const activityType = bestSegment ? bestSegment.activityType : 'route';
-    
-    results.push({
-      lat: point.lat,
-      lng: point.lng,
-      timestamp: new Date(point.tUTC),
-      activity: activityType
-    });
-  });
-
-  console.log(`🎯 Modern parser extracted ${results.length} total points`);
+  // Sort by timestamp for chronological order
+  results.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+  
+  console.log(`🎯 TimelinePath parser extracted ${results.length} total points`);
   return results;
 }
 
