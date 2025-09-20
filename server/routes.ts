@@ -516,9 +516,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       let jsonData;
       
-      
       try {
         jsonData = JSON.parse(fileContent);
+        
+        // Debug: Log the parsed structure before validation
+        console.log(`🔍 Upload parsed - Type: ${typeof jsonData}, Array: ${Array.isArray(jsonData)}`);
+        if (typeof jsonData === 'object') {
+          const keys = Object.keys(jsonData);
+          console.log(`🔍 Object keys count: ${keys.length}`);
+          if (keys.length <= 10) {
+            console.log(`🔍 First few keys: ${keys.slice(0, 10).join(', ')}`);
+          }
+          console.log(`🔍 Has timelineObjects: ${!!jsonData.timelineObjects}`);
+        }
+        
+        // Fix: Normalize array-like objects with numeric keys back to arrays
+        if (!Array.isArray(jsonData) && typeof jsonData === 'object' && jsonData) {
+          const keys = Object.keys(jsonData);
+          const isNumericKeyObject = keys.length > 0 && keys.every(key => !isNaN(Number(key)));
+          
+          if (isNumericKeyObject) {
+            console.log(`🔧 Converting numeric-key object with ${keys.length} elements back to array`);
+            const sortedKeys = keys.sort((a, b) => Number(a) - Number(b));
+            const arrayData = sortedKeys.map(key => jsonData[key]);
+            
+            // Check if this looks like a modern format that got coerced
+            if (arrayData.length > 0 && arrayData[0] && typeof arrayData[0] === 'object') {
+              const firstItem = arrayData[0];
+              if (firstItem.timelinePath || firstItem.activitySegment || firstItem.placeVisit) {
+                console.log(`✅ Restored modern timelineObjects format from coerced object`);
+                jsonData = { timelineObjects: arrayData };
+              } else {
+                console.log(`📊 Detected legacy array format`);
+                jsonData = arrayData;
+              }
+            }
+          }
+        }
+        
       } catch (parseError: any) {
         console.error("JSON parse error:", parseError);
         return res.status(400).json({ 
