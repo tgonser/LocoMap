@@ -59,6 +59,20 @@ Preferred communication style: Simple, everyday language.
 - **Memory Management**: Streaming file processing to handle large datasets
 - **Query Optimization**: React Query caching with background refetching disabled
 
+### Critical JSON Parsing Architecture Decision
+
+**The Timeline Path Breakthrough (September 2025):**
+The most important architectural decision was focusing exclusively on `timelinePath.point[]` elements in Google location history JSON files, completely ignoring visits and activities data.
+
+**Why This Was Critical:**
+- **Clean Route Data**: `obj.timelinePath?.point` contains actual GPS route points with `latE7`, `lngE7`, and `time`
+- **No Artificial Connections**: Avoiding `placeVisit` and `activitySegment` eliminates confusing jumps between unrelated locations
+- **Efficient Processing**: Large JSON files process faster by skipping unnecessary visit/activity inference
+- **Simple Data Model**: All points marked as activity type 'route' for consistent visualization
+- **Better User Experience**: Maps show actual traveled routes without artificial gaps or connections
+
+**Implementation**: The `parseModernFormat` function in `server/googleLocationParser.ts` specifically targets only `timelinePath.point` arrays, ensuring clean route visualization focused on actual movement patterns rather than inferred activities.
+
 ## Recent Major Improvements
 
 ### Waypoint Detection Algorithm Enhancement (September 2025)
