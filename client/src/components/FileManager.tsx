@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { FileText, Upload, Trash2, Calendar, BarChart3, AlertCircle, CheckCircle } from 'lucide-react';
+import { FileText, Upload, Trash2, Calendar, BarChart3, AlertCircle, CheckCircle, Play } from 'lucide-react';
 import FileUploader from './FileUploader';
 import { useQuery } from '@tanstack/react-query';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 
 interface FileMetadata {
   filename: string;
@@ -43,6 +44,7 @@ interface FileManagerProps {
 export default function FileManager({ onFileUpload }: FileManagerProps) {
   const [showUploader, setShowUploader] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [lastUploadResult, setLastUploadResult] = useState<any>(null);
 
   // Query to get user's datasets
@@ -84,6 +86,33 @@ export default function FileManager({ onFileUpload }: FileManagerProps) {
       console.error('Error deleting dataset:', error);
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleProcessFile = async () => {
+    if (!currentDataset || currentDataset.processedAt) return;
+    
+    setIsProcessing(true);
+    try {
+      console.log(`🚀 Starting processing for dataset ${currentDataset.id}`);
+      
+      const response = await fetch(`/api/datasets/${currentDataset.id}/process`, {
+        method: 'POST',
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        console.log(`✅ Processing completed: ${result.pointsProcessed} points processed`);
+        await refetchDatasets(); // Refresh the dataset list to show updated status
+        await queryClient.invalidateQueries({ queryKey: ['/api/locations'] }); // Refresh location data
+      } else {
+        console.error('Processing failed:', result.error || 'Unknown error');
+      }
+    } catch (error) {
+      console.error('Error processing dataset:', error);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -210,10 +239,26 @@ export default function FileManager({ onFileUpload }: FileManagerProps) {
                           <span className="text-sm font-medium text-green-600">Processed</span>
                         </>
                       ) : (
-                        <>
-                          <AlertCircle className="w-4 h-4 text-orange-500" />
-                          <span className="text-sm font-medium text-orange-600">Ready to Process</span>
-                        </>
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 text-orange-500" />
+                            <span className="text-sm font-medium text-orange-600">Ready to Process</span>
+                          </div>
+                          <Button
+                            onClick={handleProcessFile}
+                            disabled={isProcessing}
+                            size="sm"
+                            variant="default"
+                            data-testid="button-process-dataset"
+                          >
+                            {isProcessing ? (
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2" />
+                            ) : (
+                              <Play className="w-4 h-4 mr-2" />
+                            )}
+                            {isProcessing ? 'Processing...' : 'Process'}
+                          </Button>
+                        </div>
                       )}
                     </div>
                   </div>
