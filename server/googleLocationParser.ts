@@ -194,6 +194,36 @@ function parseMobileArrayFormat(jsonData: GoogleLocationHistoryMobileArray): Par
       }
     }
     
+    // Look for timelinePath at element level (connected to activity elements) - CRITICAL FIX  
+    if (element.activity && (element as any).timelinePath?.points && element.startTime) {
+      const activityNestedPoints = (element as any).timelinePath.points;
+      const baseTimestamp = normalizeTimestamp(element.startTime);
+      
+      for (const pathPoint of activityNestedPoints) {
+        if (pathPoint.point) {
+          const coords = parseGeoString(pathPoint.point);
+          if (coords) {
+            let timestamp = baseTimestamp;
+            
+            // Calculate timestamp based on duration offset
+            if (pathPoint.durationMinutesOffsetFromStartTime) {
+              const offsetMinutes = parseInt(pathPoint.durationMinutesOffsetFromStartTime);
+              if (!isNaN(offsetMinutes)) {
+                timestamp = new Date(baseTimestamp.getTime() + offsetMinutes * 60 * 1000);
+              }
+            }
+            
+            results.push({
+              lat: coords.lat,
+              lng: coords.lng,
+              timestamp: timestamp,
+              activity: element.activity.topCandidate?.type?.toLowerCase() || 'walking'
+            });
+          }
+        }
+      }
+    }
+    
     // Handle activity elements with start/end geo coordinates (independent parsing)
     if (element.activity && (element.startTime || element.endTime)) {
       const activity = element.activity;
