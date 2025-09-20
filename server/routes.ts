@@ -2,10 +2,12 @@
 import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import multer from "multer";
+import fs from 'fs';
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { parseGoogleLocationHistory, validateGoogleLocationHistory } from "./googleLocationParser";
 import { batchReverseGeocode, deduplicateCoordinates } from "./geocodingService";
+import { GoogleLocationIngest } from "./googleLocationIngest";
 import { z } from "zod";
 import OpenAI from "openai";
 
@@ -29,9 +31,16 @@ const openai = new OpenAI({
 
 // OpenAI curation removed for performance - analytics now return in under 2 seconds
 
-// Configure multer for file uploads
+// Configure multer for file uploads using disk storage to avoid memory issues
 const upload = multer({ 
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({
+    destination: '/tmp/uploads/',
+    filename: (_req, file, cb) => {
+      // Generate unique filename with timestamp
+      const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}-${file.originalname}`;
+      cb(null, uniqueName);
+    }
+  }),
   limits: { fileSize: 200 * 1024 * 1024 } // 200MB limit for large Google location history files
 });
 
@@ -496,7 +505,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Protected route: Upload and parse Google location history (user-specific)
+  // Protected route: Upload and parse Google location history (user-specific) 
   app.post("/api/upload-location-history", isAuthenticated, upload.single("file"), async (req: Request & { file?: Express.Multer.File }, res) => {
     const { claims } = getAuthenticatedUser(req);
     try {
@@ -505,13 +514,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const userId = claims.sub;
+      const filePath = req.file.path; // Now using disk storage, we have a file path
       
+      // Read a small portion of the file for validation and metadata extraction
       let fileContent: string;
       try {
-        fileContent = req.file.buffer.toString("utf8");
-      } catch (stringError) {
-        console.error("Error converting file to string:", stringError);
-        return res.status(400).json({ error: "File conversion failed" });
+        fileContent = await fs.promises.readFile(filePath, 'utf8');
+      } catch (readError) {
+        console.error("Error reading uploaded file:", readError);
+        await fs.promises.unlink(filePath).catch(() => {}); // Clean up temp file
+        return res.status(400).json({ error: "Failed to read uploaded file" });
       }
       
       let jsonData: any;
@@ -719,43 +731,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // 🎯 CRITICAL: Call enhanced parser with standalone timelinePath support
-      console.log(`🔥 Calling enhanced parseGoogleLocationHistory with ${Array.isArray(jsonData) ? jsonData.length : 'unknown'} elements`);
-      const parsedPoints = parseGoogleLocationHistory(jsonData);
+      // 🚀 STREAMING: Use GoogleLocationIngest to process efficiently without stack overflow
+      console.log(`⚡ Using streaming ingestion to avoid memory issues`);
       
-      if (parsedPoints.length === 0) {
-        console.log(`❌ No location points extracted from dataset ${datasetId}`);
-        return res.status(400).json({ error: "No valid location points found in the data" });
+      // Write raw content to temporary file for streaming processing
+      const tempFilePath = `/tmp/uploads/process-${datasetId}-${Date.now()}.json`;
+      await fs.promises.writeFile(tempFilePath, rawContent, 'utf8');
+
+      try {
+        // Use streaming ingestion to process the large file efficiently
+        const ingest = new GoogleLocationIngest(storage);
+        
+        const result = await ingest.ingest(tempFilePath, userId, datasetId, {
+          batchSize: 25000,
+          onProgress: (processed) => {
+            if (processed % 50000 === 0) { // Log every 50k points
+              console.log(`📊 Progress: ${processed.toLocaleString()} points processed`);
+            }
+          }
+        });
+
+        if (result.errors.length > 0) {
+          console.warn(`⚠️ Processing completed with ${result.errors.length} errors:`, result.errors.slice(0, 3));
+        }
+
+        if (result.processed === 0) {
+          console.log(`❌ No location points extracted from dataset ${datasetId}`);
+          return res.status(400).json({ error: "No valid location points found in the data" });
+        }
+
+        // Mark dataset as processed
+        await storage.updateDatasetProcessed(datasetId, result.processed);
+
+        console.log(`🎉 Successfully processed dataset ${datasetId}: ${result.processed.toLocaleString()} points`);
+
+        res.json({
+          success: true,
+          message: `Successfully processed ${result.processed.toLocaleString()} location points`,
+          pointsProcessed: result.processed,
+          datasetId: datasetId,
+          errors: result.errors.length > 0 ? result.errors.slice(0, 3) : undefined
+        });
+
+      } finally {
+        // Clean up temporary file
+        await fs.promises.unlink(tempFilePath).catch(err => {
+          console.warn(`Failed to clean up temp file ${tempFilePath}:`, err);
+        });
       }
-
-      console.log(`✅ Enhanced parser extracted ${parsedPoints.length} location points`);
-
-      // Convert to database format and insert
-      const locationPoints = parsedPoints.map(point => ({
-        userId,
-        datasetId,
-        lat: point.lat,
-        lng: point.lng,
-        timestamp: point.timestamp,
-        accuracy: 50, // Default accuracy since not provided
-        activity: point.activity,
-      }));
-
-      // Insert location points in batches
-      console.log(`💾 Inserting ${locationPoints.length} location points into database`);
-      await storage.insertLocationPoints(locationPoints);
-
-      // Mark dataset as processed
-      await storage.updateDatasetProcessed(datasetId, locationPoints.length);
-
-      console.log(`🎉 Successfully processed dataset ${datasetId}: ${locationPoints.length} points`);
-
-      res.json({
-        success: true,
-        message: `Successfully processed ${locationPoints.length} location points`,
-        pointsProcessed: locationPoints.length,
-        datasetId: datasetId
-      });
 
     } catch (error) {
       console.error(`❌ Error processing dataset ${datasetId}:`, error);

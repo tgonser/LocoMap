@@ -1,0 +1,237 @@
+Great question. When a mobile JSON file has millions of points, the key is to never load the whole thing into memory. Treat it like a stream, normalize on the fly, and push results out to a disk-backed store (SQLite/Parquet). Here’s a battle-tested approach that fits your project.
+
+Strategy (in order of impact)
+	1.	Stream parse (don’t json.load)
+Use an incremental parser so you iterate one element at a time:
+	•	ijson (pure-Python, low memory, easy)
+	•	pysimdjson (SIMD, very fast; still lets you iterate arrays)
+	•	msgspec (super fast codecs; best when you can read in chunks and decode known structures)
+	2.	Normalize into a thin record early
+Extract only what you need (timestamp, lat, lon, type, mode, etc.) and drop the rest immediately. Avoid building giant Python lists—yield or write out per batch.
+	3.	Write to disk in batches
+	•	For flexible querying: SQLite with indexes.
+	•	For analytics: Apache Parquet via pyarrow (columnar, compresses well, very fast in Pandas/Polars).
+	•	Don’t keep more than, say, 10k–100k rows in RAM before flushing.
+	4.	Prefer gzip on disk, stream decompression in
+ijson works with gzip.open(), so you keep I/O small without expanding the file.
+	5.	Defer expensive work
+	•	Parse timestamps only if needed now; otherwise keep as strings and cast later in SQL/Arrow.
+	•	Avoid geocoding in this pass—store raw coords, enrich later in a second pass.
+	6.	Make the parser schema-robust
+Your mobile format can be an array of heterogeneous items (visit, activity, timelinePath, loose point). Handle missing keys gracefully and keep going.
+
+⸻
+
+Minimal streaming pipeline (Python)
+
+A) Stream-normalize to SQLite (safe, queryable)
+
+import gzip
+import ijson
+import sqlite3
+from contextlib import closing
+from typing import Iterator, Tuple, Optional
+
+def parse_geo(geo: Optional[str]) -> Tuple[Optional[float], Optional[float]]:
+    # "geo:lat,lng" -> (lat, lng)
+    if not geo or not geo.startswith("geo:"):
+        return None, None
+    try:
+        lat_s, lng_s = geo[4:].split(",", 1)
+        return float(lat_s), float(lng_s)
+    except Exception:
+        return None, None
+
+def normalize_item(item: dict):
+    """
+    Yields one or more normalized records from a heterogenous mobile item.
+    Output schema:
+      (ts_start, ts_end, lat, lon, kind, mode, distance_m, raw_city, raw_state, raw_country)
+    Keep text timestamps; cast later if needed.
+    """
+    # common fallbacks
+    ts_start = item.get("startTime")
+    ts_end   = item.get("endTime")
+
+    # Visits (place-like)
+    visit = item.get("visit")
+    if visit:
+        tc = (visit.get("topCandidate") or {})
+        mode = None
+        lat, lon = parse_geo((tc.get("placeLocation")
+                              or visit.get("placeLocation")))
+        yield (ts_start, ts_end, lat, lon, "visit", mode, None, None, None, None)
+
+        # timelinePath under visit
+        tp = visit.get("timelinePath") or {}
+        for p in (tp.get("points") or []):
+            lat2, lon2 = parse_geo(p.get("point"))
+            # For path points we only have offsets; you can recover ts later if needed
+            yield (ts_start, ts_end, lat2, lon2, "visit_path_point", None, None, None, None, None)
+
+        # direct points under visit
+        for p in (visit.get("points") or []):
+            lat2, lon2 = parse_geo(p.get("point"))
+            yield (ts_start, ts_end, lat2, lon2, "visit_point", None, None, None, None, None)
+
+    # Activities (movement)
+    activity = item.get("activity")
+    if activity:
+        mode = (activity.get("topCandidate") or {}).get("type")
+        lat1, lon1 = parse_geo(activity.get("start"))
+        lat2, lon2 = parse_geo(activity.get("end"))
+        dist_m = None
+        try:
+            dist_m = float(activity.get("distanceMeters")) if activity.get("distanceMeters") else None
+        except Exception:
+            pass
+        yield (ts_start, ts_end, lat1, lon1, "activity_start", mode, dist_m, None, None, None)
+        yield (ts_start, ts_end, lat2, lon2, "activity_end",   mode, dist_m, None, None, None)
+
+    # Loose single point entries
+    if item.get("point"):
+        lat, lon = parse_geo(item["point"])
+        yield (ts_start, ts_end, lat, lon, "point", None, None, None, None, None)
+
+def stream_mobile_array_json(json_path: str) -> Iterator[tuple]:
+    # Works for .json or .json.gz
+    opener = gzip.open if json_path.endswith(".gz") else open
+    with opener(json_path, "rb") as f:
+        # Assuming the top-level is an array: [...]
+        for item in ijson.items(f, "item"):
+            if not isinstance(item, dict):
+                continue
+            for rec in normalize_item(item):
+                # Filter obvious null coords
+                _, _, lat, lon, *_ = rec
+                if lat is None or lon is None:
+                    continue
+                yield rec
+
+def init_sqlite(conn: sqlite3.Connection):
+    conn.executescript("""
+    PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
+    PRAGMA temp_store = MEMORY;
+
+    CREATE TABLE IF NOT EXISTS points (
+        ts_start TEXT,
+        ts_end   TEXT,
+        lat      REAL,
+        lon      REAL,
+        kind     TEXT,
+        mode     TEXT,
+        distance_m REAL,
+        raw_city   TEXT,
+        raw_state  TEXT,
+        raw_country TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_points_ts ON points(ts_start);
+    CREATE INDEX IF NOT EXISTS idx_points_kind ON points(kind);
+    """)
+
+def ingest_to_sqlite(json_path: str, db_path: str, batch_size: int = 50000):
+    with closing(sqlite3.connect(db_path)) as conn:
+        init_sqlite(conn)
+        cur = conn.cursor()
+        batch = []
+        for rec in stream_mobile_array_json(json_path):
+            batch.append(rec)
+            if len(batch) >= batch_size:
+                cur.executemany(
+                    "INSERT INTO points VALUES (?,?,?,?,?,?,?,?,?,?)", batch
+                )
+                conn.commit()
+                batch.clear()
+        if batch:
+            cur.executemany(
+                "INSERT INTO points VALUES (?,?,?,?,?,?,?,?,?,?)", batch
+            )
+            conn.commit()
+
+# Example:
+# ingest_to_sqlite("mobile_location.json.gz", "mobile_points.sqlite")
+
+Why this works well
+	•	ijson.items(f, "item") incrementally pulls each array element—constant memory.
+	•	You normalize once and immediately write to SQLite in big batches (fast).
+	•	Later steps (city matching, jumps, mode inference) can query the DB in time order without rereading the giant JSON.
+
+B) Streaming to Parquet (analytics-friendly)
+
+If you prefer columnar storage:
+
+import gzip
+import ijson
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+def stream_to_parquet(json_path: str, parquet_path: str, chunk_rows: int = 200_000):
+    schema = pa.schema([
+        ("ts_start", pa.string()),
+        ("ts_end",   pa.string()),
+        ("lat", pa.float64()),
+        ("lon", pa.float64()),
+        ("kind", pa.string()),
+        ("mode", pa.string()),
+        ("distance_m", pa.float64()),
+        ("raw_city", pa.string()),
+        ("raw_state", pa.string()),
+        ("raw_country", pa.string()),
+    ])
+    writer = None
+    buf = {name: [] for name in schema.names}
+
+    def flush():
+        nonlocal writer, buf
+        table = pa.table(buf, schema=schema)
+        if writer is None:
+            writer = pq.ParquetWriter(parquet_path, schema, compression="zstd", use_dictionary=True)
+        writer.write_table(table)
+        for k in buf: buf[k].clear()
+
+    opener = gzip.open if json_path.endswith(".gz") else open
+    with opener(json_path, "rb") as f:
+        for item in ijson.items(f, "item"):
+            if not isinstance(item, dict):
+                continue
+            for rec in normalize_item(item):
+                _, _, lat, lon, *_ = rec
+                if lat is None or lon is None:
+                    continue
+                for (name, val) in zip(schema.names, rec):
+                    buf[name].append(val)
+                if len(buf["lat"]) >= chunk_rows:
+                    flush()
+    if len(buf["lat"]) > 0:
+        flush()
+    if writer:
+        writer.close()
+
+Parquet gives you fast scans, tiny files (Zstd), and easy loading into Pandas/Polars for your downstream monthly summaries and jump detection.
+
+⸻
+
+Performance & reliability tips
+	•	Batch size: 50k–200k rows per flush is a good starting point.
+	•	Avoid per-row Python overhead: keep parsing functions simple, avoid regex; split is faster.
+	•	Time zones: keep timestamps as strings in the raw store; convert once during analytics (Arrow/Pandas/SQL) to avoid repeated datetime costs.
+	•	Resumability: write a small “checkpoint” file every N million rows (last array index processed). If interrupted, seek to that point by counting items (or split upstream into day-sized files).
+	•	Indexes (SQLite): index the time column and any filters you frequently query (e.g., kind, mode).
+	•	I/O: reading .json.gz is usually faster end-to-end than reading an uncompressed giant file from disk.
+
+⸻
+
+If you can influence the source format
+	•	Prefer NDJSON (one JSON object per line). Then you can stream with a simple for line in f: json.loads(line) and still batch to SQLite/Parquet.
+	•	Or export in Parquet/Arrow directly if any upstream converter can do that—saves an entire conversion pass.
+
+⸻
+
+Where this plugs into your app
+	•	Replace your current json.load step with the ijson streamer.
+	•	First pass: write raw normalized points to SQLite/Parquet.
+	•	Second pass: run your nearest-city matching, jump detection, and mode extraction by scanning the DB/Parquet in chronological order (very fast and memory-light).
+	•	This separation keeps the heavy parse cheap and makes the analytic steps restartable without re-parsing the giant JSON.
+
+If you want, I can drop in a process_mobile_json_streaming(...) function that integrates directly with your google_location_analysis_dist.py pipeline and writes the exact tables/files your GUI expects.
