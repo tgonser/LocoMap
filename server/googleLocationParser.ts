@@ -224,24 +224,44 @@ export function parseGoogleLocationHistory(jsonData: any): ParsedLocationPoint[]
     return results;
   }
 
-  // Apply basic deduplication
+  // Apply efficient deduplication for large datasets
   console.log(`🔄 Applying deduplication to ${results.length} points...`);
   
-  const deduplicated = results.filter((point, index) => {
-    // Check if this point is a duplicate of any previous point
-    for (let i = 0; i < index; i++) {
-      const other = results[i];
-      const latDiff = Math.abs(point.lat - other.lat);
-      const lngDiff = Math.abs(point.lng - other.lng);
-      const timeDiff = Math.abs(point.timestamp.getTime() - other.timestamp.getTime());
+  let deduplicated: ParsedLocationPoint[];
+  
+  if (results.length > 100000) {
+    // For large datasets, use Map-based deduplication to avoid stack overflow
+    console.log(`⚡ Using efficient deduplication for ${results.length} points`);
+    const seen = new Map<string, boolean>();
+    deduplicated = results.filter(point => {
+      // Create a key from rounded coordinates and time
+      const roundedLat = Math.round(point.lat * 10000) / 10000; // 4 decimal places
+      const roundedLng = Math.round(point.lng * 10000) / 10000;
+      const timeKey = Math.floor(point.timestamp.getTime() / 60000); // 1-minute buckets
+      const key = `${roundedLat},${roundedLng},${timeKey}`;
       
-      // Consider points duplicates if very close in space and time
-      if (latDiff < 0.0001 && lngDiff < 0.0001 && timeDiff < 60000) { // 60 seconds
-        return false;
+      if (seen.has(key)) {
+        return false; // Duplicate
       }
-    }
-    return true;
-  });
+      seen.set(key, true);
+      return true;
+    });
+  } else {
+    // For smaller datasets, use the original O(n²) method
+    deduplicated = results.filter((point, index) => {
+      for (let i = 0; i < index; i++) {
+        const other = results[i];
+        const latDiff = Math.abs(point.lat - other.lat);
+        const lngDiff = Math.abs(point.lng - other.lng);
+        const timeDiff = Math.abs(point.timestamp.getTime() - other.timestamp.getTime());
+        
+        if (latDiff < 0.0001 && lngDiff < 0.0001 && timeDiff < 60000) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }
 
   const removedCount = results.length - deduplicated.length;
   if (removedCount > 0) {
