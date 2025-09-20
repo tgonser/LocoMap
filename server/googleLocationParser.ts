@@ -113,7 +113,7 @@ function parseModernFormat(jsonData: ModernExport): ParsedLocationPoint[] {
   return results;
 }
 
-// Parse legacy array format (direct location objects)
+// Parse legacy array format - extract ONLY timelinePath data, ignore visits/activities
 function parseLegacyArrayFormat(jsonData: any): ParsedLocationPoint[] {
   const results: ParsedLocationPoint[] = [];
   
@@ -126,153 +126,68 @@ function parseLegacyArrayFormat(jsonData: any): ParsedLocationPoint[] {
     dataArray = keys.map(key => jsonData[key]);
   }
 
-  console.log(`🔍 Processing legacy array with ${dataArray.length} elements`);
+  console.log(`🔍 Processing legacy array with ${dataArray.length} elements, extracting ONLY timelinePath data`);
   
   dataArray.forEach((item, index) => {
     if (!item || typeof item !== 'object') return;
     
-    // Handle different legacy location formats
-    let lat: number | undefined;
-    let lng: number | undefined; 
-    let timestamp: Date | undefined;
-    
-    // Format 1: latitudeE7/longitudeE7 with timestampMs
-    if (item.latitudeE7 !== undefined && item.longitudeE7 !== undefined) {
-      lat = item.latitudeE7 / 1e7;
-      lng = item.longitudeE7 / 1e7;
+    // ONLY extract timelinePath data, ignore all visits and activities
+    if (item.timelinePath && Array.isArray(item.timelinePath)) {
+      console.log(`📍 Found timelinePath with ${item.timelinePath.length} points`);
       
-      if (item.timestampMs) {
-        const ms = parseInt(item.timestampMs, 10);
-        timestamp = !isNaN(ms) ? new Date(ms) : undefined;
+      // Parse startTime for this timelinePath segment
+      let segmentStartTime: Date | undefined;
+      if (item.startTime) {
+        segmentStartTime = parseToUTCDate(item.startTime) || undefined;
       }
-    }
-    // Format 2: Direct lat/lng with timestamp
-    else if (typeof item.latitude === 'number' && typeof item.longitude === 'number') {
-      lat = item.latitude;
-      lng = item.longitude;
       
-      if (item.timestamp) {
-        const parsed = parseToUTCDate(item.timestamp);
-        timestamp = parsed || undefined;
-      }
-    }
-    // Format 3: locations array element
-    else if (item.locations && Array.isArray(item.locations) && item.locations.length > 0) {
-      const loc = item.locations[0];
-      if (loc.latitudeE7 !== undefined && loc.longitudeE7 !== undefined) {
-        lat = loc.latitudeE7 / 1e7;
-        lng = loc.longitudeE7 / 1e7;
+      // Process each point in the timelinePath
+      item.timelinePath.forEach((pathPoint: any) => {
+        if (!pathPoint || typeof pathPoint !== 'object') return;
         
-        if (loc.timestampMs) {
-          const ms = parseInt(loc.timestampMs, 10);
-          timestamp = !isNaN(ms) ? new Date(ms) : undefined;
-        }
-      }
-    }
-    // Format 4: Visit data with location info
-    else if (item.visit && item.visit.topCandidate && item.visit.topCandidate.placeLocation) {
-      const loc = item.visit.topCandidate.placeLocation;
-      
-      // Handle object format (latitudeE7/longitudeE7)
-      if (typeof loc === 'object' && loc.latitudeE7 !== undefined && loc.longitudeE7 !== undefined) {
-        lat = loc.latitudeE7 / 1e7;
-        lng = loc.longitudeE7 / 1e7;
+        let lat: number | undefined;
+        let lng: number | undefined;
+        let timestamp: Date | undefined;
         
-        if (item.startTime) {
-          const parsed = parseToUTCDate(item.startTime);
-          timestamp = parsed || undefined;
-        }
-      }
-      // Handle geo string format: "geo:lat,lng"
-      else if (typeof loc === 'string' && loc.startsWith('geo:')) {
-        const coords = loc.replace('geo:', '').split(',');
-        if (coords.length === 2) {
-          const parsedLat = parseFloat(coords[0]);
-          const parsedLng = parseFloat(coords[1]);
-          
-          if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
-            lat = parsedLat;
-            lng = parsedLng;
+        // Parse geo string: "geo:lat,lng"  
+        if (typeof pathPoint.point === 'string' && pathPoint.point.startsWith('geo:')) {
+          const coords = pathPoint.point.replace('geo:', '').split(',');
+          if (coords.length === 2) {
+            const parsedLat = parseFloat(coords[0]);
+            const parsedLng = parseFloat(coords[1]);
             
-            if (item.startTime) {
-              const parsed = parseToUTCDate(item.startTime);
-              timestamp = parsed || undefined;
+            if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
+              lat = parsedLat;
+              lng = parsedLng;
+              
+              // Calculate timestamp using segment start + duration offset
+              if (segmentStartTime && pathPoint.durationMinutesOffsetFromStartTime) {
+                const offsetMinutes = parseInt(pathPoint.durationMinutesOffsetFromStartTime, 10);
+                if (!isNaN(offsetMinutes)) {
+                  timestamp = new Date(segmentStartTime.getTime() + (offsetMinutes * 60 * 1000));
+                }
+              }
             }
           }
         }
-      }
-    }
-    // Format 4b: Activity data with start/end geo strings
-    else if (item.activity && (item.activity.start || item.activity.end)) {
-      const activity = item.activity;
-      
-      // Parse start location
-      if (typeof activity.start === 'string' && activity.start.startsWith('geo:')) {
-        const coords = activity.start.replace('geo:', '').split(',');
-        if (coords.length === 2) {
-          const parsedLat = parseFloat(coords[0]);
-          const parsedLng = parseFloat(coords[1]);
-          
-          if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
-            lat = parsedLat;
-            lng = parsedLng;
-            
-            if (item.startTime) {
-              const parsed = parseToUTCDate(item.startTime);
-              timestamp = parsed || undefined;
-            }
-          }
-        }
-      }
-      // If no start location but has end, use end location
-      else if (!lat && typeof activity.end === 'string' && activity.end.startsWith('geo:')) {
-        const coords = activity.end.replace('geo:', '').split(',');
-        if (coords.length === 2) {
-          const parsedLat = parseFloat(coords[0]);
-          const parsedLng = parseFloat(coords[1]);
-          
-          if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
-            lat = parsedLat;
-            lng = parsedLng;
-            
-            if (item.endTime) {
-              const parsed = parseToUTCDate(item.endTime);
-              timestamp = parsed || undefined;
-            }
-          }
-        }
-      }
-    }
-    // Format 5: Direct visit with location (older format)
-    else if (item.placeVisit && item.placeVisit.location) {
-      const loc = item.placeVisit.location;
-      if (loc.latitudeE7 !== undefined && loc.longitudeE7 !== undefined) {
-        lat = loc.latitudeE7 / 1e7;
-        lng = loc.longitudeE7 / 1e7;
         
-        if (item.placeVisit.duration && item.placeVisit.duration.startTimestampMs) {
-          const ms = parseInt(item.placeVisit.duration.startTimestampMs, 10);
-          timestamp = !isNaN(ms) ? new Date(ms) : undefined;
+        // Add valid timelinePath points only
+        if (lat !== undefined && lng !== undefined && timestamp && !isNaN(lat) && !isNaN(lng)) {
+          if (lat !== 0 || lng !== 0) {  // Skip equator/prime meridian points
+            results.push({
+              lat,
+              lng,
+              timestamp,
+              activity: 'route'
+            });
+          }
         }
-      }
-    }
-    
-    // Add valid points only
-    if (lat !== undefined && lng !== undefined && timestamp && !isNaN(lat) && !isNaN(lng)) {
-      // Skip equator/prime meridian points (usually GPS errors)
-      if (lat !== 0 || lng !== 0) {
-        results.push({
-          lat,
-          lng,
-          timestamp,
-          activity: 'route'
-        });
-      }
+      });
     }
     
     // Progress logging for large datasets
     if (index > 0 && index % 10000 === 0) {
-      console.log(`📊 Processed ${index}/${dataArray.length} elements, found ${results.length} valid points`);
+      console.log(`📊 Processed ${index}/${dataArray.length} elements, found ${results.length} timelinePath points`);
     }
   });
 
