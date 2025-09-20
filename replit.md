@@ -58,3 +58,12 @@ Preferred communication style: Simple, everyday language.
 - **Database Indexing**: Spatial and temporal indexing for location queries
 - **Memory Management**: Streaming file processing to handle large datasets
 - **Query Optimization**: React Query caching with background refetching disabled
+
+## Recent Major Improvements
+
+### Waypoint Detection Algorithm Enhancement (September 2025)
+- **Fixed Critical Gap Detection Bug**: Replaced problematic "moving centroid" clustering approach with stable first-point reference algorithm
+- **Eliminated Travel Gaps**: System now properly detects intermediate stops (gas stations, rest areas, food stops) preventing artificial gaps in travel chains
+- **Optimized Parameters**: Reduced minimum dwell time to 8 minutes and increased clustering radius to 300 meters for better highway travel detection
+- **Improved Accuracy**: Travel analytics now show realistic city-to-city chains instead of impossible distance jumps
+- **Enhanced Coverage**: Increased stop detection rate from 147 to 174+ stops for typical monthly datasets with proper geocoding integration
