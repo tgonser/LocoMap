@@ -1,0 +1,219 @@
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
+import { CalendarDays, MapPin, Globe, TrendingUp } from "lucide-react";
+
+interface YearlyReportData {
+  year: number;
+  totalDays: number;
+  stateCountryData: Array<{
+    location: string;
+    days: number;
+    percentage: number;
+    type: "us_state" | "country";
+  }>;
+  processingStats: {
+    totalPoints: number;
+    sampledPoints: number;
+    geocodedSamples: number;
+    daysWithData: number;
+  };
+}
+
+export default function YearlyStateReport() {
+  const [selectedYear, setSelectedYear] = useState<string>("");
+  
+  // Generate year options (current year back to 2015)
+  const currentYear = new Date().getFullYear();
+  const yearOptions = Array.from({ length: currentYear - 2014 }, (_, i) => currentYear - i);
+
+  const { data: reportData, isLoading, error } = useQuery<YearlyReportData>({
+    queryKey: ["/api/yearly-state-report", selectedYear],
+    enabled: !!selectedYear,
+    queryFn: async () => {
+      const response = await fetch(`/api/yearly-state-report?year=${selectedYear}`);
+      if (!response.ok) throw new Error("Failed to fetch yearly report");
+      return response.json();
+    },
+  });
+
+  const handleYearChange = (year: string) => {
+    setSelectedYear(year);
+  };
+
+  return (
+    <div className="container mx-auto p-6 space-y-6">
+      <div className="flex items-center gap-3">
+        <Globe className="h-8 w-8 text-primary" />
+        <div>
+          <h1 className="text-3xl font-bold">Yearly State & Country Report</h1>
+          <p className="text-muted-foreground">
+            Optimized analysis showing which states and countries you spent time in each day
+          </p>
+        </div>
+      </div>
+
+      {/* Year Selection */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CalendarDays className="h-5 w-5" />
+            Select Year for Analysis
+          </CardTitle>
+          <CardDescription>
+            Choose a year to see your state and country breakdown with optimized sampling
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-4">
+            <Select value={selectedYear} onValueChange={handleYearChange}>
+              <SelectTrigger className="w-48" data-testid="select-year">
+                <SelectValue placeholder="Select a year" />
+              </SelectTrigger>
+              <SelectContent>
+                {yearOptions.map((year) => (
+                  <SelectItem key={year} value={year.toString()}>
+                    {year}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {selectedYear && (
+              <Badge variant="outline" className="flex items-center gap-1">
+                <TrendingUp className="h-3 w-3" />
+                Analyzing {selectedYear}
+              </Badge>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Loading State */}
+      {isLoading && selectedYear && (
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+              <span>Generating optimized yearly report for {selectedYear}...</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Error State */}
+      {error && (
+        <Card className="border-destructive">
+          <CardContent className="pt-6">
+            <p className="text-destructive">Failed to generate yearly report. Please try again.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Report Results */}
+      {reportData && !isLoading && (
+        <div className="space-y-6">
+          {/* Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-2xl font-bold" data-testid="text-total-days">{reportData.totalDays}</div>
+                <p className="text-xs text-muted-foreground">Days with location data</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-2xl font-bold text-green-600" data-testid="text-total-points">{reportData.processingStats.totalPoints.toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">Total location points</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-2xl font-bold text-blue-600" data-testid="text-sampled-points">{reportData.processingStats.sampledPoints}</div>
+                <p className="text-xs text-muted-foreground">Sampled points (optimized)</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-2xl font-bold text-purple-600" data-testid="text-efficiency">
+                  {Math.round((reportData.processingStats.sampledPoints / reportData.processingStats.totalPoints) * 100)}%
+                </div>
+                <p className="text-xs text-muted-foreground">Processing efficiency</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* State & Country Breakdown */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MapPin className="h-5 w-5" />
+                Time Spent by Location ({reportData.year})
+              </CardTitle>
+              <CardDescription>
+                Days spent in each state/country with percentage breakdown
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {reportData.stateCountryData.length === 0 ? (
+                <p className="text-muted-foreground">No location data found for {reportData.year}</p>
+              ) : (
+                <div className="space-y-4">
+                  {reportData.stateCountryData.map((location, index) => (
+                    <div key={`${location.type}-${location.location}`} className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <Badge 
+                            variant={location.type === 'us_state' ? 'default' : 'secondary'}
+                            className="min-w-16 justify-center"
+                          >
+                            {location.type === 'us_state' ? 'US' : 'Country'}
+                          </Badge>
+                          <span className="font-medium" data-testid={`text-location-${index}`}>
+                            {location.location}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                          <span data-testid={`text-days-${index}`}>{location.days} days</span>
+                          <span className="font-medium" data-testid={`text-percentage-${index}`}>
+                            {location.percentage}%
+                          </span>
+                        </div>
+                      </div>
+                      <Progress 
+                        value={location.percentage} 
+                        className="h-2"
+                        data-testid={`progress-${index}`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Processing Optimization Info */}
+          <Card className="bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+            <CardHeader>
+              <CardTitle className="text-blue-900 dark:text-blue-100">Processing Optimization</CardTitle>
+              <CardDescription className="text-blue-700 dark:text-blue-300">
+                This report uses smart sampling to process location data efficiently
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="text-blue-800 dark:text-blue-200">
+              <div className="space-y-2 text-sm">
+                <p>• Sampled {reportData.processingStats.sampledPoints.toLocaleString()} points from {reportData.processingStats.totalPoints.toLocaleString()} total points</p>
+                <p>• Used 2-4 representative points per day instead of processing every GPS coordinate</p>
+                <p>• Geocoded only sample points for {Math.round((reportData.processingStats.sampledPoints / reportData.processingStats.totalPoints) * 100)}% faster processing</p>
+                <p>• Determined primary state/country for each of {reportData.totalDays} days with location data</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}

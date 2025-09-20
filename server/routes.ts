@@ -57,6 +57,151 @@ function getAuthenticatedUser(req: Request) {
   };
 }
 
+// Helper functions for yearly state/country report - optimized sampling approach
+
+// Sample points by day to optimize geocoding (take 2-4 representative points per day)
+function samplePointsByDay(points: any[], samplesPerDay: number = 4): any[] {
+  // Group points by date
+  const pointsByDate: { [date: string]: any[] } = {};
+  
+  points.forEach(point => {
+    // Use local date components to avoid timezone shifts (matches frontend conventions)
+    const date = `${point.timestamp.getFullYear()}-${String(point.timestamp.getMonth() + 1).padStart(2, '0')}-${String(point.timestamp.getDate()).padStart(2, '0')}`;
+    if (!pointsByDate[date]) {
+      pointsByDate[date] = [];
+    }
+    pointsByDate[date].push(point);
+  });
+
+  const sampledPoints: any[] = [];
+  
+  Object.entries(pointsByDate).forEach(([date, dayPoints]) => {
+    if (dayPoints.length <= samplesPerDay) {
+      // If we have fewer points than desired samples, take all
+      sampledPoints.push(...dayPoints);
+    } else {
+      // Sample evenly throughout the day
+      const interval = Math.floor(dayPoints.length / samplesPerDay);
+      for (let i = 0; i < samplesPerDay; i++) {
+        const index = i * interval;
+        if (index < dayPoints.length) {
+          sampledPoints.push(dayPoints[index]);
+        }
+      }
+    }
+  });
+
+  return sampledPoints;
+}
+
+// Geocode only the sampled points using our existing geocoding service
+async function geocodeSampledPoints(points: any[]): Promise<any[]> {
+  if (points.length === 0) return [];
+
+  // Prepare coordinates for geocoding
+  const coordinates = points.map(point => ({ lat: point.lat, lng: point.lng }));
+  
+  // Use our existing batch geocoding service
+  const geocodeResults = await batchReverseGeocode(coordinates);
+  
+  // Combine points with geocoding results (batchReverseGeocode returns BatchGeocodeResult with .results array)
+  const geocodedPoints = points.map((point, index) => ({
+    ...point,
+    ...geocodeResults.results[index] // Add city, state, country from geocoding
+  }));
+
+  return geocodedPoints;
+}
+
+// Group geocoded samples by day and determine primary location
+function groupSamplesByDay(geocodedPoints: any[]): { [date: string]: { state?: string; country: string; pointCount: number } } {
+  const dailyLocations: { [date: string]: { state?: string; country: string; pointCount: number } } = {};
+  
+  // Group by date
+  const pointsByDate: { [date: string]: any[] } = {};
+  geocodedPoints.forEach(point => {
+    // Use local date components to avoid timezone shifts (matches frontend conventions)
+    const date = `${point.timestamp.getFullYear()}-${String(point.timestamp.getMonth() + 1).padStart(2, '0')}-${String(point.timestamp.getDate()).padStart(2, '0')}`;
+    if (!pointsByDate[date]) {
+      pointsByDate[date] = [];
+    }
+    pointsByDate[date].push(point);
+  });
+
+  // Determine primary location for each day
+  Object.entries(pointsByDate).forEach(([date, dayPoints]) => {
+    // Count frequency of each state/country combination
+    const locationCounts: { [key: string]: { state?: string; country: string; count: number } } = {};
+    
+    dayPoints.forEach(point => {
+      if (point.country) { // Only count points with geocoded data
+        const key = `${point.state || 'NO_STATE'}_${point.country}`;
+        if (!locationCounts[key]) {
+          locationCounts[key] = { state: point.state, country: point.country, count: 0 };
+        }
+        locationCounts[key].count++;
+      }
+    });
+
+    // Find the most frequent location for this day
+    let primaryLocation = Object.values(locationCounts).reduce((max, current) => 
+      current.count > max.count ? current : max, { count: 0, country: 'Unknown' });
+
+    if (primaryLocation.count > 0) {
+      dailyLocations[date] = {
+        state: primaryLocation.state,
+        country: primaryLocation.country,
+        pointCount: dayPoints.length
+      };
+    }
+  });
+
+  return dailyLocations;
+}
+
+// Aggregate daily locations into state/country statistics with percentages
+function aggregateStateCountryStats(dailyLocations: { [date: string]: { state?: string; country: string; pointCount: number } }, year: number): Array<{ 
+  location: string; 
+  days: number; 
+  percentage: number; 
+  type: 'us_state' | 'country' 
+}> {
+  const locationCounts: { [location: string]: { days: number; type: 'us_state' | 'country' } } = {};
+  const totalDays = Object.keys(dailyLocations).length;
+
+  // Count days for each state/country
+  Object.values(dailyLocations).forEach(dayLocation => {
+    if (dayLocation.state && dayLocation.country === 'United States') {
+      // US state
+      const location = dayLocation.state;
+      if (!locationCounts[location]) {
+        locationCounts[location] = { days: 0, type: 'us_state' };
+      }
+      locationCounts[location].days++;
+    } else {
+      // Non-US country
+      const location = dayLocation.country;
+      if (!locationCounts[location]) {
+        locationCounts[location] = { days: 0, type: 'country' };
+      }
+      locationCounts[location].days++;
+    }
+  });
+
+  // Convert to array with percentages and sort by days (descending)
+  const results = Object.entries(locationCounts).map(([location, data]) => ({
+    location,
+    days: data.days,
+    percentage: Math.round((data.days / totalDays) * 100 * 10) / 10, // Round to 1 decimal
+    type: data.type
+  }));
+
+  // Sort by days spent (descending)
+  results.sort((a, b) => b.days - a.days);
+
+  return results;
+}
+
 // Background geocoding function for user-specific location data (restored analytics pipeline)
 async function geocodeUserLocationPoints(userId: string, datasetId: string) {
   try {
@@ -1086,6 +1231,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error getting ungeocoded summary:", error);
       res.status(500).json({ error: "Failed to get ungeocoded summary" });
+    }
+  });
+
+  // Optimized yearly state/country report endpoint
+  app.get("/api/yearly-state-report", isAuthenticated, async (req, res) => {
+    try {
+      const user = getAuthenticatedUser(req);
+      const userId = user.claims.sub;
+      
+      const year = parseInt(req.query.year as string);
+      if (!year || year < 2000 || year > new Date().getFullYear()) {
+        return res.status(400).json({ error: "Valid year parameter required" });
+      }
+
+      // Date range for the entire year
+      const startDate = new Date(`${year}-01-01T00:00:00Z`);
+      const endDate = new Date(`${year + 1}-01-01T00:00:00Z`);
+
+      console.log(`🗓️ Generating yearly report for ${year}: ${startDate.toISOString()} to ${endDate.toISOString()}`);
+
+      // Get all location points for the year
+      const allPoints = await storage.getUserLocationPointsByDateRange(userId, startDate, endDate);
+      
+      if (allPoints.length === 0) {
+        return res.json({
+          year,
+          totalDays: 0,
+          stateCountryData: [],
+          summary: "No location data found for this year"
+        });
+      }
+
+      console.log(`📍 Found ${allPoints.length} total points for ${year}`);
+
+      // Sample 2-4 points per day for efficient processing
+      const sampledPoints = samplePointsByDay(allPoints, 4);
+      console.log(`📊 Sampled ${sampledPoints.length} points from ${allPoints.length} total points`);
+
+      // Geocode only the sampled points (much faster!)
+      const geocodedSamples = await geocodeSampledPoints(sampledPoints);
+      console.log(`🗺️ Geocoded ${geocodedSamples.length} sample points`);
+
+      // Group by day and determine primary state/country for each day
+      const dailyLocations = groupSamplesByDay(geocodedSamples);
+      console.log(`📅 Processed ${Object.keys(dailyLocations).length} days with location data`);
+
+      // Aggregate state/country statistics
+      const stateCountryStats = aggregateStateCountryStats(dailyLocations, year);
+
+      res.json({
+        year,
+        totalDays: Object.keys(dailyLocations).length,
+        stateCountryData: stateCountryStats,
+        processingStats: {
+          totalPoints: allPoints.length,
+          sampledPoints: sampledPoints.length,
+          geocodedSamples: geocodedSamples.length,
+          daysWithData: Object.keys(dailyLocations).length
+        }
+      });
+
+    } catch (error) {
+      console.error("Error generating yearly state report:", error);
+      res.status(500).json({ error: "Failed to generate yearly report" });
     }
   });
 

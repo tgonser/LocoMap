@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Calendar, BarChart3, List, Upload, CalendarDays } from 'lucide-react';
+import { MapPin, Calendar, BarChart3, List, Upload, CalendarDays, Globe } from 'lucide-react';
 import FileManager from './FileManager';
 import MapDisplay from './MapDisplay';
 import DateNavigator from './DateNavigator';
 import AnalyticsPanel from './AnalyticsPanel';
 import TimelineViewer from './TimelineViewer';
 import DateRangePicker from './DateRangePicker';
+import YearlyStateReport from '@/pages/YearlyStateReport';
 
 interface LocationData {
   lat: number;
@@ -18,7 +19,7 @@ interface LocationData {
   activity?: string;
 }
 
-type ViewMode = 'files' | 'map' | 'analytics';
+type ViewMode = 'files' | 'map' | 'analytics' | 'yearly-report';
 
 export default function LocationHistoryApp() {
   const [locationData, setLocationData] = useState<LocationData[]>([]);
@@ -307,6 +308,7 @@ export default function LocationHistoryApp() {
                   {getViewModeButton('files', <Upload className="w-4 h-4" />, 'Files')}
                   {getViewModeButton('map', <MapPin className="w-4 h-4" />, 'Map')}
                   {getViewModeButton('analytics', <BarChart3 className="w-4 h-4" />, 'Analytics')}
+                  {getViewModeButton('yearly-report', <Globe className="w-4 h-4" />, 'Yearly Report')}
                 </div>
               </div>
             </div>
@@ -376,6 +378,8 @@ export default function LocationHistoryApp() {
                 )
               ) : viewMode === 'files' ? (
                 <FileManager onFileUpload={handleFileUpload} />
+              ) : viewMode === 'yearly-report' ? (
+                <YearlyStateReport />
               ) : (
                 <AnalyticsPanel
                   onBack={() => setViewMode('map')}
