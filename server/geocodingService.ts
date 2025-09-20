@@ -173,10 +173,31 @@ export async function reverseGeocodeNominatim(lat: number, lng: number): Promise
   }
 }
 
+// Return type for batch geocoding with cache metrics
+export interface BatchGeocodeResult {
+  results: Array<GeocodeResult>;
+  cacheMetrics: {
+    totalRequested: number;
+    cacheHits: number;
+    cacheMisses: number;
+    newApiCalls: number;
+    invalidCoordinates: number;
+  };
+}
+
 // Main batch geocoding function with intelligent caching and fallbacks
-export async function batchReverseGeocode(coordinates: Array<{lat: number, lng: number}>): Promise<Array<GeocodeResult>> {
+export async function batchReverseGeocode(coordinates: Array<{lat: number, lng: number}>): Promise<BatchGeocodeResult> {
   if (coordinates.length === 0) {
-    return [];
+    return {
+      results: [],
+      cacheMetrics: {
+        totalRequested: 0,
+        cacheHits: 0,
+        cacheMisses: 0,
+        newApiCalls: 0,
+        invalidCoordinates: 0
+      }
+    };
   }
 
   console.log(`🔍 [DEBUG-2016] Starting batch geocoding for ${coordinates.length} coordinates`);
@@ -212,7 +233,16 @@ export async function batchReverseGeocode(coordinates: Array<{lat: number, lng: 
   // If no valid coordinates, return empty results array matching original length
   if (validCoordinates.length === 0) {
     console.log(`🔍 [DEBUG-2016] No valid coordinates to process, returning empty results`);
-    return new Array(coordinates.length).fill({});
+    return {
+      results: new Array(coordinates.length).fill({}),
+      cacheMetrics: {
+        totalRequested: coordinates.length,
+        cacheHits: 0,
+        cacheMisses: 0,
+        newApiCalls: 0,
+        invalidCoordinates: coordinates.length
+      }
+    };
   }
 
   // Step 1: Prepare coordinate keys with rounding and deduplication (using valid coordinates only)
@@ -239,10 +269,22 @@ export async function batchReverseGeocode(coordinates: Array<{lat: number, lng: 
   // Step 5: Merge cached and new results in original order, accounting for filtered coordinates
   const finalResults = mergeResultsInOrder(coordinates, validCoordinates, cached, newResults, invalidCoordinates);
   
-  // Debug: Log final results summary
+  // Step 6: Calculate cache metrics
+  const cacheMetrics = {
+    totalRequested: coordinates.length,
+    cacheHits: cached.length,
+    cacheMisses: uncached.length, 
+    newApiCalls: newResults.length,
+    invalidCoordinates: invalidCoordinates.length
+  };
+  
+  // Debug: Log final results summary with cache metrics
   console.log(`🔍 [DEBUG-2016] Final results summary:`);
   const geocodedResults = finalResults.filter(result => result.country); // Analytics counts only results with country
   const geocodingCoverage = coordinates.length > 0 ? (geocodedResults.length / coordinates.length * 100).toFixed(1) : '0.0';
+  const cacheHitRate = coordinates.length > 0 ? (cached.length / coordinates.length * 100).toFixed(1) : '0.0';
+  console.log(`   📊 CACHE METRICS: ${cached.length} hits, ${uncached.length} misses (${cacheHitRate}% hit rate)`);
+  console.log(`   📊 API CALLS: Made ${newResults.length} new API requests`);
   console.log(`   Geocoded results (with country): ${geocodedResults.length}/${coordinates.length} (${geocodingCoverage}% coverage)`);
   console.log(`   Invalid coordinates filtered: ${invalidCoordinates.length}`);
   
@@ -253,7 +295,10 @@ export async function batchReverseGeocode(coordinates: Array<{lat: number, lng: 
     console.log(`   [${index}] ${status}: lat=${coord.lat}, lng=${coord.lng} -> ${result.country || 'No country'}, ${result.city || 'No city'}`);
   });
   
-  return finalResults;
+  return {
+    results: finalResults,
+    cacheMetrics
+  };
 }
 
 // Fallback: Sequential geocoding respecting Nominatim's 1 req/sec policy
@@ -303,11 +348,11 @@ export function deduplicateCoordinates(
   return unique;
 }
 
-// Helper function to round coordinates for cache lookup (3 decimals = ~100m accuracy)
+// Helper function to round coordinates for cache lookup (2 decimals = ~1km accuracy for better cache hits)
 function roundCoordinates(lat: number, lng: number): {latRounded: number, lngRounded: number} {
   return {
-    latRounded: Math.round(lat * 1000) / 1000,
-    lngRounded: Math.round(lng * 1000) / 1000
+    latRounded: Math.round(lat * 100) / 100,
+    lngRounded: Math.round(lng * 100) / 100
   };
 }
 
@@ -440,9 +485,9 @@ async function geocodeWithDeduplicatedRequests(
       
       console.log(`Geocoded ${i + 1}/${uncachedKeys.length}: ${key.lat}, ${key.lng}`);
       
-      // Rate limiting: 1 request per 100ms for GeoApify, 1 sec for Nominatim
+      // Rate limiting: 1 request per 50ms for GeoApify (optimized), 1 sec for Nominatim
       if (i + 1 < uncachedKeys.length) {
-        const delay = apiKey ? 100 : 1000;
+        const delay = apiKey ? 50 : 1000;
         await new Promise(resolve => setTimeout(resolve, delay));
       }
       

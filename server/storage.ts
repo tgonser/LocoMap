@@ -1661,9 +1661,10 @@ export class DatabaseStorage implements IStorage {
       const coordinates = batch.map(stop => ({ lat: stop.lat, lng: stop.lng }));
       
       try {
-        // Use existing batch geocoding system
+        // Use batch geocoding system with cache metrics
         const { batchReverseGeocode } = await import("./geocodingService.js");
-        const geocodeResults = await batchReverseGeocode(coordinates);
+        const batchResult = await batchReverseGeocode(coordinates);
+        const { results: geocodeResults, cacheMetrics } = batchResult;
         
         // Update each stop with geocoding results
         for (let j = 0; j < batch.length; j++) {
@@ -1685,7 +1686,7 @@ export class DatabaseStorage implements IStorage {
         const batchSuccessful = geocodeResults.filter(r => r && (r.city || r.address)).length;
         console.log(`✅ Processed geocoding batch ${batchNumber}/${totalBatches}: ${batchSuccessful}/${batch.length} successful`);
         
-        // Emit batch completion event
+        // Emit batch completion event with cache metrics
         if (taskId && progressCallback) {
           progressCallback(taskId, {
             type: 'geocoding_batch_complete',
@@ -1696,7 +1697,10 @@ export class DatabaseStorage implements IStorage {
             totalProcessed: i + batch.length,
             totalLocations: ungeocodedStops.length,
             percentage: Math.round(((i + batch.length) / ungeocodedStops.length) * 100),
-            message: `Completed batch ${batchNumber}/${totalBatches}: ${batchSuccessful}/${batch.length} successful`
+            cacheHits: cacheMetrics.cacheHits,
+            newApiCalls: cacheMetrics.newApiCalls,
+            cacheHitRate: cacheMetrics.totalRequested > 0 ? Math.round((cacheMetrics.cacheHits / cacheMetrics.totalRequested) * 100) : 0,
+            message: `Batch ${batchNumber}/${totalBatches} (${cacheMetrics.cacheHits} cached, ${cacheMetrics.newApiCalls} new)`
           });
         }
         
