@@ -357,8 +357,24 @@ export function parseGoogleLocationHistory(jsonData: any): ParsedLocationPoint[]
   // Handle new mobile format (array of timeline objects)
   if (Array.isArray(jsonData) && jsonData.length > 0 && 
       (jsonData[0].visit || jsonData[0].point || jsonData[0].endTime || jsonData[0].startTime)) {
-    console.log('Detected mobile Google location array format');
+    console.log('🔍 Detected mobile Google location array format');
+    console.log(`📊 Processing ${jsonData.length} elements in mobile array format`);
+    
+    // Debug: Check first few elements to understand structure
+    console.log('🔬 Sample element structure analysis:');
+    for (let i = 0; i < Math.min(3, jsonData.length); i++) {
+      const element = jsonData[i];
+      console.log(`Element ${i} keys:`, Object.keys(element));
+      if (element.visit?.timelinePath?.points) {
+        console.log(`  - Found visit.timelinePath.points: ${element.visit.timelinePath.points.length} points`);
+      }
+      if (element.activity && (element as any).timelinePath?.points) {
+        console.log(`  - Found activity.timelinePath.points: ${(element as any).timelinePath.points.length} points`);
+      }
+    }
+    
     const mobileResults = parseMobileArrayFormat(jsonData as GoogleLocationHistoryMobileArray);
+    console.log(`✅ Mobile parser extracted ${mobileResults.length} total points`);
     results.push(...mobileResults);
   }
   
