@@ -1202,6 +1202,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // NEW: Waypoint computation pipeline endpoint
   // NEW: Date-range-first waypoint computation API
+  // Server-Sent Events endpoint for real-time progress updates
+  app.get('/api/progress/:taskId', isAuthenticated, (req, res) => {
+    const { taskId } = req.params;
+    
+    // Set up SSE headers
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Cache-Control'
+    });
+
+    // Send initial connection event
+    res.write(`data: ${JSON.stringify({ type: 'connected', taskId })}\n\n`);
+
+    // Store the connection for this task
+    if (!(global as any).progressConnections) {
+      (global as any).progressConnections = new Map();
+    }
+    (global as any).progressConnections.set(taskId, res);
+
+    // Clean up on client disconnect
+    req.on('close', () => {
+      (global as any).progressConnections.delete(taskId);
+    });
+
+    req.on('error', () => {
+      (global as any).progressConnections.delete(taskId);
+    });
+  });
+
+  // Helper function to emit progress events
+  const emitProgress = (taskId: string, data: any) => {
+    if ((global as any).progressConnections?.has(taskId)) {
+      const res = (global as any).progressConnections.get(taskId);
+      try {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+      } catch (error) {
+        console.error(`Failed to emit progress for task ${taskId}:`, error);
+        (global as any).progressConnections.delete(taskId);
+      }
+    }
+  };
+
   app.post('/api/waypoints/compute', isAuthenticated, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
@@ -1293,7 +1338,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Input validation with zod
       const dateRangeSchema = z.object({
         startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Start date must be in YYYY-MM-DD format"),
-        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "End date must be in YYYY-MM-DD format")
+        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "End date must be in YYYY-MM-DD format"),
+        taskId: z.string().optional() // Optional task ID for progress tracking
       });
 
       let validatedInput;
@@ -1307,7 +1353,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const { startDate: startDateStr, endDate: endDateStr } = validatedInput;
+      const { startDate: startDateStr, endDate: endDateStr, taskId } = validatedInput;
       
       // Convert to proper Date objects
       const startDate = new Date(`${startDateStr}T00:00:00.000Z`);
@@ -1443,23 +1489,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (travelStops.length === 0) {
           console.log(`🔄 No travel stops found for date range - computing waypoints to generate travel stops...`);
           
+          // Use task ID from frontend request (or generate fallback)
+          const progressTaskId = taskId || `analytics_${userId}_${Date.now()}`;
+          
           // Get user's datasets and compute waypoints for the selected date range
           const datasets = await storage.getUserLocationDatasets(userId);
           if (datasets.length > 0) {
             const primaryDataset = datasets[0]; // Use first dataset
             try {
-              // Compute waypoints which generates travel stops
+              // Compute waypoints which generates travel stops WITH progress tracking  
               const waypointResult = await storage.computeWaypointAnalyticsByDateRange(
                 userId, 
                 primaryDataset.id, 
                 startDate, 
-                endDate
+                endDate,
+                8, // minDwellMinutes
+                300, // maxDistanceMeters
+                progressTaskId, // taskId for progress tracking from frontend
+                emitProgress // progress callback for SSE updates
               );
               console.log(`✅ Auto-computed waypoints for date range: ${waypointResult.stopsCreated} stops, ${waypointResult.segmentsCreated} segments`);
               
               // Re-fetch travel stops after computation
               travelStops = await storage.getUserTravelStopsByDateRange(userId, startDate, endDate);
               console.log(`🎯 Found ${travelStops.length} travel stops after waypoint computation`);
+              
+              // Emit completion event
+              emitProgress(progressTaskId, {
+                type: 'completed',
+                message: 'Analytics computation complete'
+              });
             } catch (waypointError) {
               console.error(`❌ Failed to compute waypoints for date range:`, waypointError);
               // Continue with empty travel stops
@@ -1641,6 +1700,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
 
         console.log(`🎉 Orchestrated analytics pipeline completed successfully for user ${userId}`);
+
+        // Always emit completion event for frontend progress tracking
+        const progressTaskId = taskId || `analytics_${userId}_${Date.now()}`;
+        emitProgress(progressTaskId, {
+          type: 'completed',
+          message: 'Analytics computation complete'
+        });
+
         res.json(analyticsResult);
 
       } catch (error) {

@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import DateRangePicker from "@/components/DateRangePicker";
 import LocationSummary from "@/components/LocationSummary";
+import { ProgressIndicator } from "@/components/ui/progress-indicator";
 
 interface CityJump {
   fromCity: string;
@@ -74,6 +75,7 @@ export default function AnalyticsPanel({
   const [error, setError] = useState<string | null>(null);
   const [showDateRangePicker, setShowDateRangePicker] = useState(false);
   const [autoRefreshCountdown, setAutoRefreshCountdown] = useState<number | null>(null);
+  const [progressTaskId, setProgressTaskId] = useState<string | null>(null);
   const { toast } = useToast();
   const autoRefreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -216,6 +218,10 @@ export default function AnalyticsPanel({
       setError(null);
       setAnalytics(null);
       
+      // Generate task ID for progress tracking
+      const taskId = `analytics_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+      setProgressTaskId(taskId);
+      
       console.log('AnalyticsPanel: Running full analytics pipeline with dates:', { 
         startDate, 
         endDate,
@@ -236,7 +242,8 @@ export default function AnalyticsPanel({
         credentials: 'include',
         body: JSON.stringify({
           startDate,
-          endDate
+          endDate,
+          taskId // Send taskId to backend for progress tracking
         })
       });
       
@@ -296,7 +303,14 @@ export default function AnalyticsPanel({
       });
     } finally {
       setLoading(false);
+      setProgressTaskId(null); // Clear progress tracking
     }
+  };
+
+  // Progress completion handler
+  const handleProgressComplete = () => {
+    setProgressTaskId(null);
+    // Progress completes when analytics computation is done
   };
   
   const isDateRangeValid = () => {
@@ -781,6 +795,11 @@ export default function AnalyticsPanel({
         defaultEndDate={endDate ? fromLocalYmd(endDate) : undefined}
         minDate={new Date('2005-01-01')}
         maxDate={new Date()}
+      />
+      <ProgressIndicator 
+        taskId={progressTaskId}
+        onComplete={handleProgressComplete}
+        onClose={() => setProgressTaskId(null)}
       />
     </>
   );

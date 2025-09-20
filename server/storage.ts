@@ -1565,7 +1565,9 @@ export class DatabaseStorage implements IStorage {
     startDate: Date, 
     endDate: Date,
     minDwellMinutes: number = 8,
-    maxDistanceMeters: number = 300
+    maxDistanceMeters: number = 300,
+    taskId?: string,
+    progressCallback?: (taskId: string, data: any) => void
   ): Promise<{ stopsCreated: number; segmentsCreated: number; stopGeocoded?: number }> {
     console.log(`🎯 Starting DATE-RANGE waypoint computation for user ${userId}:`, {
       dataset: datasetId,
@@ -1583,7 +1585,7 @@ export class DatabaseStorage implements IStorage {
     const segmentsCreated = await this.computeTravelSegmentsFromStopsByDateRange(userId, datasetId, startDate, endDate);
     
     // Step 4: NEW - Geocode the newly created travel stops for city information
-    const stopsGeocoded = await this.geocodeTravelStopsInDateRange(userId, datasetId, startDate, endDate);
+    const stopsGeocoded = await this.geocodeTravelStopsInDateRange(userId, datasetId, startDate, endDate, taskId, progressCallback);
     
     console.log(`✅ DATE-RANGE waypoint analytics complete: ${stopsCreated} stops, ${segmentsCreated} segments, ${stopsGeocoded} geocoded`);
     
@@ -1595,7 +1597,9 @@ export class DatabaseStorage implements IStorage {
     userId: string, 
     datasetId: string, 
     startDate: Date, 
-    endDate: Date
+    endDate: Date,
+    taskId?: string,
+    progressCallback?: (taskId: string, data: any) => void
   ): Promise<number> {
     console.log(`🌍 Geocoding travel stops in date range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
     
@@ -1619,6 +1623,15 @@ export class DatabaseStorage implements IStorage {
     
     console.log(`🎯 Found ${ungeocodedStops.length} ungeocoded stops to process`);
     
+    // Emit initial geocoding start event
+    if (taskId && progressCallback) {
+      progressCallback(taskId, {
+        type: 'geocoding_start',
+        totalLocations: ungeocodedStops.length,
+        message: `Geocoding ${ungeocodedStops.length} locations`
+      });
+    }
+    
     // BATCH PROCESSING: 25 coordinates per batch (like user's Geoapify system)
     const BATCH_SIZE = 25;
     let totalGeocoded = 0;
@@ -1629,6 +1642,20 @@ export class DatabaseStorage implements IStorage {
       const totalBatches = Math.ceil(ungeocodedStops.length / BATCH_SIZE);
       
       console.log(`🔄 Processing geocoding batch ${batchNumber}/${totalBatches} (${batch.length} stops)`);
+      
+      // Emit batch progress event
+      if (taskId && progressCallback) {
+        progressCallback(taskId, {
+          type: 'geocoding_progress',
+          batch: batchNumber,
+          totalBatches,
+          batchSize: batch.length,
+          totalProcessed: i,
+          totalLocations: ungeocodedStops.length,
+          percentage: Math.round((i / ungeocodedStops.length) * 100),
+          message: `Batch ${batchNumber}/${totalBatches} (${batch.length} locations)`
+        });
+      }
       
       // Prepare coordinates for batch geocoding
       const coordinates = batch.map(stop => ({ lat: stop.lat, lng: stop.lng }));
@@ -1655,7 +1682,23 @@ export class DatabaseStorage implements IStorage {
           }
         }
         
-        console.log(`✅ Processed geocoding batch ${batchNumber}/${totalBatches}: ${geocodeResults.filter(r => r && (r.city || r.address)).length}/${batch.length} successful`);
+        const batchSuccessful = geocodeResults.filter(r => r && (r.city || r.address)).length;
+        console.log(`✅ Processed geocoding batch ${batchNumber}/${totalBatches}: ${batchSuccessful}/${batch.length} successful`);
+        
+        // Emit batch completion event
+        if (taskId && progressCallback) {
+          progressCallback(taskId, {
+            type: 'geocoding_batch_complete',
+            batch: batchNumber,
+            totalBatches,
+            batchSuccessful,
+            batchSize: batch.length,
+            totalProcessed: i + batch.length,
+            totalLocations: ungeocodedStops.length,
+            percentage: Math.round(((i + batch.length) / ungeocodedStops.length) * 100),
+            message: `Completed batch ${batchNumber}/${totalBatches}: ${batchSuccessful}/${batch.length} successful`
+          });
+        }
         
         // Add delay between batches (1-2 seconds like user's system)
         if (i + BATCH_SIZE < ungeocodedStops.length) {
