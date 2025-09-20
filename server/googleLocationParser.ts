@@ -113,6 +113,55 @@ function parseModernFormat(jsonData: ModernExport): ParsedLocationPoint[] {
   return results;
 }
 
+// Apply efficient deduplication for large datasets
+function applyDeduplication(points: ParsedLocationPoint[]): ParsedLocationPoint[] {
+  console.log(`🔄 Applying deduplication to ${points.length} points...`);
+  
+  let deduplicated: ParsedLocationPoint[];
+  
+  if (points.length > 100000) {
+    // For large datasets, use Map-based deduplication to avoid stack overflow
+    console.log(`⚡ Using efficient deduplication for ${points.length} points`);
+    const seen = new Map<string, boolean>();
+    deduplicated = points.filter(point => {
+      // Create a key from rounded coordinates and time
+      const roundedLat = Math.round(point.lat * 10000) / 10000; // 4 decimal places
+      const roundedLng = Math.round(point.lng * 10000) / 10000;
+      const timeKey = Math.floor(point.timestamp.getTime() / 60000); // 1-minute buckets
+      const key = `${roundedLat},${roundedLng},${timeKey}`;
+      
+      if (seen.has(key)) {
+        return false; // Duplicate
+      }
+      seen.set(key, true);
+      return true;
+    });
+  } else {
+    // For smaller datasets, use the original O(n²) method
+    deduplicated = points.filter((point, index) => {
+      for (let i = 0; i < index; i++) {
+        const other = points[i];
+        const latDiff = Math.abs(point.lat - other.lat);
+        const lngDiff = Math.abs(point.lng - other.lng);
+        const timeDiff = Math.abs(point.timestamp.getTime() - other.timestamp.getTime());
+        
+        if (latDiff < 0.0001 && lngDiff < 0.0001 && timeDiff < 60000) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }
+
+  const removedCount = points.length - deduplicated.length;
+  if (removedCount > 0) {
+    console.log(`🧹 Removed ${removedCount} duplicate points`);
+  }
+
+  console.log(`✅ Deduplication complete: ${deduplicated.length} unique location points`);
+  return deduplicated;
+}
+
 // Parse legacy array format - extract ONLY timelinePath data, ignore visits/activities
 function parseLegacyArrayFormat(jsonData: any): ParsedLocationPoint[] {
   const results: ParsedLocationPoint[] = [];
@@ -216,7 +265,15 @@ export function parseGoogleLocationHistory(jsonData: any): ParsedLocationPoint[]
   else if (Array.isArray(jsonData) || (typeof jsonData === 'object' && Object.keys(jsonData).some(key => !isNaN(Number(key))))) {
     console.log('📊 Detected legacy array format - processing as location points');
     const legacyResults = parseLegacyArrayFormat(jsonData);
-    results.push(...legacyResults);
+    
+    // Use concat for large arrays to avoid stack overflow from spread operator
+    if (legacyResults.length > 100000) {
+      console.log(`⚡ Using concat for ${legacyResults.length} points to avoid stack overflow`);
+      // Apply deduplication directly to the large result set and return
+      return applyDeduplication(legacyResults);
+    } else {
+      results.push(...legacyResults);
+    }
   }
   else {
     console.warn('❌ Unsupported format - expected timelineObjects array or legacy location array');
@@ -224,52 +281,8 @@ export function parseGoogleLocationHistory(jsonData: any): ParsedLocationPoint[]
     return results;
   }
 
-  // Apply efficient deduplication for large datasets
-  console.log(`🔄 Applying deduplication to ${results.length} points...`);
-  
-  let deduplicated: ParsedLocationPoint[];
-  
-  if (results.length > 100000) {
-    // For large datasets, use Map-based deduplication to avoid stack overflow
-    console.log(`⚡ Using efficient deduplication for ${results.length} points`);
-    const seen = new Map<string, boolean>();
-    deduplicated = results.filter(point => {
-      // Create a key from rounded coordinates and time
-      const roundedLat = Math.round(point.lat * 10000) / 10000; // 4 decimal places
-      const roundedLng = Math.round(point.lng * 10000) / 10000;
-      const timeKey = Math.floor(point.timestamp.getTime() / 60000); // 1-minute buckets
-      const key = `${roundedLat},${roundedLng},${timeKey}`;
-      
-      if (seen.has(key)) {
-        return false; // Duplicate
-      }
-      seen.set(key, true);
-      return true;
-    });
-  } else {
-    // For smaller datasets, use the original O(n²) method
-    deduplicated = results.filter((point, index) => {
-      for (let i = 0; i < index; i++) {
-        const other = results[i];
-        const latDiff = Math.abs(point.lat - other.lat);
-        const lngDiff = Math.abs(point.lng - other.lng);
-        const timeDiff = Math.abs(point.timestamp.getTime() - other.timestamp.getTime());
-        
-        if (latDiff < 0.0001 && lngDiff < 0.0001 && timeDiff < 60000) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }
-
-  const removedCount = results.length - deduplicated.length;
-  if (removedCount > 0) {
-    console.log(`🧹 Removed ${removedCount} duplicate points`);
-  }
-
-  console.log(`✅ Parsing complete: ${deduplicated.length} unique location points extracted`);
-  return deduplicated;
+  // Apply deduplication
+  return applyDeduplication(results);
 }
 
 // Validation function - handles both modern timelineObjects and legacy array formats
