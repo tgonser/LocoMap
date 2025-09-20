@@ -465,8 +465,8 @@ async function extractQuickMetadata(jsonData: any) {
     totalElements,
     estimatedPoints,
     dateRange: {
-      start: minTimestamp ? minTimestamp.toISOString() : null,
-      end: maxTimestamp ? maxTimestamp.toISOString() : null
+      start: minTimestamp && minTimestamp instanceof Date ? minTimestamp.toISOString() : null,
+      end: maxTimestamp && maxTimestamp instanceof Date ? maxTimestamp.toISOString() : null
     },
     dataQuality: {
       badProbability,
@@ -514,7 +514,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "File conversion failed" });
       }
       
-      let jsonData;
+      let jsonData: any;
       
       try {
         jsonData = JSON.parse(fileContent);
@@ -677,7 +677,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         lat: point.lat,
         lng: point.lng,
         timestamp: point.timestamp,
-        accuracy: point.accuracy,
+        accuracy: 50, // Default accuracy since not provided
         activity: point.activity,
       }));
 

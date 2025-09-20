@@ -152,7 +152,8 @@ function parseLegacyArrayFormat(jsonData: any): ParsedLocationPoint[] {
       lng = item.longitude;
       
       if (item.timestamp) {
-        timestamp = parseToUTCDate(item.timestamp);
+        const parsed = parseToUTCDate(item.timestamp);
+        timestamp = parsed || undefined;
       }
     }
     // Format 3: locations array element
