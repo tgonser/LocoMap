@@ -910,6 +910,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Delete a specific dataset
   app.delete("/api/datasets/:datasetId", isAuthenticated, async (req, res) => {
+    console.log(`🚨 DELETE ROUTE HIT: ${req.params.datasetId}`);
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
