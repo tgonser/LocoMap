@@ -172,13 +172,74 @@ function parseLegacyArrayFormat(jsonData: any): ParsedLocationPoint[] {
     // Format 4: Visit data with location info
     else if (item.visit && item.visit.topCandidate && item.visit.topCandidate.placeLocation) {
       const loc = item.visit.topCandidate.placeLocation;
-      if (loc.latitudeE7 !== undefined && loc.longitudeE7 !== undefined) {
+      
+      // Handle object format (latitudeE7/longitudeE7)
+      if (typeof loc === 'object' && loc.latitudeE7 !== undefined && loc.longitudeE7 !== undefined) {
         lat = loc.latitudeE7 / 1e7;
         lng = loc.longitudeE7 / 1e7;
         
         if (item.startTime) {
           const parsed = parseToUTCDate(item.startTime);
           timestamp = parsed || undefined;
+        }
+      }
+      // Handle geo string format: "geo:lat,lng"
+      else if (typeof loc === 'string' && loc.startsWith('geo:')) {
+        const coords = loc.replace('geo:', '').split(',');
+        if (coords.length === 2) {
+          const parsedLat = parseFloat(coords[0]);
+          const parsedLng = parseFloat(coords[1]);
+          
+          if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
+            lat = parsedLat;
+            lng = parsedLng;
+            
+            if (item.startTime) {
+              const parsed = parseToUTCDate(item.startTime);
+              timestamp = parsed || undefined;
+            }
+          }
+        }
+      }
+    }
+    // Format 4b: Activity data with start/end geo strings
+    else if (item.activity && (item.activity.start || item.activity.end)) {
+      const activity = item.activity;
+      
+      // Parse start location
+      if (typeof activity.start === 'string' && activity.start.startsWith('geo:')) {
+        const coords = activity.start.replace('geo:', '').split(',');
+        if (coords.length === 2) {
+          const parsedLat = parseFloat(coords[0]);
+          const parsedLng = parseFloat(coords[1]);
+          
+          if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
+            lat = parsedLat;
+            lng = parsedLng;
+            
+            if (item.startTime) {
+              const parsed = parseToUTCDate(item.startTime);
+              timestamp = parsed || undefined;
+            }
+          }
+        }
+      }
+      // If no start location but has end, use end location
+      else if (!lat && typeof activity.end === 'string' && activity.end.startsWith('geo:')) {
+        const coords = activity.end.replace('geo:', '').split(',');
+        if (coords.length === 2) {
+          const parsedLat = parseFloat(coords[0]);
+          const parsedLng = parseFloat(coords[1]);
+          
+          if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
+            lat = parsedLat;
+            lng = parsedLng;
+            
+            if (item.endTime) {
+              const parsed = parseToUTCDate(item.endTime);
+              timestamp = parsed || undefined;
+            }
+          }
         }
       }
     }
