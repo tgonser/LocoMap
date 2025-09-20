@@ -405,6 +405,7 @@ function parseMobileArrayFormat(jsonData: GoogleLocationHistoryMobileArray): Par
 }
 
 export function parseGoogleLocationHistory(jsonData: any): ParsedLocationPoint[] {
+  console.log('🔥 PARSER DEBUG: parseGoogleLocationHistory called with data size:', Array.isArray(jsonData) ? jsonData.length : 'not array');
   const results: ParsedLocationPoint[] = [];
 
   // Handle new mobile format (array of timeline objects)
