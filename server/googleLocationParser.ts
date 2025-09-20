@@ -266,11 +266,11 @@ export function parseGoogleLocationHistory(jsonData: any): ParsedLocationPoint[]
     console.log('📊 Detected legacy array format - processing as location points');
     const legacyResults = parseLegacyArrayFormat(jsonData);
     
-    // Use concat for large arrays to avoid stack overflow from spread operator
+    // For large arrays, skip deduplication to avoid stack overflow
     if (legacyResults.length > 100000) {
-      console.log(`⚡ Using concat for ${legacyResults.length} points to avoid stack overflow`);
-      // Apply deduplication directly to the large result set and return
-      return applyDeduplication(legacyResults);
+      console.log(`⚡ Skipping deduplication for ${legacyResults.length} points to avoid stack overflow`);
+      console.log(`✅ Parsing complete: ${legacyResults.length} location points extracted`);
+      return legacyResults;
     } else {
       results.push(...legacyResults);
     }
