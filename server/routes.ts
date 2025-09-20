@@ -1480,6 +1480,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         console.log(`🎯 Waypoint Analytics: ${waypointCityJumps.length} city jumps, ${Math.round(totalTravelDistance)} miles total travel`);
 
+        // ========== POPULATE LOCATION STATS FROM WAYPOINT DATA ==========
+        // Extract unique countries/states/cities from waypoint city jumps instead of empty centroids
+        waypointCityJumps.forEach(jump => {
+          // Count unique countries from waypoint travel data
+          if (jump.fromCountry) {
+            locationStats.countries.set(jump.fromCountry, (locationStats.countries.get(jump.fromCountry) || 0) + 1);
+          }
+          if (jump.toCountry && jump.toCountry !== jump.fromCountry) {
+            locationStats.countries.set(jump.toCountry, (locationStats.countries.get(jump.toCountry) || 0) + 1);
+          }
+          
+          // Count US states from waypoint travel data  
+          if (jump.fromCountry === 'United States' && jump.fromState) {
+            locationStats.states.set(jump.fromState, (locationStats.states.get(jump.fromState) || 0) + 1);
+          }
+          if (jump.toCountry === 'United States' && jump.toState && jump.toState !== jump.fromState) {
+            locationStats.states.set(jump.toState, (locationStats.states.get(jump.toState) || 0) + 1);
+          }
+          
+          // Count unique cities from waypoint travel data
+          if (jump.fromCity) {
+            const fromCityKey = jump.fromState ? `${jump.fromCity}, ${jump.fromState}` : `${jump.fromCity}, ${jump.fromCountry}`;
+            locationStats.cities.set(fromCityKey, (locationStats.cities.get(fromCityKey) || 0) + 1);
+          }
+          if (jump.toCity && jump.toCity !== jump.fromCity) {
+            const toCityKey = jump.toState ? `${jump.toCity}, ${jump.toState}` : `${jump.toCity}, ${jump.toCountry}`;
+            locationStats.cities.set(toCityKey, (locationStats.cities.get(toCityKey) || 0) + 1);
+          }
+        });
+        
+        console.log(`📊 Extracted from waypoint data: ${locationStats.countries.size} countries, ${locationStats.states.size} states, ${locationStats.cities.size} cities`);
+
         // Convert Maps to Objects for frontend compatibility
         const countriesObject = Object.fromEntries(locationStats.countries);
         const statesObject = Object.fromEntries(locationStats.states);
