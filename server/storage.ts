@@ -1526,7 +1526,7 @@ export class DatabaseStorage implements IStorage {
     endDate: Date,
     minDwellMinutes: number = 15,
     maxDistanceMeters: number = 150
-  ): Promise<{ stopsCreated: number; segmentsCreated: number }> {
+  ): Promise<{ stopsCreated: number; segmentsCreated: number; stopGeocoded?: number }> {
     console.log(`🎯 Starting DATE-RANGE waypoint computation for user ${userId}:`, {
       dataset: datasetId,
       dateRange: `${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`,
@@ -1542,9 +1542,95 @@ export class DatabaseStorage implements IStorage {
     // Step 3: Create travel segments between stops in date range
     const segmentsCreated = await this.computeTravelSegmentsFromStopsByDateRange(userId, datasetId, startDate, endDate);
     
-    console.log(`✅ DATE-RANGE waypoint analytics complete: ${stopsCreated} stops, ${segmentsCreated} segments`);
+    // Step 4: NEW - Geocode the newly created travel stops for city information
+    const stopsGeocoded = await this.geocodeTravelStopsInDateRange(userId, datasetId, startDate, endDate);
     
-    return { stopsCreated, segmentsCreated };
+    console.log(`✅ DATE-RANGE waypoint analytics complete: ${stopsCreated} stops, ${segmentsCreated} segments, ${stopsGeocoded} geocoded`);
+    
+    return { stopsCreated, segmentsCreated, stopGeocoded: stopsGeocoded };
+  }
+
+  // Geocode travel stops in date range (batches of 25 like user's Geoapify system)
+  async geocodeTravelStopsInDateRange(
+    userId: string, 
+    datasetId: string, 
+    startDate: Date, 
+    endDate: Date
+  ): Promise<number> {
+    console.log(`🌍 Geocoding travel stops in date range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
+    
+    // Get ungeocoded travel stops in the date range
+    const ungeocodedStops = await db
+      .select()
+      .from(travelStops)
+      .where(and(
+        eq(travelStops.userId, userId),
+        eq(travelStops.datasetId, datasetId),
+        lte(travelStops.start, endDate),
+        gte(travelStops.end, startDate),
+        // Only get stops without city information
+        sql`${travelStops.city} IS NULL`
+      ));
+    
+    if (ungeocodedStops.length === 0) {
+      console.log(`✅ No ungeocoded stops found in date range`);
+      return 0;
+    }
+    
+    console.log(`🎯 Found ${ungeocodedStops.length} ungeocoded stops to process`);
+    
+    // BATCH PROCESSING: 25 coordinates per batch (like user's Geoapify system)
+    const BATCH_SIZE = 25;
+    let totalGeocoded = 0;
+    
+    for (let i = 0; i < ungeocodedStops.length; i += BATCH_SIZE) {
+      const batch = ungeocodedStops.slice(i, i + BATCH_SIZE);
+      const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+      const totalBatches = Math.ceil(ungeocodedStops.length / BATCH_SIZE);
+      
+      console.log(`🔄 Processing geocoding batch ${batchNumber}/${totalBatches} (${batch.length} stops)`);
+      
+      // Prepare coordinates for batch geocoding
+      const coordinates = batch.map(stop => ({ lat: stop.lat, lng: stop.lng }));
+      
+      try {
+        // Use existing batch geocoding system
+        const { batchReverseGeocode } = await import("./geocodingService.js");
+        const geocodeResults = await batchReverseGeocode(coordinates);
+        
+        // Update each stop with geocoding results
+        for (let j = 0; j < batch.length; j++) {
+          const stop = batch[j];
+          const result = geocodeResults[j];
+          
+          if (result && (result.city || result.address)) {
+            await this.updateTravelStopGeocoding(
+              stop.id,
+              result.address || 'Unknown',
+              result.city,
+              result.state,
+              result.country
+            );
+            totalGeocoded++;
+          }
+        }
+        
+        console.log(`✅ Processed geocoding batch ${batchNumber}/${totalBatches}: ${geocodeResults.filter(r => r && (r.city || r.address)).length}/${batch.length} successful`);
+        
+        // Add delay between batches (1-2 seconds like user's system)
+        if (i + BATCH_SIZE < ungeocodedStops.length) {
+          console.log(`⏱️ Waiting 1.5 seconds before next batch...`);
+          await new Promise(resolve => setTimeout(resolve, 1500));
+        }
+        
+      } catch (error) {
+        console.error(`❌ Failed to geocode batch ${batchNumber}:`, error);
+        // Continue with next batch
+      }
+    }
+    
+    console.log(`🌍 Geocoding complete: ${totalGeocoded}/${ungeocodedStops.length} stops successfully geocoded`);
+    return totalGeocoded;
   }
 
   // **LEGACY: COMPLETE WAYPOINT COMPUTATION PIPELINE** (processes entire dataset)
