@@ -1,0 +1,49 @@
+You’re absolutely right about the timezone issue - that’s a critical detail! Timeline path elements are indeed in UTC (‘Z’ time), while activities and visits typically have timezone-aware timestamps.
+
+## The Timezone Challenge
+
+When timeline paths use UTC (`2024-01-15T14:30:00Z`) but activities might use local time (`2024-01-15T09:30:00-05:00`), a naive temporal comparison will fail.
+
+## Correct Assignment Approach
+
+### 1. **Normalize All Timestamps to UTC**
+
+```javascript
+function assignPathsToActivities(timelineData) {
+  timelineData.activities?.forEach(activity => {
+    // Convert activity times to UTC for comparison
+    const activityStartUTC = new Date(activity.startTime).getTime();
+    const activityEndUTC = new Date(activity.endTime).getTime();
+    
+    const relevantPaths = timelineData.timelinePath?.filter(path => {
+      // Path time is already in UTC (ends with 'Z')
+      const pathTimeUTC = new Date(path.point.time).getTime();
+      
+      return pathTimeUTC >= activityStartUTC && pathTimeUTC <= activityEndUTC;
+    });
+  });
+}
+```
+
+### 2. **Handle Timezone Context**
+
+Since timeline paths lose timezone context, you need to be aware that:
+
+- The temporal boundaries are correct when compared in UTC
+- But the “local time” interpretation might seem off when viewing the data
+- Activities spanning midnight in local time might look confusing when paths are in UTC
+
+### 3. **Validation Strategy**
+
+```javascript
+// Always compare as UTC milliseconds
+const isPathInActivity = (pathTime, activityStart, activityEnd) => {
+  const pathUTC = new Date(pathTime + (pathTime.endsWith('Z') ? '' : 'Z')).getTime();
+  const startUTC = new Date(activityStart).getTime();
+  const endUTC = new Date(activityEnd).getTime();
+  
+  return pathUTC >= startUTC && pathUTC <= endUTC;
+};
+```
+
+So yes, it’s still “between start and finish,” but you must ensure all timestamps are normalized to the same timezone (UTC) before comparison. The ‘Z’ timezone on timeline paths actually makes this easier since UTC is the common denominator.​​​​​​​​​​​​​​​​

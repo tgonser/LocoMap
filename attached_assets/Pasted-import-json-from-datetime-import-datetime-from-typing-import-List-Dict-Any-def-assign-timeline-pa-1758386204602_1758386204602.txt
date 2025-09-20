@@ -1,0 +1,100 @@
+import json
+from datetime import datetime
+from typing import List, Dict, Any
+
+def assign_timeline_paths_to_activities(timeline_data: Dict[str, Any]) -> List[Dict]:
+    """
+    Assigns timeline path elements to activities/visits, handling UTC timezone correctly.
+    
+    Args:
+        timeline_data: Parsed JSON data from Google Timeline export
+        
+    Returns:
+        List of assignments with activities and their corresponding timeline paths
+    """
+    assignments = []
+    
+    # Extract activities and visits
+    activities = timeline_data.get('activities', [])
+    visits = timeline_data.get('visits', [])
+    timeline_paths = timeline_data.get('timelinePath', [])
+    
+    # Combine activities and visits for processing
+    all_segments = []
+    for activity in activities:
+        all_segments.append({
+            'type': 'activity',
+            'data': activity,
+            'startTime': activity.get('startTime'),
+            'endTime': activity.get('endTime')
+        })
+    
+    for visit in visits:
+        all_segments.append({
+            'type': 'visit', 
+            'data': visit,
+            'startTime': visit.get('startTime'),
+            'endTime': visit.get('endTime')
+        })
+    
+    # Process each segment
+    for segment in all_segments:
+        if not segment['startTime'] or not segment['endTime']:
+            continue
+            
+        # Convert segment times to UTC timestamps for comparison
+        segment_start_utc = datetime.fromisoformat(
+            segment['startTime'].replace('Z', '+00:00')
+        ).timestamp()
+        segment_end_utc = datetime.fromisoformat(
+            segment['endTime'].replace('Z', '+00:00')
+        ).timestamp()
+        
+        # Find matching timeline paths
+        matching_paths = []
+        for path in timeline_paths:
+            if 'point' not in path or 'time' not in path['point']:
+                continue
+                
+            # Timeline paths are in UTC ('Z' format)
+            path_time_str = path['point']['time']
+            if not path_time_str.endswith('Z'):
+                path_time_str += 'Z'
+                
+            path_time_utc = datetime.fromisoformat(
+                path_time_str.replace('Z', '+00:00')
+            ).timestamp()
+            
+            # Check if path time falls within segment boundaries
+            if segment_start_utc <= path_time_utc <= segment_end_utc:
+                matching_paths.append(path)
+        
+        assignments.append({
+            'segment_type': segment['type'],
+            'segment_data': segment['data'],
+            'start_time': segment['startTime'],
+            'end_time': segment['endTime'],
+            'timeline_paths': matching_paths,
+            'path_count': len(matching_paths)
+        })
+    
+    return assignments
+
+def load_and_process_timeline(json_file_path: str) -> List[Dict]:
+    """
+    Load timeline JSON and process assignments.
+    """
+    with open(json_file_path, 'r', encoding='utf-8') as f:
+        timeline_data = json.load(f)
+    
+    return assign_timeline_paths_to_activities(timeline_data)
+
+# Example usage
+if __name__ == "__main__":
+    assignments = load_and_process_timeline("Timeline.json")
+    
+    for assignment in assignments:
+        print(f"{assignment['segment_type'].title()}: {assignment['path_count']} timeline paths")
+        print(f"  Start: {assignment['start_time']}")
+        print(f"  End: {assignment['end_time']}")
+        print()

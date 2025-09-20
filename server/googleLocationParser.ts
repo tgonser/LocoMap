@@ -330,55 +330,10 @@ function parseMobileArrayFormat(jsonData: GoogleLocationHistoryMobileArray): Par
       }
     }
     
-    // 🎯 CRITICAL: Handle standalone timelinePath elements (discovered at ~line 595,562)
-    // Only process if not already handled by visit/activity parsing
+    // 🎯 CRITICAL: Collect standalone timelinePath for proper UTC matching (Phase 1)
     if (element.timelinePath?.points && Array.isArray(element.timelinePath.points) && !element.activity && !element.visit) {
-      console.log(`📍 Found standalone timelinePath with ${element.timelinePath.points.length} points at element ${i}`);
-      
-      // Try to get base timestamp from the element or nearby elements
-      let baseTimestamp: Date | null = null;
-      if (element.startTime) {
-        baseTimestamp = normalizeTimestamp(element.startTime);
-      } else if (element.endTime) {
-        baseTimestamp = normalizeTimestamp(element.endTime);
-      } else if (lastKnownTimestamp) {
-        baseTimestamp = lastKnownTimestamp;
-      } else {
-        // Look ahead/behind for timestamp context
-        for (let j = Math.max(0, i - 5); j < Math.min(jsonData.length, i + 5); j++) {
-          const contextElement = jsonData[j];
-          if (contextElement && contextElement.startTime) {
-            baseTimestamp = normalizeTimestamp(contextElement.startTime);
-            break;
-          }
-        }
-      }
-      
-      if (baseTimestamp) {
-        element.timelinePath.points.forEach((pathPoint: any, pointIndex: number) => {
-          if (pathPoint.point) {
-            const coords = parseGeoString(pathPoint.point);
-            if (coords) {
-              let timestamp = baseTimestamp!;
-              
-              // Calculate timestamp based on duration offset
-              if (pathPoint.durationMinutesOffsetFromStartTime) {
-                const offsetMinutes = parseInt(pathPoint.durationMinutesOffsetFromStartTime);
-                if (!isNaN(offsetMinutes)) {
-                  timestamp = new Date(baseTimestamp!.getTime() + offsetMinutes * 60 * 1000);
-                }
-              }
-              
-              results.push({
-                lat: coords.lat,
-                lng: coords.lng,
-                timestamp: timestamp,
-                activity: 'route' // Mark as route data for identification
-              });
-            }
-          }
-        });
-      }
+      console.log(`📍 Found standalone timelinePath with ${element.timelinePath.points.length} points at element ${i} - will match to activities using UTC boundaries`);
+      // Note: This will be processed in Phase 2 after all activities are collected
     }
     
     // Log unhandled elements only if none of the above handled it
