@@ -1401,36 +1401,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
 
         if (geocodedCentroids.length === 0) {
-          console.log(`⚠️  No geocoded centroids found for user ${userId} in date range`);
-          return res.json({
-            success: true,
-            pipeline: {
-              centroidsCreated,
-              geocoded: 0,
-              analyticsGenerated: true
-            },
-            analytics: {
-              totalDays: totalDaysInRange,
-              geocodedDays: 0,
-              geocodingCoverage: 0,
-              geocodingInProgress: ungeocodedCount > 0, // Clear boolean flag for frontend
-              ungeocodedCount: ungeocodedCount, // Count of locations being processed
-              countries: {},
-              states: {},
-              cities: {},
-              cityJumps: {
-                cityJumps: [],
-                totalTravelDistance: 0,
-                totalJumps: 0
-              },
-              curatedPlaces: [],
-              dateRange: {
-                start: startDate.toISOString().split('T')[0],
-                end: endDate.toISOString().split('T')[0]
-              },
-              note: ungeocodedCount > 0 ? `${ungeocodedCount} locations are being geocoded in the background. Re-run analytics in a few minutes for complete data.` : undefined
-            }
-          });
+          console.log(`⚠️  No geocoded centroids found for user ${userId} in date range - proceeding with waypoint-only analytics`);
+          // Don't return early - continue to waypoint computation to detect stops from route data
         }
 
         // Group locations by country/state/city and calculate city jumps
