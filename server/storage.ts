@@ -37,6 +37,10 @@ export interface IStorage {
   getLocationDataset(id: string, userId: string): Promise<LocationDataset | undefined>;
   updateDatasetProcessed(id: string, deduplicatedPoints: number): Promise<void>;
   
+  // Raw file storage for deferred processing
+  storeRawFile(datasetId: string, userId: string, rawContent: string): Promise<void>;
+  getRawFile(datasetId: string, userId: string): Promise<string | undefined>;
+  
   // Location point operations (user-specific)
   insertLocationPoints(points: InsertLocationPoint[]): Promise<LocationPoint[]>;
   getUserLocationPoints(userId: string, datasetId?: string): Promise<LocationPoint[]>;
@@ -169,6 +173,22 @@ export class DatabaseStorage implements IStorage {
         processedAt: new Date(),
       })
       .where(eq(locationDatasets.id, id));
+  }
+  
+  // Raw file storage for deferred processing  
+  async storeRawFile(datasetId: string, userId: string, rawContent: string): Promise<void> {
+    await db
+      .update(locationDatasets)
+      .set({ rawContent })
+      .where(and(eq(locationDatasets.id, datasetId), eq(locationDatasets.userId, userId)));
+  }
+  
+  async getRawFile(datasetId: string, userId: string): Promise<string | undefined> {
+    const [dataset] = await db
+      .select({ rawContent: locationDatasets.rawContent })
+      .from(locationDatasets)
+      .where(and(eq(locationDatasets.id, datasetId), eq(locationDatasets.userId, userId)));
+    return dataset?.rawContent || undefined;
   }
 
   // Location point operations
@@ -1730,6 +1750,15 @@ export class MemStorage implements IStorage {
   }
 
   async updateDatasetProcessed(id: string, deduplicatedPoints: number): Promise<void> {}
+  
+  // Raw file storage stubs for memory storage
+  async storeRawFile(datasetId: string, userId: string, rawContent: string): Promise<void> {
+    throw new Error("Use DatabaseStorage for persistent raw file storage");
+  }
+  
+  async getRawFile(datasetId: string, userId: string): Promise<string | undefined> {
+    return undefined;
+  }
 
   async insertLocationPoints(points: InsertLocationPoint[]): Promise<LocationPoint[]> {
     return [];

@@ -292,6 +292,194 @@ async function geocodeDailyCentroidsByDateRange(
   }
 }
 
+// Quick metadata extraction for smart upload - supports ALL formats
+async function extractQuickMetadata(jsonData: any) {
+  console.log('📊 Analyzing file structure and data quality...');
+  
+  let totalElements = 0;
+  let estimatedPoints = 0;
+  let minTimestamp: Date | null = null;
+  let maxTimestamp: Date | null = null;
+  
+  // Data quality counters
+  let badProbability = 0;
+  let goodProbability = 0;
+  let zeroDistance = 0;
+  let goodDistance = 0;
+  let badAccuracy = 0;
+  let totalTimelinePath = 0;
+  
+  // Activity breakdown
+  const activityCounts: Record<string, number> = {};
+  
+  // Helper to extract timestamp from various formats
+  const extractTimestamp = (element: any): Date | null => {
+    if (element.startTime) return new Date(element.startTime);
+    if (element.endTime) return new Date(element.endTime);
+    if (element.duration?.startTimestampMs) return new Date(parseInt(element.duration.startTimestampMs, 10));
+    if (element.duration?.endTimestampMs) return new Date(parseInt(element.duration.endTimestampMs, 10));
+    if (element.timestampMs) return new Date(parseInt(element.timestampMs, 10));
+    return null;
+  };
+  
+  // Helper to update date range
+  const updateDateRange = (timestamp: Date) => {
+    if (!minTimestamp || timestamp < minTimestamp) minTimestamp = timestamp;
+    if (!maxTimestamp || timestamp > maxTimestamp) maxTimestamp = timestamp;
+  };
+  
+  // MOBILE ARRAY FORMAT (element.activity, element.visit)
+  if (Array.isArray(jsonData)) {
+    const sampleSize = Math.min(jsonData.length, 1000);
+    const step = Math.ceil(jsonData.length / sampleSize);
+    
+    for (let i = 0; i < jsonData.length; i += step) {
+      const element = jsonData[i];
+      totalElements++;
+      
+      const timestamp = extractTimestamp(element);
+      if (timestamp) updateDateRange(timestamp);
+      
+      if (element.activity) {
+        const activityType = element.activity.topCandidate?.type?.toLowerCase() || 'unknown';
+        activityCounts[activityType] = (activityCounts[activityType] || 0) + 1;
+        estimatedPoints++;
+        
+        const probability = parseFloat(element.activity.topCandidate?.probability || '1.0');
+        if (probability <= 0.1) badProbability++; else goodProbability++;
+        
+        const distance = parseFloat(element.activity.distanceMeters || '1.0');
+        if (distance <= 1.0) zeroDistance++; else goodDistance++;
+        
+        if ((element as any).timelinePath?.points) {
+          totalTimelinePath += (element as any).timelinePath.points.length || 0;
+        }
+      }
+      
+      if (element.visit) {
+        estimatedPoints++;
+        activityCounts['still'] = (activityCounts['still'] || 0) + 1;
+        
+        if (element.visit.timelinePath?.points) {
+          totalTimelinePath += element.visit.timelinePath.points.length || 0;
+        }
+      }
+    }
+    
+    const scaleFactor = jsonData.length / totalElements;
+    estimatedPoints = Math.round(estimatedPoints * scaleFactor);
+    totalTimelinePath = Math.round(totalTimelinePath * scaleFactor);
+    badProbability = Math.round(badProbability * scaleFactor);
+    goodProbability = Math.round(goodProbability * scaleFactor);
+    zeroDistance = Math.round(zeroDistance * scaleFactor);
+    goodDistance = Math.round(goodDistance * scaleFactor);
+    
+    totalElements = jsonData.length; // Use actual count
+  }
+  
+  // TIMELINEOBJECTS FORMAT (timelineObjects.activitySegment/placeVisit)
+  else if (jsonData.timelineObjects) {
+    const objects = jsonData.timelineObjects;
+    const sampleSize = Math.min(objects.length, 1000);
+    const step = Math.ceil(objects.length / sampleSize);
+    
+    for (let i = 0; i < objects.length; i += step) {
+      const obj = objects[i];
+      totalElements++;
+      
+      if (obj.activitySegment) {
+        const segment = obj.activitySegment;
+        estimatedPoints++;
+        
+        if (segment.duration?.startTimestampMs) {
+          updateDateRange(new Date(parseInt(segment.duration.startTimestampMs, 10)));
+        }
+        
+        const activityType = segment.activityType?.toLowerCase() || 'unknown';
+        activityCounts[activityType] = (activityCounts[activityType] || 0) + 1;
+        
+        const distance = parseFloat(segment.distance || '1.0');
+        if (distance <= 1.0) zeroDistance++; else goodDistance++;
+        
+        if (segment.waypointPath?.waypoints) {
+          totalTimelinePath += segment.waypointPath.waypoints.length || 0;
+        }
+      }
+      
+      if (obj.placeVisit) {
+        const visit = obj.placeVisit;
+        estimatedPoints++;
+        activityCounts['still'] = (activityCounts['still'] || 0) + 1;
+        
+        if (visit.duration?.startTimestampMs) {
+          updateDateRange(new Date(parseInt(visit.duration.startTimestampMs, 10)));
+        }
+      }
+    }
+    
+    const scaleFactor = objects.length / totalElements;
+    estimatedPoints = Math.round(estimatedPoints * scaleFactor);
+    totalTimelinePath = Math.round(totalTimelinePath * scaleFactor);
+    zeroDistance = Math.round(zeroDistance * scaleFactor);
+    goodDistance = Math.round(goodDistance * scaleFactor);
+    
+    totalElements = objects.length;
+  }
+  
+  // LOCATIONS FORMAT (locations[].timestampMs)
+  else if (jsonData.locations && Array.isArray(jsonData.locations)) {
+    const locations = jsonData.locations;
+    const sampleSize = Math.min(locations.length, 1000);
+    const step = Math.ceil(locations.length / sampleSize);
+    
+    for (let i = 0; i < locations.length; i += step) {
+      const location = locations[i];
+      totalElements++;
+      estimatedPoints++;
+      
+      if (location.timestampMs) {
+        updateDateRange(new Date(parseInt(location.timestampMs, 10)));
+      }
+      
+      const accuracy = parseFloat(location.accuracy || '50');
+      if (accuracy > 200) badAccuracy++;
+      
+      activityCounts['location'] = (activityCounts['location'] || 0) + 1;
+    }
+    
+    const scaleFactor = locations.length / totalElements;
+    estimatedPoints = Math.round(estimatedPoints * scaleFactor);
+    
+    totalElements = locations.length;
+  }
+  
+  else {
+    console.log('❌ Unrecognized Google Location History format');
+    return null;
+  }
+  
+  console.log(`📈 Quick analysis: ${totalElements} elements, ~${estimatedPoints} estimated points, ~${totalTimelinePath} timelinePath points`);
+  console.log(`📉 Quality: ${badProbability} bad probability, ${zeroDistance} zero distance, ${badAccuracy} bad accuracy`);
+  
+  return {
+    totalElements,
+    estimatedPoints,
+    dateRange: {
+      start: minTimestamp ? minTimestamp.toISOString() : null,
+      end: maxTimestamp ? maxTimestamp.toISOString() : null
+    },
+    dataQuality: {
+      badProbability,
+      goodProbability,
+      zeroDistance,
+      goodDistance,
+      badAccuracy,
+      totalTimelinePath
+    },
+    activityBreakdown: activityCounts
+  };
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication - MANDATORY for Replit Auth
   await setupAuth(app);
@@ -348,60 +536,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: errorMsg });
       }
 
-      // Parse the location data with FIXED timelinePath parsing
-      const parsedLocations = parseGoogleLocationHistory(jsonData);
+      // SMART UPLOAD: Quick metadata extraction only - NO PROCESSING
+      console.log('🔍 Starting smart metadata extraction...');
       
-      if (parsedLocations.length === 0) {
+      // Quick scan for metadata without full parsing
+      const metadata = await extractQuickMetadata(jsonData);
+      
+      if (!metadata || metadata.totalElements === 0) {
         return res.status(400).json({ 
           error: "No location data found in the file" 
         });
       }
 
-      // Create dataset record for this upload
+      // Create dataset record - UNPROCESSED with metadata
       const dataset = await storage.createLocationDataset({
         userId,
         filename: req.file.originalname || 'location-history.json',
         fileSize: req.file.buffer.length,
-        totalPoints: parsedLocations.length,
-        deduplicatedPoints: 0, // Will be updated after processing
+        totalPoints: metadata.estimatedPoints,
+        deduplicatedPoints: 0, // Will be set during processing
       });
 
-      // Clear existing user data before importing new (optional - user can have multiple datasets)
-      // await storage.clearUserLocationData(userId);
-
-      // Convert to database format with user association
-      const locationPoints = parsedLocations.map(location => ({
-        userId,
-        datasetId: dataset.id,
-        lat: location.lat,
-        lng: location.lng,
-        timestamp: location.timestamp,
-        accuracy: location.accuracy || null,
-        activity: location.activity || null,
-        address: null,
-        city: null,
-        state: null,
-        country: null,
-      }));
-
-      // Store in database
-      const savedPoints = await storage.insertLocationPoints(locationPoints);
-
-      // Update dataset with actual saved count
-      await storage.updateDatasetProcessed(dataset.id, savedPoints.length);
+      // Store raw file content for later processing (smart upload!)
+      await storage.storeRawFile(dataset.id, userId, JSON.stringify(jsonData));
 
       res.json({
         success: true,
-        message: `Successfully imported ${savedPoints.length} location points with FIXED timelinePath parsing`,
-        pointCount: savedPoints.length,
+        message: `File uploaded successfully: ${req.file.originalname}`,
         datasetId: dataset.id,
-        dateRange: {
-          start: new Date(Math.min(...parsedLocations.map(l => l.timestamp.getTime()))),
-          end: new Date(Math.max(...parsedLocations.map(l => l.timestamp.getTime())))
+        status: 'uploaded_not_processed',
+        metadata: {
+          filename: req.file.originalname,
+          fileSize: Math.round(req.file.buffer.length / (1024 * 1024)) + 'MB',
+          totalElements: metadata.totalElements,
+          estimatedPoints: metadata.estimatedPoints,
+          dateRange: metadata.dateRange,
+          dataQuality: metadata.dataQuality,
+          activityBreakdown: metadata.activityBreakdown
         }
       });
 
-      console.log(`Successfully imported ${savedPoints.length} points for user ${userId} with fixed timelinePath parsing`);
+      console.log(`📁 File uploaded (metadata extracted): ${req.file.originalname} - ${metadata.estimatedPoints} estimated points, quality: ${metadata.dataQuality.goodProbability}/${metadata.totalElements} good probability`);
 
     } catch (error) {
       console.error("Error processing location history:", error);
