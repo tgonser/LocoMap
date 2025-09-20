@@ -1064,8 +1064,8 @@ export class DatabaseStorage implements IStorage {
   async computeTravelStopsFromPoints(
     userId: string,
     datasetId: string,
-    minDwellMinutes: number = 15,
-    maxDistanceMeters: number = 150
+    minDwellMinutes: number = 8,
+    maxDistanceMeters: number = 300
   ): Promise<number> {
     console.log(`🔍 Computing travel stops for user ${userId}, dataset ${datasetId} (min dwell: ${minDwellMinutes}min, max distance: ${maxDistanceMeters}m)`);
     
@@ -1098,11 +1098,11 @@ export class DatabaseStorage implements IStorage {
         continue;
       }
 
-      // Check if point is within distance threshold of cluster centroid
-      const clusterCentroid = this.calculateClusterCentroid(currentCluster);
+      // Check if point is within distance threshold of FIRST point in cluster (not moving centroid)
+      const clusterOrigin = currentCluster[0]; // Use first point as stable reference
       const distanceToCluster = this.calculateDistanceMeters(
         point.lat, point.lng,
-        clusterCentroid.lat, clusterCentroid.lng
+        clusterOrigin.lat, clusterOrigin.lng
       );
 
       if (distanceToCluster <= maxDistanceMeters) {
@@ -1384,8 +1384,8 @@ export class DatabaseStorage implements IStorage {
     datasetId: string, 
     startDate: Date, 
     endDate: Date,
-    minDwellMinutes: number = 15,
-    maxDistanceMeters: number = 150
+    minDwellMinutes: number = 8,
+    maxDistanceMeters: number = 300
   ): Promise<number> {
     console.log(`🔍 Computing travel stops for date range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
     
@@ -1419,11 +1419,11 @@ export class DatabaseStorage implements IStorage {
         continue;
       }
 
-      // Check if point is within distance threshold of cluster centroid
-      const clusterCentroid = this.calculateClusterCentroid(currentCluster);
+      // Check if point is within distance threshold of FIRST point in cluster (not moving centroid)
+      const clusterOrigin = currentCluster[0]; // Use first point as stable reference
       const distanceToCluster = this.calculateDistanceMeters(
         point.lat, point.lng,
-        clusterCentroid.lat, clusterCentroid.lng
+        clusterOrigin.lat, clusterOrigin.lng
       );
 
       if (distanceToCluster <= maxDistanceMeters) {
@@ -1524,8 +1524,8 @@ export class DatabaseStorage implements IStorage {
     datasetId: string, 
     startDate: Date, 
     endDate: Date,
-    minDwellMinutes: number = 15,
-    maxDistanceMeters: number = 150
+    minDwellMinutes: number = 8,
+    maxDistanceMeters: number = 300
   ): Promise<{ stopsCreated: number; segmentsCreated: number; stopGeocoded?: number }> {
     console.log(`🎯 Starting DATE-RANGE waypoint computation for user ${userId}:`, {
       dataset: datasetId,

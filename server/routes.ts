@@ -805,8 +805,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         datasetId: z.string().min(1, "Dataset ID is required"),
         startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Start date must be YYYY-MM-DD format"),
         endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "End date must be YYYY-MM-DD format"),
-        minDwellMinutes: z.number().min(1).max(60).default(15),
-        maxDistanceMeters: z.number().min(50).max(500).default(150)
+        minDwellMinutes: z.number().min(1).max(60).default(8),
+        maxDistanceMeters: z.number().min(50).max(500).default(300)
       });
 
       let validatedInput;
