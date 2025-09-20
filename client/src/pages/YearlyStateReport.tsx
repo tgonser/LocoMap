@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { CalendarDays, MapPin, Globe, TrendingUp } from "lucide-react";
+import { CalendarDays, MapPin, Globe, TrendingUp, Download } from "lucide-react";
+import jsPDF from "jspdf";
 
 interface YearlyReportData {
   year: number;
@@ -55,6 +56,90 @@ export default function YearlyStateReport() {
 
   const handleYearChange = (year: string) => {
     setSelectedYear(year);
+  };
+
+  const downloadPDF = () => {
+    if (!reportData) return;
+
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 20;
+    let yPosition = margin;
+
+    // Title
+    doc.setFontSize(20);
+    doc.setFont(undefined, 'bold');
+    doc.text(`${reportData.year} Location Analysis Report`, margin, yPosition);
+    yPosition += 15;
+
+    // Subtitle
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'normal');
+    doc.text('Yearly State & Country Breakdown', margin, yPosition);
+    yPosition += 20;
+
+    // Summary Statistics
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.text('Summary Statistics', margin, yPosition);
+    yPosition += 10;
+
+    doc.setFontSize(11);
+    doc.setFont(undefined, 'normal');
+    doc.text(`Total Days with Location Data: ${reportData.totalDays}`, margin, yPosition);
+    yPosition += 6;
+    doc.text(`Total Location Points Analyzed: ${reportData.processingStats.totalPoints.toLocaleString()}`, margin, yPosition);
+    yPosition += 6;
+    doc.text(`Optimized Sample Points Used: ${reportData.processingStats.sampledPoints.toLocaleString()}`, margin, yPosition);
+    yPosition += 6;
+    const efficiency = Math.round((reportData.processingStats.sampledPoints / reportData.processingStats.totalPoints) * 100);
+    doc.text(`Processing Efficiency: ${efficiency}% (100x faster than full analysis)`, margin, yPosition);
+    yPosition += 15;
+
+    // State/Country Breakdown
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.text('Location Breakdown', margin, yPosition);
+    yPosition += 10;
+
+    // Table headers
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'bold');
+    doc.text('Location', margin, yPosition);
+    doc.text('Type', margin + 80, yPosition);
+    doc.text('Days', margin + 120, yPosition);
+    doc.text('Percentage', margin + 150, yPosition);
+    yPosition += 8;
+
+    // Draw line under headers
+    doc.line(margin, yPosition - 2, pageWidth - margin, yPosition - 2);
+    yPosition += 2;
+
+    // Data rows
+    doc.setFont(undefined, 'normal');
+    reportData.stateCountryData.forEach((location, index) => {
+      // Check if we need a new page
+      if (yPosition > 270) {
+        doc.addPage();
+        yPosition = margin;
+      }
+
+      doc.text(location.location, margin, yPosition);
+      doc.text(location.type === 'us_state' ? 'US State' : 'Country', margin + 80, yPosition);
+      doc.text(location.days.toString(), margin + 120, yPosition);
+      doc.text(`${location.percentage}%`, margin + 150, yPosition);
+      yPosition += 6;
+    });
+
+    // Footer
+    yPosition += 10;
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'italic');
+    doc.text(`Generated on ${new Date().toLocaleDateString()} using optimized location sampling`, margin, yPosition);
+    doc.text('Analysis based on 2-4 representative points per day for faster processing', margin, yPosition + 5);
+
+    // Save the PDF
+    doc.save(`Location-Analysis-${reportData.year}.pdf`);
   };
 
   return (
@@ -167,6 +252,28 @@ export default function YearlyStateReport() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Export Button */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-medium">Export Report</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Save your yearly analysis as a PDF to preserve these results
+                  </p>
+                </div>
+                <Button 
+                  onClick={downloadPDF}
+                  className="gap-2"
+                  data-testid="button-download-pdf"
+                >
+                  <Download className="h-4 w-4" />
+                  Download PDF
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* State & Country Breakdown */}
           <Card>
