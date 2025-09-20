@@ -545,7 +545,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const firstItem = arrayData[0];
               console.log(`🔍 First item keys: ${Object.keys(firstItem).join(', ')}`);
               
-              if (firstItem.timelinePath || firstItem.activitySegment || firstItem.placeVisit) {
+              // Modern format indicators - these are timelineObjects elements
+              const hasModernIndicators = firstItem.timelinePath || firstItem.activitySegment || firstItem.placeVisit ||
+                // Modern visit format (has startTime/endTime with visit)
+                (firstItem.startTime && firstItem.endTime && firstItem.visit) ||
+                // Modern activity segment format
+                (firstItem.startTime && firstItem.endTime && firstItem.activitySegment);
+              
+              if (hasModernIndicators) {
                 console.log(`✅ Restored modern timelineObjects format from coerced object`);
                 jsonData = { timelineObjects: arrayData };
               } else {
