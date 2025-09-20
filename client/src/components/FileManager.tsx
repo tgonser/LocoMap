@@ -69,6 +69,7 @@ export default function FileManager({ onFileUpload }: FileManagerProps) {
   const handleDeleteFile = async () => {
     if (!currentDataset) return;
     
+    const fileName = currentDataset.filename;
     setIsDeleting(true);
     try {
       const response = await fetch(`/api/datasets/${currentDataset.id}`, {
@@ -77,13 +78,18 @@ export default function FileManager({ onFileUpload }: FileManagerProps) {
 
       if (response.ok) {
         await refetchDatasets(); // Refresh the dataset list
-        setLastUploadResult(null);
+        setLastUploadResult(null); // Clear upload result since file is deleted
         console.log('Dataset deleted successfully');
+        alert(`✅ File "${fileName}" deleted successfully.\n\nYou can now upload a new location history file.`);
       } else {
-        console.error('Failed to delete dataset');
+        const result = await response.json();
+        const errorMsg = result.error || 'Failed to delete dataset';
+        console.error('Failed to delete dataset:', errorMsg);
+        alert(`❌ Delete failed: ${errorMsg}`);
       }
     } catch (error) {
       console.error('Error deleting dataset:', error);
+      alert(`❌ Delete error: ${error.message || 'Network error'}`);
     } finally {
       setIsDeleting(false);
     }
@@ -132,6 +138,7 @@ export default function FileManager({ onFileUpload }: FileManagerProps) {
   };
 
   // Show the metadata from the last upload result if available
+  // TODO: Store metadata in database during upload for full persistence
   const metadata: FileMetadata | null = lastUploadResult?.metadata || null;
 
   if (isLoading) {
