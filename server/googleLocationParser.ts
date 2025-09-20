@@ -134,19 +134,7 @@ function parseModernFormat(jsonData: ModernExport): ParsedLocationPoint[] {
           
           console.log(`📍 Visit: ${new Date(startUTC).toISOString()}`);
           
-          // Add place visit location as a single point
-          const location = visit.location;
-          if (location?.latitudeE7 !== undefined && location?.longitudeE7 !== undefined) {
-            const lat = location.latitudeE7 / 1e7;
-            const lng = location.longitudeE7 / 1e7;
-            
-            results.push({
-              lat,
-              lng,
-              timestamp: new Date(startUTC),
-              activity: 'still'
-            });
-          }
+          // Skip visit markers - we only want timelinePath points for route visualization
         }
       }
     }
@@ -200,10 +188,7 @@ function parseModernFormat(jsonData: ModernExport): ParsedLocationPoint[] {
       }
     }
 
-    // Skip path points within visit windows to avoid double counting with place markers
-    if (bestSegment && bestSegment.kind === 'visit') {
-      return; // Skip this point - we already added the place visit marker
-    }
+    // Include all timelinePath points - no visit markers to avoid double counting with
 
     // Add point with appropriate activity type
     const activityType = bestSegment ? bestSegment.activityType : 'route';
