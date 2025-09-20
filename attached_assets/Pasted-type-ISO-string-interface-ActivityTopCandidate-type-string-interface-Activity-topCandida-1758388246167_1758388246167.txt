@@ -1,0 +1,65 @@
+type ISO = string;
+
+interface ActivityTopCandidate { type?: string }
+interface Activity { topCandidate?: ActivityTopCandidate }
+
+interface Duration { startTimestamp?: ISO; endTimestamp?: ISO }
+
+interface Waypoint { latE7: number; lngE7: number; /* usually no time */ }
+interface WaypointPath { waypoints?: Waypoint[] }
+
+interface RawPathPoint { latE7: number; lngE7: number; timestampMs?: string }
+interface SimplifiedRawPath { points?: RawPathPoint[] }
+
+interface TimelinePoint { latE7: number; lngE7: number; time?: ISO }       // key: time is ISO
+interface TimelinePath { point?: TimelinePoint[] }
+
+interface ActivitySegment {
+  startLocation?: { latitudeE7: number; longitudeE7: number };
+  endLocation?:   { latitudeE7: number; longitudeE7: number };
+  duration?: Duration;
+  activity?: Activity;
+  activityType?: string;                             // sometimes present
+  waypointPath?: WaypointPath;                       // optional
+  simplifiedRawPath?: SimplifiedRawPath;            // optional
+}
+
+interface PlaceLocation {
+  latitudeE7: number;
+  longitudeE7: number;
+  address?: string;
+}
+
+interface PlaceVisit {
+  location?: PlaceLocation;
+  duration?: Duration;
+  // childVisits optional but not required for core parsing
+}
+
+interface TimelineObject {
+  activitySegment?: ActivitySegment;
+  placeVisit?: PlaceVisit;
+  timelinePath?: TimelinePath;                       // <-- where most samples live
+  // other unknown props ignored
+}
+
+interface ModernExport { timelineObjects: TimelineObject[] }
+
+export interface ParsedPoint {
+  lat: number;
+  lng: number;
+  tUTC: number;           // epoch ms (UTC)
+  activity?: string;      // segment activityType if assigned, else 'route'
+  // optional enrichment:
+  tz?: string;            // e.g. 'Europe/Rome'
+  localISO?: string;      // local time string
+  localDate?: string;     // 'YYYY-MM-DD' in local tz
+}
+
+interface Segment {
+  kind: 'activity' | 'visit';
+  startUTC: number;       // epoch ms
+  endUTC: number;         // epoch ms
+  activityType?: string;  // from activity.topCandidate.type
+  raw: ActivitySegment | PlaceVisit;
+}
