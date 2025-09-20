@@ -543,14 +543,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Check if this looks like a modern format that got coerced
             if (arrayData.length > 0 && arrayData[0] && typeof arrayData[0] === 'object') {
               const firstItem = arrayData[0];
+              console.log(`🔍 First item keys: ${Object.keys(firstItem).join(', ')}`);
+              
               if (firstItem.timelinePath || firstItem.activitySegment || firstItem.placeVisit) {
                 console.log(`✅ Restored modern timelineObjects format from coerced object`);
                 jsonData = { timelineObjects: arrayData };
               } else {
-                console.log(`📊 Detected legacy array format`);
+                console.log(`📊 Detected legacy array format (no modern format indicators)`);
                 jsonData = arrayData;
               }
+            } else {
+              console.log(`📊 Converting to array format`);
+              jsonData = arrayData;
             }
+          }
+        }
+        
+        // Additional fix: If we have an array that looks like modern format, wrap it
+        if (Array.isArray(jsonData) && jsonData.length > 0 && jsonData[0] && typeof jsonData[0] === 'object') {
+          const firstItem = jsonData[0];
+          console.log(`🔍 Array first item keys: ${Object.keys(firstItem).join(', ')}`);
+          
+          if (firstItem.timelinePath || firstItem.activitySegment || firstItem.placeVisit) {
+            console.log(`✅ Detected array of timelineObjects - wrapping in proper format`);
+            jsonData = { timelineObjects: jsonData };
           }
         }
         
