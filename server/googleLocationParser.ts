@@ -51,6 +51,20 @@ interface GoogleLocationHistoryNew {
         endTimestamp: string;
       };
       activityType?: string;
+      // Enhanced: Include detailed path data similar to mobile format
+      waypointPath?: {
+        waypoints?: Array<{
+          latE7: number;
+          lngE7: number;
+        }>;
+      };
+      simplifiedRawPath?: {
+        points?: Array<{
+          latE7: number;
+          lngE7: number;
+          timestampMs: string;
+        }>;
+      };
     };
     placeVisit?: {
       location?: {
@@ -62,7 +76,19 @@ interface GoogleLocationHistoryNew {
         startTimestamp: string;
         endTimestamp: string;
       };
+      // Enhanced: Include path data for place visits
+      childVisits?: Array<{
+        location?: {
+          latitudeE7: number;
+          longitudeE7: number;
+        };
+        duration?: {
+          startTimestamp: string;
+          endTimestamp: string;
+        };
+      }>;
     };
+    [key: string]: any; // Allow for other unknown properties like path data
   }>;
 }
 
@@ -338,12 +364,14 @@ export function parseGoogleLocationHistory(jsonData: any): ParsedLocationPoint[]
   
   // Handle new format (timelineObjects)
   else if (jsonData.timelineObjects) {
+    console.log('Detected Google timelineObjects format');
     const data = jsonData as GoogleLocationHistoryNew;
     
     data.timelineObjects?.forEach(obj => {
       // Handle activity segments
       if (obj.activitySegment) {
         const segment = obj.activitySegment;
+        const activityType = segment.activityType?.toLowerCase() || 'unknown';
         
         // Start location
         if (segment.startLocation && segment.duration?.startTimestamp) {
@@ -351,7 +379,45 @@ export function parseGoogleLocationHistory(jsonData: any): ParsedLocationPoint[]
             lat: segment.startLocation.latitudeE7 / 1e7,
             lng: segment.startLocation.longitudeE7 / 1e7,
             timestamp: new Date(segment.duration.startTimestamp),
-            activity: segment.activityType?.toLowerCase() || 'unknown'
+            activity: activityType
+          });
+        }
+        
+        // Enhanced: Extract detailed waypoint path data
+        if (segment.waypointPath?.waypoints && segment.duration?.startTimestamp) {
+          const baseTimestamp = new Date(segment.duration.startTimestamp);
+          const endTimestamp = new Date(segment.duration.endTimestamp || segment.duration.startTimestamp);
+          const totalDuration = endTimestamp.getTime() - baseTimestamp.getTime();
+          
+          segment.waypointPath.waypoints.forEach((waypoint, index) => {
+            // Distribute waypoint timestamps evenly across the activity duration
+            const timeRatio = segment.waypointPath!.waypoints!.length > 1 
+              ? index / (segment.waypointPath!.waypoints!.length - 1)
+              : 0;
+            const waypointTimestamp = new Date(baseTimestamp.getTime() + totalDuration * timeRatio);
+            
+            results.push({
+              lat: waypoint.latE7 / 1e7,
+              lng: waypoint.lngE7 / 1e7,
+              timestamp: waypointTimestamp,
+              activity: activityType
+            });
+          });
+        }
+        
+        // Enhanced: Extract simplified raw path points
+        if (segment.simplifiedRawPath?.points) {
+          segment.simplifiedRawPath.points.forEach(point => {
+            // Guard against invalid timestamps
+            const timestampMs = point.timestampMs ? parseInt(point.timestampMs) : null;
+            if (timestampMs && !isNaN(timestampMs)) {
+              results.push({
+                lat: point.latE7 / 1e7,
+                lng: point.lngE7 / 1e7,
+                timestamp: new Date(timestampMs),
+                activity: activityType
+              });
+            }
           });
         }
         
@@ -361,7 +427,7 @@ export function parseGoogleLocationHistory(jsonData: any): ParsedLocationPoint[]
             lat: segment.endLocation.latitudeE7 / 1e7,
             lng: segment.endLocation.longitudeE7 / 1e7,
             timestamp: new Date(segment.duration.endTimestamp),
-            activity: segment.activityType?.toLowerCase() || 'unknown'
+            activity: activityType
           });
         }
       }
@@ -374,7 +440,46 @@ export function parseGoogleLocationHistory(jsonData: any): ParsedLocationPoint[]
           timestamp: new Date(obj.placeVisit.duration.startTimestamp),
           activity: 'still' // Place visits are typically stationary
         });
+        
+        // Enhanced: Extract child visits (sub-locations within a place)
+        if (obj.placeVisit.childVisits) {
+          obj.placeVisit.childVisits.forEach(childVisit => {
+            if (childVisit.location && childVisit.duration?.startTimestamp) {
+              results.push({
+                lat: childVisit.location.latitudeE7 / 1e7,
+                lng: childVisit.location.longitudeE7 / 1e7,
+                timestamp: new Date(childVisit.duration.startTimestamp),
+                activity: 'still'
+              });
+            }
+          });
+        }
       }
+      
+      // Enhanced: Check for any other potential path data in unknown properties
+      Object.keys(obj).forEach(key => {
+        if (key !== 'activitySegment' && key !== 'placeVisit' && obj[key]) {
+          const unknownObj = obj[key] as any;
+          
+          // Look for path-like structures with coordinates
+          if (unknownObj.points && Array.isArray(unknownObj.points)) {
+            unknownObj.points.forEach((point: any) => {
+              if (point.latE7 && point.lngE7) {
+                const timestamp = point.timestampMs 
+                  ? new Date(parseInt(point.timestampMs))
+                  : new Date(); // Fallback timestamp
+                  
+                results.push({
+                  lat: point.latE7 / 1e7,
+                  lng: point.lngE7 / 1e7,
+                  timestamp: timestamp,
+                  activity: 'unknown'
+                });
+              }
+            });
+          }
+        }
+      });
     });
   }
   
