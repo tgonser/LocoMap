@@ -164,13 +164,25 @@ export function parseGoogleLocationHistory(jsonData: any): ParsedLocationPoint[]
   return deduplicated;
 }
 
-// Validation function for modern format
+// Validation function for modern format - temporary debugging version
 export function validateGoogleLocationHistory(jsonData: any): boolean {
   if (!jsonData) return false;
 
-  // Only validate modern format with timelineObjects
+  // Log the actual structure to debug
+  console.log(`🔍 File validation - Top-level keys:`, Object.keys(jsonData));
+  console.log(`🔍 File validation - Type:`, typeof jsonData);
+  
+  // Accept modern format with timelineObjects
   if (jsonData.timelineObjects && Array.isArray(jsonData.timelineObjects)) {
+    console.log(`✅ Valid timelineObjects format with ${jsonData.timelineObjects.length} objects`);
     return jsonData.timelineObjects.length > 0;
+  }
+
+  // Log what we found instead
+  if (Array.isArray(jsonData)) {
+    console.log(`❌ Found array with ${jsonData.length} elements, not timelineObjects`);
+  } else if (typeof jsonData === 'object') {
+    console.log(`❌ Found object with keys: ${Object.keys(jsonData).join(', ')}`);
   }
 
   return false;
