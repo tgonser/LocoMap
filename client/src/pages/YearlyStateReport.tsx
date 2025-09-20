@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,8 @@ interface YearlyReportData {
 
 export default function YearlyStateReport() {
   const [selectedYear, setSelectedYear] = useState<string>("");
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingProgress, setProcessingProgress] = useState<string>("");
   
   // Generate year options (current year back to 2015)
   const currentYear = new Date().getFullYear();
@@ -33,11 +35,21 @@ export default function YearlyStateReport() {
 
   const { data: reportData, isLoading, error } = useQuery<YearlyReportData>({
     queryKey: ["/api/yearly-state-report", selectedYear],
-    enabled: !!selectedYear,
+    enabled: !!selectedYear && !isProcessing,
     queryFn: async () => {
-      const response = await fetch(`/api/yearly-state-report?year=${selectedYear}`);
-      if (!response.ok) throw new Error("Failed to fetch yearly report");
-      return response.json();
+      setIsProcessing(true);
+      setProcessingProgress("Starting yearly report generation...");
+      
+      try {
+        const response = await fetch(`/api/yearly-state-report?year=${selectedYear}`);
+        if (!response.ok) throw new Error("Failed to fetch yearly report");
+        
+        setProcessingProgress("Processing complete!");
+        return response.json();
+      } finally {
+        setIsProcessing(false);
+        setProcessingProgress("");
+      }
     },
   });
 
@@ -93,12 +105,22 @@ export default function YearlyStateReport() {
       </Card>
 
       {/* Loading State */}
-      {isLoading && selectedYear && (
+      {(isLoading || isProcessing) && selectedYear && (
         <Card>
           <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-              <span>Generating optimized yearly report for {selectedYear}...</span>
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                <span>Generating optimized yearly report for {selectedYear}...</span>
+              </div>
+              {processingProgress && (
+                <div className="text-sm text-muted-foreground">
+                  {processingProgress}
+                </div>
+              )}
+              <div className="text-xs text-muted-foreground">
+                Sampling 2-4 points per day and geocoding for faster processing...
+              </div>
             </div>
           </CardContent>
         </Card>
