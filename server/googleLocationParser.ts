@@ -330,8 +330,59 @@ function parseMobileArrayFormat(jsonData: GoogleLocationHistoryMobileArray): Par
       }
     }
     
+    // 🎯 CRITICAL: Handle standalone timelinePath elements (discovered at ~line 595,562)
+    // Only process if not already handled by visit/activity parsing
+    if (element.timelinePath?.points && Array.isArray(element.timelinePath.points) && !element.activity && !element.visit) {
+      console.log(`📍 Found standalone timelinePath with ${element.timelinePath.points.length} points at element ${i}`);
+      
+      // Try to get base timestamp from the element or nearby elements
+      let baseTimestamp: Date | null = null;
+      if (element.startTime) {
+        baseTimestamp = normalizeTimestamp(element.startTime);
+      } else if (element.endTime) {
+        baseTimestamp = normalizeTimestamp(element.endTime);
+      } else if (lastKnownTimestamp) {
+        baseTimestamp = lastKnownTimestamp;
+      } else {
+        // Look ahead/behind for timestamp context
+        for (let j = Math.max(0, i - 5); j < Math.min(jsonData.length, i + 5); j++) {
+          const contextElement = jsonData[j];
+          if (contextElement && contextElement.startTime) {
+            baseTimestamp = normalizeTimestamp(contextElement.startTime);
+            break;
+          }
+        }
+      }
+      
+      if (baseTimestamp) {
+        element.timelinePath.points.forEach((pathPoint: any, pointIndex: number) => {
+          if (pathPoint.point) {
+            const coords = parseGeoString(pathPoint.point);
+            if (coords) {
+              let timestamp = baseTimestamp!;
+              
+              // Calculate timestamp based on duration offset
+              if (pathPoint.durationMinutesOffsetFromStartTime) {
+                const offsetMinutes = parseInt(pathPoint.durationMinutesOffsetFromStartTime);
+                if (!isNaN(offsetMinutes)) {
+                  timestamp = new Date(baseTimestamp!.getTime() + offsetMinutes * 60 * 1000);
+                }
+              }
+              
+              results.push({
+                lat: coords.lat,
+                lng: coords.lng,
+                timestamp: timestamp,
+                activity: 'route' // Mark as route data for identification
+              });
+            }
+          }
+        });
+      }
+    }
+    
     // Log unhandled elements only if none of the above handled it
-    if (i < 3 && !element.visit && !element.activity && !element.point) {
+    if (i < 3 && !element.visit && !element.activity && !element.point && !element.timelinePath) {
       console.log(`Unhandled element type ${i}:`, Object.keys(element));
     }
   }
@@ -339,12 +390,14 @@ function parseMobileArrayFormat(jsonData: GoogleLocationHistoryMobileArray): Par
   // Debug: Count points by source for troubleshooting  
   const visitPoints = results.filter(r => r.activity === 'still').length;
   const visitTimelinePoints = results.filter(r => r.activity === 'walking').length; 
-  const activityPoints = results.filter(r => r.activity && r.activity !== 'still' && r.activity !== 'walking').length;
+  const activityPoints = results.filter(r => r.activity && r.activity !== 'still' && r.activity !== 'walking' && r.activity !== 'route').length;
+  const routePoints = results.filter(r => r.activity === 'route').length;
   
   console.log(`=== PARSING RESULTS ===`);
   console.log(`Visit points: ${visitPoints}`);
   console.log(`Visit timelinePath points: ${visitTimelinePoints}`); 
   console.log(`Activity points: ${activityPoints}`);
+  console.log(`🎯 Route points (standalone timelinePath): ${routePoints}`);
   console.log(`Total parsed: ${results.length} location points from mobile format`);
   console.log(`======================`);
   
