@@ -164,25 +164,31 @@ export function parseGoogleLocationHistory(jsonData: any): ParsedLocationPoint[]
   return deduplicated;
 }
 
-// Validation function for modern format - temporary debugging version
+// Temporary permissive validation to allow uploads and debug structure
 export function validateGoogleLocationHistory(jsonData: any): boolean {
   if (!jsonData) return false;
 
-  // Log the actual structure to debug
-  console.log(`🔍 File validation - Top-level keys:`, Object.keys(jsonData));
   console.log(`🔍 File validation - Type:`, typeof jsonData);
   
-  // Accept modern format with timelineObjects
-  if (jsonData.timelineObjects && Array.isArray(jsonData.timelineObjects)) {
-    console.log(`✅ Valid timelineObjects format with ${jsonData.timelineObjects.length} objects`);
-    return jsonData.timelineObjects.length > 0;
-  }
-
-  // Log what we found instead
   if (Array.isArray(jsonData)) {
-    console.log(`❌ Found array with ${jsonData.length} elements, not timelineObjects`);
-  } else if (typeof jsonData === 'object') {
-    console.log(`❌ Found object with keys: ${Object.keys(jsonData).join(', ')}`);
+    console.log(`🔍 Found array format with ${jsonData.length} elements`);
+    if (jsonData.length > 0) {
+      console.log(`🔍 First element keys:`, Object.keys(jsonData[0] || {}));
+    }
+    return jsonData.length > 0; // Accept arrays temporarily
+  }
+  
+  if (typeof jsonData === 'object') {
+    console.log(`🔍 Found object with keys:`, Object.keys(jsonData));
+    
+    // Accept timelineObjects format
+    if (jsonData.timelineObjects && Array.isArray(jsonData.timelineObjects)) {
+      console.log(`✅ timelineObjects format with ${jsonData.timelineObjects.length} objects`);
+      return true;
+    }
+    
+    // Accept any object with data for debugging
+    return Object.keys(jsonData).length > 0;
   }
 
   return false;
