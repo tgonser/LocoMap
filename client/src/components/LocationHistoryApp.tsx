@@ -319,6 +319,7 @@ export default function LocationHistoryApp() {
                       <span className="hidden sm:inline">Change Range</span>
                     </Button>
                   )}
+                  {getViewModeButton('upload', <Upload className="w-4 h-4" />, 'Upload')}
                   {getViewModeButton('map', <MapPin className="w-4 h-4" />, 'Map')}
                   {getViewModeButton('analytics', <BarChart3 className="w-4 h-4" />, 'Analytics')}
                 </div>
