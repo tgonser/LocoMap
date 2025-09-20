@@ -270,6 +270,16 @@ export class DatabaseStorage implements IStorage {
     await db.delete(locationDatasets).where(eq(locationDatasets.userId, userId));
   }
 
+  async deleteLocationDataset(datasetId: string, userId: string): Promise<void> {
+    await db.delete(locationDatasets)
+      .where(and(eq(locationDatasets.id, datasetId), eq(locationDatasets.userId, userId)));
+  }
+
+  async deleteLocationPointsByDataset(datasetId: string, userId: string): Promise<void> {
+    await db.delete(locationPoints)
+      .where(and(eq(locationPoints.datasetId, datasetId), eq(locationPoints.userId, userId)));
+  }
+
   // Unique location operations
   async insertUniqueLocations(locations: InsertUniqueLocation[]): Promise<UniqueLocation[]> {
     if (locations.length === 0) return [];

@@ -908,6 +908,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delete a specific dataset
+  app.delete("/api/datasets/:datasetId", isAuthenticated, async (req, res) => {
+    try {
+      const { claims } = getAuthenticatedUser(req);
+      const userId = claims.sub;
+      const { datasetId } = req.params;
+
+      // Check if dataset exists and belongs to user
+      const dataset = await storage.getLocationDataset(datasetId, userId);
+      if (!dataset) {
+        return res.status(404).json({ error: "Dataset not found" });
+      }
+
+      console.log(`🗑️ Deleting dataset ${datasetId} (${dataset.filename}) for user ${userId}`);
+
+      // Delete associated location points first
+      await storage.deleteLocationPointsByDataset(datasetId, userId);
+
+      // Delete the dataset
+      await storage.deleteLocationDataset(datasetId, userId);
+
+      console.log(`✅ Successfully deleted dataset ${datasetId}`);
+      res.json({ success: true, message: `Dataset ${dataset.filename} deleted successfully` });
+    } catch (error) {
+      console.error("Error deleting dataset:", error);
+      res.status(500).json({ error: "Failed to delete dataset" });
+    }
+  });
+
   // Protected route: Clear user's location data
   app.delete("/api/locations", isAuthenticated, async (req, res) => {
     try {
