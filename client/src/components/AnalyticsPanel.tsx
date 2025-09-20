@@ -711,7 +711,9 @@ export default function AnalyticsPanel({
 
                 {/* City Jumps List */}
                 <div className="space-y-2">
-                  {analytics.cityJumps.cityJumps.map((jump, index) => (
+                  {analytics.cityJumps.cityJumps
+                    .filter(jump => jump.fromCity !== jump.toCity)
+                    .map((jump, index) => (
                     <div 
                       key={index} 
                       className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover-elevate"
