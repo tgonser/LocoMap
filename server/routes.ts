@@ -794,14 +794,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ================== WAYPOINT-BASED ANALYTICS ENDPOINTS ==================
 
   // NEW: Waypoint computation pipeline endpoint
-  app.post('/api/analytics/compute-waypoints', isAuthenticated, async (req, res) => {
+  // NEW: Date-range-first waypoint computation API
+  app.post('/api/waypoints/compute', isAuthenticated, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
 
-      // Input validation
+      // Input validation for date-range-first processing
       const waypointSchema = z.object({
         datasetId: z.string().min(1, "Dataset ID is required"),
+        startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Start date must be YYYY-MM-DD format"),
+        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "End date must be YYYY-MM-DD format"),
         minDwellMinutes: z.number().min(1).max(60).default(15),
         maxDistanceMeters: z.number().min(50).max(500).default(150)
       });
@@ -817,7 +820,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const { datasetId, minDwellMinutes, maxDistanceMeters } = validatedInput;
+      const { datasetId, startDate: startDateStr, endDate: endDateStr, minDwellMinutes, maxDistanceMeters } = validatedInput;
+      
+      // Convert to Date objects
+      const startDate = new Date(`${startDateStr}T00:00:00.000Z`);
+      const endDate = new Date(`${endDateStr}T23:59:59.999Z`);
+      
+      if (startDate >= endDate) {
+        return res.status(400).json({ error: "startDate must be before endDate" });
+      }
 
       // Verify dataset belongs to user
       const dataset = await storage.getLocationDataset(datasetId, userId);
@@ -827,11 +838,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      console.log(`🚀 Starting waypoint computation for user ${userId}, dataset ${datasetId}`);
+      console.log(`🚀 Starting DATE-RANGE waypoint computation for user ${userId}:`, {
+        dataset: datasetId,
+        dateRange: `${startDateStr} to ${endDateStr}`,
+        processing: "date-range-first (new architecture)"
+      });
       const startTime = Date.now();
 
-      // Run complete waypoint analytics pipeline
-      const result = await storage.computeWaypointAnalytics(userId, datasetId);
+      // Run date-range-bounded waypoint computation (NEW APPROACH)
+      const result = await storage.computeWaypointAnalyticsByDateRange(userId, datasetId, startDate, endDate, minDwellMinutes, maxDistanceMeters);
 
       const processingTime = (Date.now() - startTime) / 1000;
 

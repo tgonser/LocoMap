@@ -23,7 +23,7 @@ import {
   type InsertTravelSegment,
 } from "@shared/schema";
 import { db } from "./db.js";
-import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
+import { eq, and, or, desc, sql, gte, lte, exists, inArray } from "drizzle-orm";
 
 // Interface for storage operations
 export interface IStorage {
@@ -1307,7 +1307,246 @@ export class DatabaseStorage implements IStorage {
     return sampled;
   }
 
-  // **COMPLETE WAYPOINT COMPUTATION PIPELINE**
+  // ============= DATE-RANGE-BOUNDED WAYPOINT METHODS =============
+  
+  // Clean existing waypoint data in date range for idempotency (FINAL FIX: prevents FK violations)
+  async cleanWaypointDataInDateRange(userId: string, datasetId: string, startDate: Date, endDate: Date): Promise<void> {
+    console.log(`🧹 Cleaning existing waypoint data in range ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]} for dataset ${datasetId}`);
+    
+    // Use transaction to ensure atomicity of cleanup operations
+    return await db.transaction(async (tx) => {
+      // STEP 1: Identify the target stop set S = stops that overlap the time range
+      // These are the stops we plan to delete in step 3
+      const targetStops = await tx
+        .select({ id: travelStops.id })
+        .from(travelStops)
+        .where(and(
+          eq(travelStops.userId, userId),
+          eq(travelStops.datasetId, datasetId),
+          // Overlap detection: stop overlaps if start <= endDate AND end >= startDate
+          lte(travelStops.start, endDate),
+          gte(travelStops.end, startDate)
+        ));
+      
+      if (targetStops.length === 0) {
+        console.log(`🔍 No overlapping stops found in date range - cleanup complete`);
+        return;
+      }
+      
+      const targetStopIds = targetStops.map(s => s.id);
+      console.log(`🎯 Found ${targetStopIds.length} stops to clean in date range`);
+      
+      // STEP 2: Delete ALL segments referencing ANY target stop (regardless of segment time)
+      // This prevents FK violations when we delete the stops in step 3
+      const deletedSegments = await tx.delete(travelSegments)
+        .where(and(
+          eq(travelSegments.userId, userId),
+          or(
+            inArray(travelSegments.fromStopId, targetStopIds),
+            inArray(travelSegments.toStopId, targetStopIds)
+          )
+        ));
+      
+      // STEP 3: Delete the target stops (safe now that referencing segments are gone)
+      const deletedStops = await tx.delete(travelStops)
+        .where(and(
+          eq(travelStops.userId, userId),
+          eq(travelStops.datasetId, datasetId),
+          inArray(travelStops.id, targetStopIds)
+        ));
+      
+      // STEP 4: Post-cleanup invariant check (FAIL if any segments still reference deleted stops)
+      const remainingSegments = await tx
+        .select({ count: sql`count(*)` })
+        .from(travelSegments)
+        .where(and(
+          eq(travelSegments.userId, userId),
+          or(
+            inArray(travelSegments.fromStopId, targetStopIds),
+            inArray(travelSegments.toStopId, targetStopIds)
+          )
+        ));
+      
+      const remainingCount = Number(remainingSegments[0]?.count || 0);
+      console.log(`🗑️ Cleanup complete: removed segments referencing target stops, then removed ${targetStopIds.length} stops`);
+      console.log(`✅ Invariant check: ${remainingCount} segments still reference deleted stops (should be 0)`);
+      
+      if (remainingCount > 0) {
+        throw new Error(`Cleanup failed: ${remainingCount} segments still reference deleted stops - data corruption detected`);
+      }
+    });
+  }
+
+  // Compute travel stops ONLY from GPS points in the specified date range
+  async computeTravelStopsFromPointsByDateRange(
+    userId: string, 
+    datasetId: string, 
+    startDate: Date, 
+    endDate: Date,
+    minDwellMinutes: number = 15,
+    maxDistanceMeters: number = 150
+  ): Promise<number> {
+    console.log(`🔍 Computing travel stops for date range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
+    
+    // Get ONLY location points within the date range (DATE-RANGE-FIRST approach)
+    const points = await db
+      .select()
+      .from(locationPoints)
+      .where(and(
+        eq(locationPoints.userId, userId),
+        eq(locationPoints.datasetId, datasetId),
+        gte(locationPoints.timestamp, startDate),
+        lte(locationPoints.timestamp, endDate)
+      ))
+      .orderBy(locationPoints.timestamp);
+
+    if (points.length === 0) {
+      console.log(`❌ No location points found in date range`);
+      return 0;
+    }
+
+    console.log(`📍 Processing ${points.length} location points in date range (vs entire dataset)`);
+
+    const stops: InsertTravelStop[] = [];
+    let currentCluster: typeof points = [];
+
+    for (let i = 0; i < points.length; i++) {
+      const point = points[i];
+      
+      if (currentCluster.length === 0) {
+        currentCluster = [point];
+        continue;
+      }
+
+      // Check if point is within distance threshold of cluster centroid
+      const clusterCentroid = this.calculateClusterCentroid(currentCluster);
+      const distanceToCluster = this.calculateDistanceMeters(
+        point.lat, point.lng,
+        clusterCentroid.lat, clusterCentroid.lng
+      );
+
+      if (distanceToCluster <= maxDistanceMeters) {
+        currentCluster.push(point);
+      } else {
+        // Process current cluster if it meets dwell time requirement
+        const stop = await this.processCluster(currentCluster, userId, datasetId, minDwellMinutes);
+        if (stop) {
+          stops.push(stop);
+        }
+        
+        currentCluster = [point];
+      }
+    }
+
+    // Process final cluster
+    if (currentCluster.length > 0) {
+      const stop = await this.processCluster(currentCluster, userId, datasetId, minDwellMinutes);
+      if (stop) {
+        stops.push(stop);
+      }
+    }
+
+    // Insert all detected stops with batching
+    if (stops.length > 0) {
+      await this.insertTravelStops(stops);
+      console.log(`✅ Created ${stops.length} travel stops in date range`);
+    } else {
+      console.log(`❌ No significant stops detected in date range (min dwell: ${minDwellMinutes} minutes)`);
+    }
+
+    return stops.length;
+  }
+
+  // Compute travel segments ONLY from stops in the specified date range
+  async computeTravelSegmentsFromStopsByDateRange(
+    userId: string, 
+    datasetId: string, 
+    startDate: Date, 
+    endDate: Date
+  ): Promise<number> {
+    console.log(`🛣️  Computing travel segments for date range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
+    
+    // Get stops in date range, ordered by time
+    const stops = await db
+      .select()
+      .from(travelStops)
+      .where(and(
+        eq(travelStops.userId, userId),
+        eq(travelStops.datasetId, datasetId),
+        gte(travelStops.start, startDate),
+        lte(travelStops.end, endDate)
+      ))
+      .orderBy(travelStops.start);
+
+    if (stops.length < 2) {
+      console.log(`❌ Need at least 2 stops to create segments, found ${stops.length} in date range`);
+      return 0;
+    }
+
+    console.log(`🔗 Creating segments between ${stops.length} stops in date range`);
+
+    const segments: InsertTravelSegment[] = [];
+
+    for (let i = 0; i < stops.length - 1; i++) {
+      const fromStop = stops[i];
+      const toStop = stops[i + 1];
+      
+      const distanceMiles = this.calculateDistanceMeters(
+        fromStop.lat, fromStop.lng,
+        toStop.lat, toStop.lng
+      ) / 1609.34; // Convert meters to miles
+
+      const segment: InsertTravelSegment = {
+        userId,
+        fromStopId: fromStop.id,
+        toStopId: toStop.id,
+        start: fromStop.end, // Travel starts when leaving first stop
+        end: toStop.start,   // Travel ends when arriving at next stop
+        distanceMiles: Math.round(distanceMiles * 10) / 10 // Round to 1 decimal
+      };
+
+      segments.push(segment);
+    }
+
+    // Insert all segments with batching
+    if (segments.length > 0) {
+      await this.insertTravelSegments(segments);
+      console.log(`✅ Created ${segments.length} travel segments in date range`);
+    }
+
+    return segments.length;
+  }
+
+  // **NEW: DATE-RANGE-FIRST WAYPOINT COMPUTATION** (replaces dataset-wide processing)
+  async computeWaypointAnalyticsByDateRange(
+    userId: string, 
+    datasetId: string, 
+    startDate: Date, 
+    endDate: Date,
+    minDwellMinutes: number = 15,
+    maxDistanceMeters: number = 150
+  ): Promise<{ stopsCreated: number; segmentsCreated: number }> {
+    console.log(`🎯 Starting DATE-RANGE waypoint computation for user ${userId}:`, {
+      dataset: datasetId,
+      dateRange: `${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`,
+      architecture: "date-range-first (NEW)"
+    });
+    
+    // Step 1: Clean existing data in date range for idempotency
+    await this.cleanWaypointDataInDateRange(userId, datasetId, startDate, endDate);
+    
+    // Step 2: Detect travel stops ONLY in the date range
+    const stopsCreated = await this.computeTravelStopsFromPointsByDateRange(userId, datasetId, startDate, endDate, minDwellMinutes, maxDistanceMeters);
+    
+    // Step 3: Create travel segments between stops in date range
+    const segmentsCreated = await this.computeTravelSegmentsFromStopsByDateRange(userId, datasetId, startDate, endDate);
+    
+    console.log(`✅ DATE-RANGE waypoint analytics complete: ${stopsCreated} stops, ${segmentsCreated} segments`);
+    
+    return { stopsCreated, segmentsCreated };
+  }
+
+  // **LEGACY: COMPLETE WAYPOINT COMPUTATION PIPELINE** (processes entire dataset)
   async computeWaypointAnalytics(userId: string, datasetId: string): Promise<{ stopsCreated: number; segmentsCreated: number }> {
     console.log(`🚀 Starting complete waypoint analytics pipeline for user ${userId}, dataset ${datasetId}`);
     
