@@ -73,7 +73,8 @@ function normalizeCountryName(country?: string): string | undefined {
 }
 
 // Reverse geocoding using GeoApify API - more reliable than Nominatim
-export async function reverseGeocode(lat: number, lng: number): Promise<GeocodeResult> {
+// Returns result with provider info for rate limiting
+export async function reverseGeocode(lat: number, lng: number): Promise<GeocodeResult & { provider?: string }> {
   console.log(`🔍 [DEBUG-2016] Geocoding request: lat=${lat}, lng=${lng}`);
   
   const apiKey = process.env.GEOAPIFY_API_KEY;
@@ -93,7 +94,8 @@ export async function reverseGeocode(lat: number, lng: number): Promise<GeocodeR
     if (!response.ok) {
       if (response.status === 429) {
         console.log('🔍 [DEBUG-2016] GeoApify rate limit exceeded, falling back to Nominatim');
-        return reverseGeocodeNominatim(lat, lng);
+        const result = await reverseGeocodeNominatim(lat, lng);
+        return { ...result, provider: 'nominatim' };
       }
       throw new Error(`GeoApify API returned ${response.status}`);
     }
@@ -113,7 +115,8 @@ export async function reverseGeocode(lat: number, lng: number): Promise<GeocodeR
       city: result.city || result.town || result.village,
       state: result.state,
       country: normalizeCountryName(result.country),
-      address: result.formatted
+      address: result.formatted,
+      provider: 'geoapify'
     };
     
     console.log(`🔍 [DEBUG-2016] GeoApify processed result: ${JSON.stringify(geocodeResult)}`);
@@ -121,13 +124,14 @@ export async function reverseGeocode(lat: number, lng: number): Promise<GeocodeR
   } catch (error) {
     console.error('🔍 [DEBUG-2016] GeoApify geocoding error:', error);
     console.log('🔍 [DEBUG-2016] Falling back to Nominatim');
-    return reverseGeocodeNominatim(lat, lng);
+    const result = await reverseGeocodeNominatim(lat, lng);
+    return { ...result, provider: 'nominatim' };
   }
 }
 
 // Fallback to Nominatim (OpenStreetMap) - free service
 // Respects Nominatim's usage policy: 1 request per second, proper headers
-export async function reverseGeocodeNominatim(lat: number, lng: number): Promise<GeocodeResult> {
+export async function reverseGeocodeNominatim(lat: number, lng: number): Promise<GeocodeResult & { provider?: string }> {
   console.log(`🔍 [DEBUG-2016] Nominatim geocoding request: lat=${lat}, lng=${lng}`);
   
   try {
@@ -162,14 +166,15 @@ export async function reverseGeocodeNominatim(lat: number, lng: number): Promise
       city: address.city || address.town || address.village || address.hamlet,
       state: address.state,
       country: normalizeCountryName(address.country),
-      address: data.display_name
+      address: data.display_name,
+      provider: 'nominatim'
     };
     
     console.log(`🔍 [DEBUG-2016] Nominatim processed result: ${JSON.stringify(geocodeResult)}`);
     return geocodeResult;
   } catch (error) {
     console.error('🔍 [DEBUG-2016] Nominatim geocoding error:', error);
-    return {};
+    return { provider: 'nominatim' };
   }
 }
 
@@ -485,9 +490,13 @@ async function geocodeWithDeduplicatedRequests(
       
       console.log(`Geocoded ${i + 1}/${uncachedKeys.length}: ${key.lat}, ${key.lng}`);
       
-      // Rate limiting: 1 request per 50ms for GeoApify (optimized), 1 sec for Nominatim
+      // Provider-aware rate limiting to respect Nominatim's 1 req/sec policy
       if (i + 1 < uncachedKeys.length) {
-        const delay = apiKey ? 50 : 1000;
+        // Check which provider actually served the request
+        const resultWithProvider = result as GeocodeResult & { provider?: string };
+        const actualProvider = resultWithProvider.provider || (apiKey ? 'geoapify' : 'nominatim');
+        const delay = actualProvider === 'nominatim' ? 1000 : 50; // 1 sec for Nominatim, 50ms for Geoapify
+        console.log(`⏱️ Rate limiting: waiting ${delay}ms for next request (last provider: ${actualProvider})`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
       
