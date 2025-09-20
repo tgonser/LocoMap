@@ -112,16 +112,46 @@ export default function MapDisplay({
         return loc.accuracy ? loc.accuracy <= 200 : true;
       });
 
-    // Debug logging to see what we're working with
-    console.log(`Path creation: ${locations.length} total points, ${sortedLocations.length} after filtering`);
-    
     if (sortedLocations.length < 2) return [];
+
+    // Smart filtering: Remove points that don't add value
+    const smartFilteredLocations = [];
+    let lastAcceptedPoint = null;
+    
+    for (const location of sortedLocations) {
+      if (!lastAcceptedPoint) {
+        // Always keep first point
+        smartFilteredLocations.push(location);
+        lastAcceptedPoint = location;
+        continue;
+      }
+      
+      // Calculate distance between points (improved accuracy with latitude correction)
+      const latDiff = location.lat - lastAcceptedPoint.lat;
+      const lngDiff = (location.lng - lastAcceptedPoint.lng) * Math.cos((location.lat * Math.PI) / 180);
+      const distanceMeters = Math.sqrt(latDiff * latDiff + lngDiff * lngDiff) * 111000; // Meter conversion with lat correction
+      
+      // Calculate time difference in minutes
+      const timeDiffMinutes = (location.timestamp.getTime() - lastAcceptedPoint.timestamp.getTime()) / (1000 * 60);
+      
+      // Filter out points that don't add value:
+      // - Same place (< 100m apart) OR 
+      // - Rapid-fire points (< 5 min apart)
+      const isRedundant = distanceMeters < 100 || timeDiffMinutes < 5;
+      
+      if (!isRedundant) {
+        smartFilteredLocations.push(location);
+        lastAcceptedPoint = location;
+      }
+    }
+    
+    if (smartFilteredLocations.length < 2) return [];
 
     const segments: [number, number][][] = [];
     let currentSegment: [number, number][] = [];
     
-    for (let i = 0; i < sortedLocations.length; i++) {
-      const current = sortedLocations[i];
+    for (let i = 0; i < smartFilteredLocations.length; i++) {
+      const current = smartFilteredLocations[i];
       const coords: [number, number] = [current.lat, current.lng];
       
       if (i === 0) {
@@ -129,7 +159,7 @@ export default function MapDisplay({
         continue;
       }
       
-      const previous = sortedLocations[i - 1];
+      const previous = smartFilteredLocations[i - 1];
       const timeDiffMinutes = (current.timestamp.getTime() - previous.timestamp.getTime()) / (1000 * 60);
       
       // Calculate distance between points (rough estimate)
