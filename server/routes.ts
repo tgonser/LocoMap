@@ -1480,37 +1480,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         console.log(`🎯 Waypoint Analytics: ${waypointCityJumps.length} city jumps, ${Math.round(totalTravelDistance)} miles total travel`);
 
-        // ========== POPULATE LOCATION STATS FROM WAYPOINT DATA ==========
-        // Extract unique countries/states/cities from waypoint city jumps instead of empty centroids
-        waypointCityJumps.forEach(jump => {
-          // Count unique countries from waypoint travel data
-          if (jump.fromCountry) {
-            locationStats.countries.set(jump.fromCountry, (locationStats.countries.get(jump.fromCountry) || 0) + 1);
-          }
-          if (jump.toCountry && jump.toCountry !== jump.fromCountry) {
-            locationStats.countries.set(jump.toCountry, (locationStats.countries.get(jump.toCountry) || 0) + 1);
-          }
-          
-          // Count US states from waypoint travel data  
-          if (jump.fromCountry === 'United States' && jump.fromState) {
-            locationStats.states.set(jump.fromState, (locationStats.states.get(jump.fromState) || 0) + 1);
-          }
-          if (jump.toCountry === 'United States' && jump.toState && jump.toState !== jump.fromState) {
-            locationStats.states.set(jump.toState, (locationStats.states.get(jump.toState) || 0) + 1);
-          }
-          
-          // Count unique cities from waypoint travel data
-          if (jump.fromCity) {
-            const fromCityKey = jump.fromState ? `${jump.fromCity}, ${jump.fromState}` : `${jump.fromCity}, ${jump.fromCountry}`;
-            locationStats.cities.set(fromCityKey, (locationStats.cities.get(fromCityKey) || 0) + 1);
-          }
-          if (jump.toCity && jump.toCity !== jump.fromCity) {
-            const toCityKey = jump.toState ? `${jump.toCity}, ${jump.toState}` : `${jump.toCity}, ${jump.toCountry}`;
-            locationStats.cities.set(toCityKey, (locationStats.cities.get(toCityKey) || 0) + 1);
-          }
-        });
+        // ========== CALCULATE DAYS PER LOCATION FROM TRAVEL STOPS ==========
+        // Get travel stops with dwell times to calculate which location dominated each day
+        const travelStops = await storage.getUserTravelStopsByDateRange(userId, startDate, endDate);
+        console.log(`📅 Calculating location days from ${travelStops.length} travel stops over ${totalDaysInRange} days`);
         
-        console.log(`📊 Extracted from waypoint data: ${locationStats.countries.size} countries, ${locationStats.states.size} states, ${locationStats.cities.size} cities`);
+        // For each calendar day, determine which location the user spent the most time in
+        for (let dayOffset = 0; dayOffset < totalDaysInRange; dayOffset++) {
+          const currentDay = new Date(startDate.getTime() + dayOffset * 24 * 60 * 60 * 1000);
+          const dayStart = new Date(currentDay.getFullYear(), currentDay.getMonth(), currentDay.getDate());
+          const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
+          
+          // Find stops that overlap with this day and calculate minutes spent in each location
+          const locationMinutes = new Map();
+          
+          for (const stop of travelStops) {
+            const stopStart = new Date(stop.start);
+            const stopEnd = new Date(stop.end);
+            
+            // Calculate overlap between stop and this day
+            const overlapStart = new Date(Math.max(dayStart.getTime(), stopStart.getTime()));
+            const overlapEnd = new Date(Math.min(dayEnd.getTime(), stopEnd.getTime()));
+            
+            if (overlapStart < overlapEnd) {
+              const overlapMinutes = (overlapEnd.getTime() - overlapStart.getTime()) / (1000 * 60);
+              
+              // Only count geocoded stops with known locations
+              if (stop.geocoded && stop.country) {
+                const locationKey = `${stop.country}|${stop.state || ''}|${stop.city || ''}`;
+                locationMinutes.set(locationKey, (locationMinutes.get(locationKey) || 0) + overlapMinutes);
+              }
+            }
+          }
+          
+          // Assign this day to the location where the most time was spent
+          if (locationMinutes.size > 0) {
+            const dominantLocation = Array.from(locationMinutes.entries())
+              .reduce((max, [location, minutes]) => minutes > max[1] ? [location, minutes] : max);
+            
+            const [country, state, city] = dominantLocation[0].split('|');
+            
+            // Count this day for the dominant location
+            locationStats.countries.set(country, (locationStats.countries.get(country) || 0) + 1);
+            
+            if (country === 'United States' && state) {
+              locationStats.states.set(state, (locationStats.states.get(state) || 0) + 1);
+            }
+            
+            if (city) {
+              const cityKey = state ? `${city}, ${state}` : `${city}, ${country}`;
+              locationStats.cities.set(cityKey, (locationStats.cities.get(cityKey) || 0) + 1);
+            }
+          }
+        }
+        
+        // Verify day counts are correct (should sum to totalDaysInRange)
+        const totalCountryDays = Array.from(locationStats.countries.values()).reduce((sum, count) => sum + count, 0);
+        const totalStateDays = Array.from(locationStats.states.values()).reduce((sum, count) => sum + count, 0);
+        
+        console.log(`📊 Location days calculated: ${locationStats.countries.size} countries (${totalCountryDays}/${totalDaysInRange} days), ${locationStats.states.size} states (${totalStateDays} days), ${locationStats.cities.size} cities`);
 
         // Convert Maps to Objects for frontend compatibility
         const countriesObject = Object.fromEntries(locationStats.countries);
