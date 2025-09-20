@@ -12,6 +12,7 @@ interface FileUploaderProps {
 export default function FileUploader({ onFileUpload, isProcessing = false }: FileUploaderProps) {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle');
   const [fileName, setFileName] = useState<string>('');
+  const [uploadResult, setUploadResult] = useState<any>(null);
 
   const onDrop = async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
@@ -36,6 +37,7 @@ export default function FileUploader({ onFileUpload, isProcessing = false }: Fil
       }
 
       setUploadStatus('success');
+      setUploadResult(result);
       onFileUpload(result);
       console.log('File uploaded successfully:', result.message);
     } catch (error) {
@@ -83,9 +85,57 @@ export default function FileUploader({ onFileUpload, isProcessing = false }: Fil
             {uploadStatus === 'processing' ? (
               <p className="text-lg font-medium">Processing {fileName}...</p>
             ) : uploadStatus === 'success' ? (
-              <div>
-                <p className="text-lg font-medium text-green-600">Successfully uploaded!</p>
-                <p className="text-sm text-muted-foreground">{fileName}</p>
+              <div className="text-left space-y-3">
+                <p className="text-lg font-medium text-green-600">File Analysis Complete!</p>
+                <p className="text-sm font-medium">{fileName}</p>
+                
+                {uploadResult?.metadata && (
+                  <div className="bg-muted/50 rounded-lg p-4 space-y-2 text-sm">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="font-medium">📊 File Stats</p>
+                        <p className="text-xs text-muted-foreground">
+                          {uploadResult.metadata.fileSize} • {uploadResult.metadata.totalElements.toLocaleString()} elements
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          ~{uploadResult.metadata.estimatedPoints.toLocaleString()} GPS points estimated
+                        </p>
+                      </div>
+                      
+                      <div>
+                        <p className="font-medium">📅 Date Range</p>
+                        <p className="text-xs text-muted-foreground">
+                          {uploadResult.metadata.dateRange?.start ? 
+                            new Date(uploadResult.metadata.dateRange.start).toLocaleDateString() : 'Unknown'} 
+                          {' to '}
+                          {uploadResult.metadata.dateRange?.end ? 
+                            new Date(uploadResult.metadata.dateRange.end).toLocaleDateString() : 'Unknown'}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <p className="font-medium">🔍 Data Quality</p>
+                      <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                        <p>✅ Good coordinates: {uploadResult.metadata.dataQuality?.goodProbability?.toLocaleString() || 0}</p>
+                        <p>❌ Bad coordinates: {uploadResult.metadata.dataQuality?.badProbability?.toLocaleString() || 0}</p>
+                        <p>📍 Movement data: {uploadResult.metadata.dataQuality?.goodDistance?.toLocaleString() || 0}</p>
+                        <p>🚫 No movement: {uploadResult.metadata.dataQuality?.zeroDistance?.toLocaleString() || 0}</p>
+                      </div>
+                      {uploadResult.metadata.dataQuality?.totalTimelinePath > 0 && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          🗺️ Route details: {uploadResult.metadata.dataQuality.totalTimelinePath.toLocaleString()} timeline points
+                        </p>
+                      )}
+                    </div>
+                    
+                    <div className="pt-2 border-t border-muted">
+                      <p className="text-xs text-primary font-medium">
+                        💡 Ready to analyze! Select date ranges and quality filters for processing.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : uploadStatus === 'error' ? (
               <div>
