@@ -1064,23 +1064,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Get accurate city jumps from actual travel stops and segments
         let waypointCityJumps = await storage.getWaypointCityJumpsByDateRange(userId, startDate, endDate);
         
-        // If no waypoints exist, compute them automatically from raw GPS data
+        // NEW: Use date-range-first waypoint computation (replaces dataset-wide processing)
         if (waypointCityJumps.length === 0) {
-          console.log(`🔄 No waypoints found for date range - computing from raw GPS data...`);
+          console.log(`🔄 No waypoints found for date range - computing using NEW date-range-first approach...`);
           
-          // Get user's datasets and compute waypoints automatically
+          // Get user's datasets and compute waypoints for ONLY the selected date range
           const datasets = await storage.getUserLocationDatasets(userId);
           if (datasets.length > 0) {
             const primaryDataset = datasets[0]; // Use first dataset
             try {
-              const waypointResult = await storage.computeWaypointAnalytics(userId, primaryDataset.id);
-              console.log(`✅ Auto-computed waypoints: ${waypointResult.stopsCreated} stops, ${waypointResult.segmentsCreated} segments`);
+              // Use NEW date-range-bounded computation (processes only selected range)
+              const waypointResult = await storage.computeWaypointAnalyticsByDateRange(
+                userId, 
+                primaryDataset.id, 
+                startDate, 
+                endDate
+              );
+              console.log(`✅ Auto-computed waypoints for DATE RANGE: ${waypointResult.stopsCreated} stops, ${waypointResult.segmentsCreated} segments`);
               
               // Re-fetch waypoint city jumps after computation
               waypointCityJumps = await storage.getWaypointCityJumpsByDateRange(userId, startDate, endDate);
-              console.log(`🎯 Found ${waypointCityJumps.length} city jumps after waypoint computation`);
+              console.log(`🎯 Found ${waypointCityJumps.length} city jumps after date-range computation`);
             } catch (waypointError) {
-              console.error(`❌ Failed to compute waypoints automatically:`, waypointError);
+              console.error(`❌ Failed to compute waypoints for date range:`, waypointError);
               // Fall back to empty results
               waypointCityJumps = [];
             }
