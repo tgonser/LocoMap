@@ -1435,54 +1435,88 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         });
 
-        // ========== WAYPOINT-BASED CITY JUMPS (REPLACES CENTROID APPROACH) ==========
-        // Get accurate city jumps from actual travel stops and segments
-        let waypointCityJumps = await storage.getWaypointCityJumpsByDateRange(userId, startDate, endDate);
+        // ========== CONTINUOUS CITY JUMPS CHAIN (FIXES BROKEN TRAVEL SEQUENCES) ==========
+        // Get travel stops in chronological order to build connected travel chain
+        const travelStops = await storage.getUserTravelStopsByDateRange(userId, startDate, endDate);
+        console.log(`🔄 Building continuous city jumps from ${travelStops.length} travel stops...`);
         
-        // NEW: Use date-range-first waypoint computation (replaces dataset-wide processing)
-        if (waypointCityJumps.length === 0) {
-          console.log(`🔄 No waypoints found for date range - computing using NEW date-range-first approach...`);
+        // Helper function to normalize city keys for comparison
+        const normalizeCityKey = (stop: any) => {
+          const city = (stop.city || '').toLowerCase().trim();
+          const state = (stop.state || '').toLowerCase().trim(); 
+          const country = (stop.country || '').toLowerCase().trim();
+          return `${city}|${state}|${country}`;
+        };
+        
+        // Helper function to calculate distance between two points
+        const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+          const R = 3959; // Earth's radius in miles
+          const dLat = (lat2 - lat1) * Math.PI / 180;
+          const dLng = (lng2 - lng1) * Math.PI / 180;
+          const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                    Math.sin(dLng/2) * Math.sin(dLng/2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+          return R * c;
+        };
+        
+        // Build continuous city jumps from chronological travel stops
+        const continuousCityJumps: any[] = [];
+        let totalTravelDistance = 0;
+        
+        // Filter for geocoded stops with location data and sort by start time
+        const geocodedStops = travelStops
+          .filter(stop => stop.geocoded && (stop.city || stop.state || stop.country))
+          .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
           
-          // Get user's datasets and compute waypoints for ONLY the selected date range
-          const datasets = await storage.getUserLocationDatasets(userId);
-          if (datasets.length > 0) {
-            const primaryDataset = datasets[0]; // Use first dataset
-            try {
-              // Use NEW date-range-bounded computation (processes only selected range)
-              const waypointResult = await storage.computeWaypointAnalyticsByDateRange(
-                userId, 
-                primaryDataset.id, 
-                startDate, 
-                endDate
+        console.log(`🗺️ Processing ${geocodedStops.length} geocoded stops for continuous travel chain`);
+        
+        // Walk through stops sequentially, emitting jumps only when city changes
+        if (geocodedStops.length > 1) {
+          let previousStop = geocodedStops[0];
+          
+          for (let i = 1; i < geocodedStops.length; i++) {
+            const currentStop = geocodedStops[i];
+            
+            // Check if we've moved to a different city
+            if (normalizeCityKey(currentStop) !== normalizeCityKey(previousStop)) {
+              // Calculate distance between stops
+              const distance = calculateDistance(
+                previousStop.lat, previousStop.lng, 
+                currentStop.lat, currentStop.lng
               );
-              console.log(`✅ Auto-computed waypoints for DATE RANGE: ${waypointResult.stopsCreated} stops, ${waypointResult.segmentsCreated} segments`);
               
-              // Re-fetch waypoint city jumps after computation
-              waypointCityJumps = await storage.getWaypointCityJumpsByDateRange(userId, startDate, endDate);
-              console.log(`🎯 Found ${waypointCityJumps.length} city jumps after date-range computation`);
-            } catch (waypointError) {
-              console.error(`❌ Failed to compute waypoints for date range:`, waypointError);
-              // Fall back to empty results
-              waypointCityJumps = [];
+              // Create jump entry
+              const jump = {
+                fromCity: previousStop.city || 'Unknown',
+                fromState: previousStop.state,
+                fromCountry: previousStop.country || 'Unknown',
+                toCity: currentStop.city || 'Unknown', 
+                toState: currentStop.state,
+                toCountry: currentStop.country || 'Unknown',
+                date: currentStop.start, // Use start time of destination stop
+                distance: Math.round(distance * 10) / 10, // Round to 1 decimal
+                mode: 'travel' // Default mode since we don't have activity data
+              };
+              
+              continuousCityJumps.push(jump);
+              totalTravelDistance += distance;
+              previousStop = currentStop; // Update previous for next iteration
             }
           }
         }
         
-        // Calculate total travel distance from waypoint segments (preserves accuracy)
-        const totalTravelDistance = waypointCityJumps.reduce((sum, jump) => sum + jump.distance, 0);
-
-        // Prepare city jumps data with waypoint-based results
+        // Prepare city jumps data with continuous chain
         const cityJumpsData = {
-          cityJumps: waypointCityJumps,
+          cityJumps: continuousCityJumps,
           totalTravelDistance: Math.round(totalTravelDistance * 10) / 10,
-          totalJumps: waypointCityJumps.length
+          totalJumps: continuousCityJumps.length
         };
 
-        console.log(`🎯 Waypoint Analytics: ${waypointCityJumps.length} city jumps, ${Math.round(totalTravelDistance)} miles total travel`);
+        console.log(`🎯 Continuous City Jumps: ${continuousCityJumps.length} jumps, ${Math.round(totalTravelDistance)} miles total travel`);
 
         // ========== CALCULATE DAYS PER LOCATION FROM TRAVEL STOPS ==========
-        // Get travel stops with dwell times to calculate which location dominated each day
-        const travelStops = await storage.getUserTravelStopsByDateRange(userId, startDate, endDate);
+        // Use the same travel stops to calculate which location dominated each day
         console.log(`📅 Calculating location days from ${travelStops.length} travel stops over ${totalDaysInRange} days`);
         
         // For each calendar day, determine which location the user spent the most time in
