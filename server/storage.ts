@@ -151,10 +151,20 @@ export class DatabaseStorage implements IStorage {
 
   async getUserLocationDatasets(userId: string): Promise<LocationDataset[]> {
     return await db
-      .select()
+      .select({
+        id: locationDatasets.id,
+        userId: locationDatasets.userId,
+        filename: locationDatasets.filename,
+        fileSize: locationDatasets.fileSize,
+        totalPoints: locationDatasets.totalPoints,
+        deduplicatedPoints: locationDatasets.deduplicatedPoints,
+        uploadedAt: locationDatasets.uploadedAt,
+        processedAt: locationDatasets.processedAt,
+        rawContent: sql`NULL`.as('rawContent'), // Exclude actual content to avoid "response too large" error
+      })
       .from(locationDatasets)
       .where(eq(locationDatasets.userId, userId))
-      .orderBy(desc(locationDatasets.uploadedAt));
+      .orderBy(desc(locationDatasets.uploadedAt)) as LocationDataset[];
   }
 
   async getLocationDataset(id: string, userId: string): Promise<LocationDataset | undefined> {

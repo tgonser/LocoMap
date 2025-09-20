@@ -3,7 +3,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { MapPin, Calendar, BarChart3, List, Upload, CalendarDays } from 'lucide-react';
-import FileUploader from './FileUploader';
+import FileManager from './FileManager';
 import MapDisplay from './MapDisplay';
 import DateNavigator from './DateNavigator';
 import AnalyticsPanel from './AnalyticsPanel';
@@ -18,12 +18,12 @@ interface LocationData {
   activity?: string;
 }
 
-type ViewMode = 'upload' | 'map' | 'analytics';
+type ViewMode = 'files' | 'map' | 'analytics';
 
 export default function LocationHistoryApp() {
   const [locationData, setLocationData] = useState<LocationData[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [viewMode, setViewMode] = useState<ViewMode>('upload');
+  const [viewMode, setViewMode] = useState<ViewMode>('files');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -47,17 +47,17 @@ export default function LocationHistoryApp() {
             // User has existing data - default to analytics view but don't load data yet
             setViewMode('analytics');
           } else {
-            // No data exists - show upload view
-            setViewMode('upload');
+            // No data exists - show files view
+            setViewMode('files');
           }
         } else {
-          // API error or no auth - default to upload
-          setViewMode('upload');
+          // API error or no auth - default to files
+          setViewMode('files');
         }
       } catch (error) {
         console.error('Error checking existing data:', error);
-        // On error, default to upload view
-        setViewMode('upload');
+        // On error, default to files view
+        setViewMode('files');
       } finally {
         setIsLoading(false);
       }
@@ -276,7 +276,7 @@ export default function LocationHistoryApp() {
               <p className="text-muted-foreground">Checking for existing data...</p>
             </div>
           </div>
-        ) : viewMode === 'upload' ? (
+        ) : viewMode === 'files' ? (
           <div className="h-full flex items-center justify-center p-6">
             <div className="w-full max-w-2xl">
               <div className="text-center mb-6">
@@ -288,7 +288,7 @@ export default function LocationHistoryApp() {
                   Select your Google location history JSON file to visualize your travels
                 </p>
               </div>
-              <FileUploader onFileUpload={handleFileUpload} isProcessing={isProcessing} />
+              <FileManager onFileUpload={handleFileUpload} />
             </div>
           </div>
         ) : (
@@ -319,7 +319,7 @@ export default function LocationHistoryApp() {
                       <span className="hidden sm:inline">Change Range</span>
                     </Button>
                   )}
-                  {getViewModeButton('upload', <Upload className="w-4 h-4" />, 'Upload')}
+                  {getViewModeButton('files', <Upload className="w-4 h-4" />, 'Files')}
                   {getViewModeButton('map', <MapPin className="w-4 h-4" />, 'Map')}
                   {getViewModeButton('analytics', <BarChart3 className="w-4 h-4" />, 'Analytics')}
                 </div>
