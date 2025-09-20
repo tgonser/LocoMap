@@ -169,6 +169,32 @@ function parseLegacyArrayFormat(jsonData: any): ParsedLocationPoint[] {
         }
       }
     }
+    // Format 4: Visit data with location info
+    else if (item.visit && item.visit.topCandidate && item.visit.topCandidate.placeLocation) {
+      const loc = item.visit.topCandidate.placeLocation;
+      if (loc.latitudeE7 !== undefined && loc.longitudeE7 !== undefined) {
+        lat = loc.latitudeE7 / 1e7;
+        lng = loc.longitudeE7 / 1e7;
+        
+        if (item.startTime) {
+          const parsed = parseToUTCDate(item.startTime);
+          timestamp = parsed || undefined;
+        }
+      }
+    }
+    // Format 5: Direct visit with location (older format)
+    else if (item.placeVisit && item.placeVisit.location) {
+      const loc = item.placeVisit.location;
+      if (loc.latitudeE7 !== undefined && loc.longitudeE7 !== undefined) {
+        lat = loc.latitudeE7 / 1e7;
+        lng = loc.longitudeE7 / 1e7;
+        
+        if (item.placeVisit.duration && item.placeVisit.duration.startTimestampMs) {
+          const ms = parseInt(item.placeVisit.duration.startTimestampMs, 10);
+          timestamp = !isNaN(ms) ? new Date(ms) : undefined;
+        }
+      }
+    }
     
     // Add valid points only
     if (lat !== undefined && lng !== undefined && timestamp && !isNaN(lat) && !isNaN(lng)) {

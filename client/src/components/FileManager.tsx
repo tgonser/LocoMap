@@ -107,10 +107,15 @@ export default function FileManager({ onFileUpload }: FileManagerProps) {
         await refetchDatasets(); // Refresh the dataset list to show updated status
         await queryClient.invalidateQueries({ queryKey: ['/api/locations'] }); // Refresh location data
       } else {
-        console.error('Processing failed:', result.error || 'Unknown error');
+        const errorMsg = result.error || result.message || 'Unknown error';
+        console.error('Processing failed:', errorMsg);
+        alert(`Processing failed: ${errorMsg}\n\nCheck the console for details.`);
+        await refetchDatasets(); // Refresh to show current status
       }
     } catch (error) {
       console.error('Error processing dataset:', error);
+      alert(`Processing error: ${error.message || 'Network error'}`);
+      await refetchDatasets(); // Refresh to show current status
     } finally {
       setIsProcessing(false);
     }
