@@ -120,7 +120,7 @@ export function parseVisitsActivitiesModern(jsonData: any, year: number): Locati
           lat: bestLocation.lat,
           lng: bestLocation.lng,
           durationMs: 24 * 60 * 60 * 1000, // Assume full day presence
-          provenance: 'location_history',
+          provenance: 'visit',
           timestamp: bestLocation.timestamp
         });
       }
@@ -373,7 +373,7 @@ export function buildDailyPresence(resolvedSamples: Array<LocationSample & {stat
     // Find best location by count, then by total duration
     let bestLocation: {count: number, totalDuration: number, sample: typeof daySamples[0]} | null = null;
     
-    for (const [, location] of locationCounts) {
+    for (const location of Array.from(locationCounts.values())) {
       if (!bestLocation || 
           location.count > bestLocation.count ||
           (location.count === bestLocation.count && location.totalDuration > bestLocation.totalDuration)) {
