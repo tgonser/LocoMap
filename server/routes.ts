@@ -14,6 +14,54 @@ import { parseVisitsActivitiesModern, selectDailySamples, resolveSamples, buildD
 import { GoogleLocationIngest } from "./googleLocationIngest";
 import { z } from "zod";
 import OpenAI from "openai";
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
+import { registerSchema, loginSchema, users } from "@shared/schema";
+
+// JWT verification middleware  
+function verifyJWT(req: any, res: any, next: any) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  
+  if (!token) {
+    return res.status(401).json({ message: "Access token required" });
+  }
+
+  const jwtSecret = process.env.JWT_SECRET || process.env.SESSION_SECRET;
+  if (!jwtSecret) {
+    console.error("JWT_SECRET not configured");
+    return res.status(500).json({ message: "Server configuration error" });
+  }
+
+  try {
+    const decoded = jwt.verify(token, jwtSecret) as any;
+    // Create compatible user structure for existing code
+    req.user = {
+      claims: {
+        sub: decoded.id,
+        email: decoded.email,
+        first_name: decoded.firstName || '',
+        last_name: decoded.lastName || ''
+      }
+    };
+    req.isAuthenticated = () => true;
+    next();
+  } catch (error) {
+    return res.status(403).json({ message: "Invalid or expired token" });
+  }
+}
+
+// Combined authentication middleware - supports both JWT and Replit OAuth
+function combinedAuth(req: any, res: any, next: any) {
+  // Try JWT first
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return verifyJWT(req, res, next);
+  }
+  
+  // Fall back to existing Replit auth
+  return isAuthenticated(req, res, next);
+}
 
 // Distance calculation utility using Haversine formula (returns miles)
 function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -647,8 +695,140 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication - MANDATORY for Replit Auth
   await setupAuth(app);
 
-  // Auth routes - from blueprint javascript_log_in_with_replit
-  app.get('/api/auth/user', isAuthenticated, async (req, res) => {
+  // Auth routes - Username/password authentication
+  
+  // Register endpoint
+  app.post('/api/auth/register', async (req, res) => {
+    try {
+      const validation = registerSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "Validation error", 
+          errors: validation.error.issues 
+        });
+      }
+
+      const { username, email, password, firstName, lastName } = validation.data;
+
+      // Check if user already exists (prevent user enumeration)
+      const existingUser = await db.select().from(users).where(eq(users.username, username)).limit(1);
+      const existingEmail = await db.select().from(users).where(eq(users.email, email)).limit(1);
+      
+      if (existingUser.length > 0 || existingEmail.length > 0) {
+        return res.status(400).json({ message: "User with this username or email already exists" });
+      }
+
+      // Hash password
+      const saltRounds = 12;
+      const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+      // Create user
+      const [newUser] = await db.insert(users).values({
+        username,
+        email,
+        password: hashedPassword,
+        firstName,
+        lastName,
+      }).returning();
+
+      // Generate JWT token
+      const jwtSecret = process.env.JWT_SECRET || process.env.SESSION_SECRET;
+      if (!jwtSecret) {
+        console.error("JWT_SECRET not configured");
+        return res.status(500).json({ message: "Server configuration error" });
+      }
+      
+      const token = jwt.sign(
+        { 
+          id: newUser.id, 
+          username: newUser.username, 
+          email: newUser.email,
+          firstName: newUser.firstName,
+          lastName: newUser.lastName
+        },
+        jwtSecret,
+        { expiresIn: '7d' }
+      );
+
+      res.status(201).json({
+        message: "User created successfully",
+        token,
+        user: {
+          id: newUser.id,
+          username: newUser.username,
+          email: newUser.email,
+          firstName: newUser.firstName,
+          lastName: newUser.lastName,
+        }
+      });
+    } catch (error) {
+      console.error("Registration error:", error);
+      res.status(500).json({ message: "Server error during registration" });
+    }
+  });
+
+  // Login endpoint
+  app.post('/api/auth/login', async (req, res) => {
+    try {
+      const validation = loginSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "Validation error", 
+          errors: validation.error.issues 
+        });
+      }
+
+      const { username, password } = validation.data;
+
+      // Find user by username
+      const [user] = await db.select().from(users).where(eq(users.username, username)).limit(1);
+      if (!user || !user.password) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      // Check password
+      const validPassword = await bcrypt.compare(password, user.password);
+      if (!validPassword) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      // Generate JWT token
+      const jwtSecret = process.env.JWT_SECRET || process.env.SESSION_SECRET;
+      if (!jwtSecret) {
+        console.error("JWT_SECRET not configured");
+        return res.status(500).json({ message: "Server configuration error" });
+      }
+      
+      const token = jwt.sign(
+        { 
+          id: user.id, 
+          username: user.username, 
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName
+        },
+        jwtSecret,
+        { expiresIn: '7d' }
+      );
+
+      res.json({
+        message: "Login successful",
+        token,
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+        }
+      });
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({ message: "Server error during login" });
+    }
+  });
+
+  app.get('/api/auth/user', combinedAuth, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const user = await storage.getUser(claims.sub);
@@ -660,7 +840,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Protected route: Upload and parse Google location history (user-specific) 
-  app.post("/api/upload-location-history", isAuthenticated, upload.single("file"), async (req: Request & { file?: Express.Multer.File }, res) => {
+  app.post("/api/upload-location-history", combinedAuth, upload.single("file"), async (req: Request & { file?: Express.Multer.File }, res) => {
     const { claims } = getAuthenticatedUser(req);
     try {
       if (!req.file) {
@@ -809,7 +989,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 🎯 CRITICAL: Process stored raw JSON files into location points using enhanced parser
-  app.post("/api/datasets/:datasetId/process", isAuthenticated, async (req, res) => {
+  app.post("/api/datasets/:datasetId/process", combinedAuth, async (req, res) => {
     const { claims } = getAuthenticatedUser(req);
     const userId = claims.sub;
     const { datasetId } = req.params;
@@ -944,7 +1124,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Protected route: Get user's location points with optional date range filtering
-  app.get("/api/locations", isAuthenticated, async (req, res) => {
+  app.get("/api/locations", combinedAuth, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -991,7 +1171,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Protected route: Get user's location datasets
-  app.get("/api/datasets", isAuthenticated, async (req, res) => {
+  app.get("/api/datasets", combinedAuth, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -1004,7 +1184,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Protected route: Get user's unique locations (for analytics)
-  app.get("/api/locations/unique", isAuthenticated, async (req, res) => {
+  app.get("/api/locations/unique", combinedAuth, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -1017,7 +1197,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Protected route: Get user's location statistics by date range (analytics pipeline)
-  app.get("/api/locations/stats", isAuthenticated, async (req, res) => {
+  app.get("/api/locations/stats", combinedAuth, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -1086,7 +1266,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete a specific dataset
-  app.delete("/api/datasets/:datasetId", isAuthenticated, async (req, res) => {
+  app.delete("/api/datasets/:datasetId", combinedAuth, async (req, res) => {
     console.log(`🚨 DELETE ROUTE HIT: ${req.params.datasetId}`);
     try {
       const { claims } = getAuthenticatedUser(req);
@@ -1116,7 +1296,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Protected route: Clear user's location data
-  app.delete("/api/locations", isAuthenticated, async (req, res) => {
+  app.delete("/api/locations", combinedAuth, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -1129,7 +1309,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // FIXED: Backfill daily centroids - NO GEOCODING (violates user requirements)
-  app.post("/api/analytics/backfill-centroids", isAuthenticated, async (req, res) => {
+  app.post("/api/analytics/backfill-centroids", combinedAuth, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -1151,7 +1331,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // FIXED: Manual geocoding queue status - NO PROCESSING (violates user requirements)
-  app.get("/api/analytics/geocoding-queue-status", isAuthenticated, async (req, res) => {
+  app.get("/api/analytics/geocoding-queue-status", combinedAuth, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -1170,7 +1350,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // CRITICAL FIX: Debug geocoding coverage for specific year
-  app.get("/api/analytics/debug/:year", isAuthenticated, async (req, res) => {
+  app.get("/api/analytics/debug/:year", combinedAuth, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -1199,7 +1379,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // CRITICAL FIX: Get geocoding queue status
-  app.get("/api/analytics/geocoding-status", isAuthenticated, async (req, res) => {
+  app.get("/api/analytics/geocoding-status", combinedAuth, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -1222,7 +1402,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get ungeocoded summary grouped by month/year for quick testing
-  app.get("/api/analytics/ungeocoded-summary", isAuthenticated, async (req, res) => {
+  app.get("/api/analytics/ungeocoded-summary", combinedAuth, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -1244,7 +1424,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Visit/activity-based yearly state/country report endpoint (COMPLETE REPLACEMENT)
-  app.get("/api/yearly-state-report", isAuthenticated, async (req, res) => {
+  app.get("/api/yearly-state-report", combinedAuth, async (req, res) => {
     try {
       const user = getAuthenticatedUser(req);
       const userId = user.claims.sub;
@@ -1521,7 +1701,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // NEW: Date-range specific geocoding endpoint for better user experience
-  app.post("/api/analytics/geocode-date-range", isAuthenticated, async (req, res) => {
+  app.post("/api/analytics/geocode-date-range", combinedAuth, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -1634,7 +1814,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // NEW: Waypoint computation pipeline endpoint
   // NEW: Date-range-first waypoint computation API
   // Server-Sent Events endpoint for real-time progress updates
-  app.get('/api/progress/:taskId', isAuthenticated, (req, res) => {
+  app.get('/api/progress/:taskId', combinedAuth, (req, res) => {
     const { taskId } = req.params;
     
     // Set up SSE headers
@@ -1678,7 +1858,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   };
 
-  app.post('/api/waypoints/compute', isAuthenticated, async (req, res) => {
+  app.post('/api/waypoints/compute', combinedAuth, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -1761,7 +1941,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Orchestrated analytics endpoint: Automates the entire centroids → geocoding → analytics pipeline
-  app.post('/api/analytics/run', isAuthenticated, async (req, res) => {
+  app.post('/api/analytics/run', combinedAuth, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -2159,7 +2339,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Analytics endpoint: Geocoded places analysis with OpenAI curation
-  app.post('/api/analytics/geocoded-places', isAuthenticated, async (req, res) => {
+  app.post('/api/analytics/geocoded-places', combinedAuth, async (req, res) => {
     try {
       const user = getAuthenticatedUser(req);
       const userId = user.claims.sub;
@@ -2318,7 +2498,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Interesting Places endpoint: AI-powered recommendations
-  app.post('/api/interesting-places', isAuthenticated, async (req, res) => {
+  app.post('/api/interesting-places', combinedAuth, async (req, res) => {
     try {
       const user = getAuthenticatedUser(req);
       const userId = user.claims.sub;
