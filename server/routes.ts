@@ -1255,8 +1255,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const datasets = await storage.getUserLocationDatasets(userId);
       let placeVisitAnalysis = null;
       
-      console.log(`🚨 PLACEVISIT DEBUG: Found ${datasets.length} datasets for user ${userId}`);
-      console.log(`🚨 PLACEVISIT DEBUG: This message should ALWAYS appear in logs`);
+      console.log(`🔍 Found ${datasets.length} datasets for placeVisit analysis`);
       
       if (datasets.length > 0) {
         // Use the most recent dataset for analysis
