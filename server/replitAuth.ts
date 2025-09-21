@@ -9,12 +9,30 @@ import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
 import { storage } from "./storage";
 
-if (!process.env.REPLIT_DOMAINS) {
-  throw new Error("Environment variable REPLIT_DOMAINS not provided");
+// Check if we're in a Replit environment (only check essential vars)
+export const isReplitEnvironment = () => {
+  return Boolean(process.env.REPLIT_DOMAINS && process.env.REPL_ID);
+};
+
+// Check if external hosting bypass is explicitly enabled
+export const isBypassEnabled = () => {
+  return process.env.AUTH_BYPASS === "true";
+};
+
+if (!isReplitEnvironment()) {
+  console.log("⚠️  Not in Replit environment - checking bypass mode");
+  if (isBypassEnabled()) {
+    console.log("🔓 AUTH_BYPASS enabled - using bypass authentication");
+  } else {
+    console.log("🔒 AUTH_BYPASS not set - external deployment will require authentication");
+  }
 }
 
 const getOidcConfig = memoize(
   async () => {
+    if (!isReplitEnvironment()) {
+      throw new Error("Not in Replit environment");
+    }
     return await client.discovery(
       new URL(process.env.ISSUER_URL ?? "https://replit.com/oidc"),
       process.env.REPL_ID!
@@ -67,7 +85,48 @@ async function upsertUser(
   });
 }
 
+// Bypass middleware for explicitly enabled external hosting
+export const bypassAuth: RequestHandler = async (req, res, next) => {
+  if (!isBypassEnabled()) {
+    return res.status(401).json({ 
+      message: "Authentication required. Set AUTH_BYPASS=true or use proper authentication."
+    });
+  }
+
+  // Create mock user and ensure it exists in storage
+  const mockUser = {
+    id: "external-user",
+    email: "user@example.com", 
+    firstName: "External",
+    lastName: "User"
+  };
+
+  try {
+    // Ensure the external user exists in storage
+    await storage.upsertUser(mockUser);
+  } catch (error) {
+    console.error("Failed to create external user:", error);
+  }
+
+  req.user = {
+    claims: {
+      sub: mockUser.id,
+      email: mockUser.email,
+      first_name: mockUser.firstName,
+      last_name: mockUser.lastName
+    }
+  };
+  (req as any).isAuthenticated = () => true;
+  next();
+};
+
 export async function setupAuth(app: Express) {
+  // Only setup Replit auth if in Replit environment
+  if (!isReplitEnvironment()) {
+    console.log("ℹ️  Skipping Replit auth setup - not in Replit environment");
+    return;
+  }
+
   app.set("trust proxy", 1);
   app.use(getSession());
   app.use(passport.initialize());
@@ -129,6 +188,11 @@ export async function setupAuth(app: Express) {
 }
 
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
+  // If not in Replit environment, use bypass auth (with explicit check)
+  if (!isReplitEnvironment()) {
+    return bypassAuth(req, res, next);
+  }
+
   const user = req.user as any;
 
   if (!req.isAuthenticated() || !user.expires_at) {
