@@ -1,11 +1,14 @@
-// Authentication hook for Replit Auth - from blueprint javascript_log_in_with_replit
+// Simplified authentication hook to avoid React Hooks order violations
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 interface User {
   id: string;
-  email?: string;
-  first_name?: string;
-  last_name?: string;
+  username?: string;
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  first_name?: string;  // Keep for backward compatibility
+  last_name?: string;   // Keep for backward compatibility
 }
 
 export function useAuth() {
@@ -19,16 +22,9 @@ export function useAuth() {
 
   const isAuthenticated = !!user;
 
-  const logout = async () => {
-    try {
-      // Use GET request to match server implementation
-      window.location.href = '/api/logout';
-    } catch (error) {
-      console.error('Logout error:', error);
-      // Force logout even if request fails
-      queryClient.clear();
-      window.location.href = '/';
-    }
+  const logout = () => {
+    localStorage.removeItem('authToken');
+    queryClient.clear();
   };
 
   return {

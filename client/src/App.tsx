@@ -6,9 +6,13 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { LogIn, MapPin } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { LogIn, MapPin, UserPlus, User } from "lucide-react";
 import LocationHistoryApp from "@/components/LocationHistoryApp";
 import ThemeToggle from "@/components/ThemeToggle";
+import { useState } from "react";
+import { useToast } from "@/hooks/use-toast";
 
 function AuthenticatedApp() {
   const { user, logout } = useAuth();
@@ -40,8 +44,61 @@ function AuthenticatedApp() {
 }
 
 function LoginScreen() {
-  const handleLogin = () => {
-    window.location.href = '/api/login';
+  const [isLogin, setIsLogin] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    username: '',
+    email: '',
+    password: '',
+    firstName: '',
+    lastName: '',
+  });
+  const { toast } = useToast();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const url = isLogin ? '/api/auth/login' : '/api/auth/register';
+      const body = isLogin 
+        ? { username: formData.username, password: formData.password }
+        : formData;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || `${isLogin ? 'Login' : 'Registration'} failed`);
+      }
+
+      // Store token and refresh the page to update auth state
+      localStorage.setItem('authToken', data.token);
+      window.location.reload();
+
+    } catch (error) {
+      toast({
+        title: isLogin ? "Login Failed" : "Registration Failed",
+        description: error instanceof Error ? error.message : "An error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    });
   };
 
   return (
@@ -61,15 +118,107 @@ function LoginScreen() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Button 
-            onClick={handleLogin} 
-            className="w-full" 
-            size="lg"
-            data-testid="button-login"
-          >
-            <LogIn className="mr-2 h-4 w-4" />
-            Sign in with Replit
-          </Button>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <Label htmlFor="username">Username</Label>
+              <Input
+                id="username"
+                name="username"
+                type="text"
+                value={formData.username}
+                onChange={handleInputChange}
+                required
+                data-testid="input-username"
+              />
+            </div>
+
+            {!isLogin && (
+              <>
+                <div>
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    name="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={handleInputChange}
+                    required
+                    data-testid="input-email"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label htmlFor="firstName">First Name</Label>
+                    <Input
+                      id="firstName"
+                      name="firstName"
+                      type="text"
+                      value={formData.firstName}
+                      onChange={handleInputChange}
+                      data-testid="input-firstname"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="lastName">Last Name</Label>
+                    <Input
+                      id="lastName"
+                      name="lastName"
+                      type="text"
+                      value={formData.lastName}
+                      onChange={handleInputChange}
+                      data-testid="input-lastname"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            <div>
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                name="password"
+                type="password"
+                value={formData.password}
+                onChange={handleInputChange}
+                required
+                data-testid="input-password"
+              />
+            </div>
+
+            <Button 
+              type="submit"
+              className="w-full" 
+              size="lg"
+              disabled={loading}
+              data-testid={isLogin ? "button-login" : "button-register"}
+            >
+              {loading ? (
+                "Loading..."
+              ) : isLogin ? (
+                <>
+                  <LogIn className="mr-2 h-4 w-4" />
+                  Sign In
+                </>
+              ) : (
+                <>
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Sign Up
+                </>
+              )}
+            </Button>
+          </form>
+
+          <div className="mt-4 text-center">
+            <Button
+              variant="ghost"
+              onClick={() => setIsLogin(!isLogin)}
+              data-testid="button-toggle-mode"
+            >
+              {isLogin ? "Need an account? Sign up" : "Already have an account? Sign in"}
+            </Button>
+          </div>
+
           <p className="text-xs text-muted-foreground text-center mt-4">
             Your location data is stored securely and never shared
           </p>
