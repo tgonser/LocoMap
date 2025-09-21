@@ -1,0 +1,60 @@
+
+
+Sep 21, 10:33 AM - 10:38 AM
+HST
+
+Menu
+
+==> Cloning from https://github.com/tgonser/LocoMap
+==> Checking out commit 4529aac921bf3223b3a5c5a0a95b7ef496255aff in branch main
+==> Using Node.js version 22.16.0 (default)
+==> Docs on specifying a Node.js version: https://render.com/docs/node-version
+==> Running build command 'npm install; npm run build'...
+added 512 packages, and audited 513 packages in 11s
+66 packages are looking for funding
+  run `npm fund` for details
+6 vulnerabilities (3 low, 3 moderate)
+To address all issues, run:
+  npm audit fix
+Run `npm audit` for details.
+> rest-express@1.0.0 build
+> vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist
+▲ [WARNING] Duplicate key "tailwindcss-animate" in object literal [duplicate-object-key]
+    package.json:100:4:
+      100 │     "tailwindcss-animate": "^1.0.7"
+          ╵     ~~~~~~~~~~~~~~~~~~~~~
+  The original key "tailwindcss-animate" is here:
+    package.json:83:4:
+      83 │     "tailwindcss-animate": "^1.0.7",
+         ╵     ~~~~~~~~~~~~~~~~~~~~~
+vite v5.4.19 building for production...
+transforming...
+Browserslist: browsers data (caniuse-lite) is 11 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+A PostCSS plugin did not pass the `from` option to `postcss.parse`. This may cause imported assets to be incorrectly transformed. If you've recently added a PostCSS plugin that raised this warning, please contact the package author to fix the issue.
+✓ 3295 modules transformed.
+rendering chunks...
+computing gzip size...
+../dist/public/index.html                              1.32 kB │ gzip:   0.69 kB
+../dist/public/assets/index-TlW-LUXt.css              96.13 kB │ gzip:  14.98 kB
+../dist/public/assets/purify.es-DfngIMfA.js           22.26 kB │ gzip:   8.72 kB
+../dist/public/assets/index.es-TDC3eyIY.js           150.53 kB │ gzip:  51.48 kB
+../dist/public/assets/html2canvas.esm-CBrSDip1.js    201.42 kB │ gzip:  48.03 kB
+../dist/public/assets/index-CZO0h1Hz.js            1,263.60 kB │ gzip: 381.12 kB
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 9.04s
+▲ [WARNING] Duplicate key "tailwindcss-animate" in object literal [duplicate-object-key]
+    package.json:100:4:
+      100 │     "tailwindcss-animate": "^1.0.7"
+          ╵     ~~~~~~~~~~~~~~~~~~~~~
+  The original key "tailwindcss-animate" is here:
+    package.json:83:4:
+      83 │     "tailwindcss-animate": "^1.0.7",
+         ╵     ~~~~~~~~~~~~~~~~~~~~~
+1 warning
+  dist/index.js  192.8kb
+⚡ Done in 16ms
