@@ -601,3 +601,24 @@ function mergeResultsInOrder(
   
   return results;
 }
+
+/**
+ * Get cached geocoding results for all locations in the database
+ * Used by presence detection to find nearby cache hits within radius
+ */
+export async function getAllCachedLocations(): Promise<Array<{lat: number, lng: number, state?: string, country: string}>> {
+  try {
+    const cached = await db.select({
+      lat: geocodeCache.lat,
+      lng: geocodeCache.lng,
+      state: geocodeCache.state,
+      country: geocodeCache.country,
+    }).from(geocodeCache)
+    .where(eq(geocodeCache.country, geocodeCache.country)); // Simple WHERE to ensure only valid results
+    
+    return cached.filter(item => item.country); // Filter out any null countries
+  } catch (error) {
+    console.warn('Failed to fetch cached locations:', error);
+    return [];
+  }
+}
