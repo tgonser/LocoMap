@@ -73,6 +73,10 @@ export function parseVisitsActivitiesModern(jsonData: any, year: number): Locati
   
   console.log(`🏠 Parsing visits/activities for presence detection in ${year}...`);
   
+  // Debug: Log the top-level keys in the JSON structure
+  const topLevelKeys = Object.keys(jsonData);
+  console.log(`🔍 DEBUG: Top-level JSON keys:`, topLevelKeys);
+  
   const yearStart = new Date(year, 0, 1);
   const yearEnd = new Date(year + 1, 0, 1);
   
@@ -81,6 +85,10 @@ export function parseVisitsActivitiesModern(jsonData: any, year: number): Locati
   
   if (!Array.isArray(timelineObjects)) {
     console.warn(`🚫 No valid timelineObjects found in JSON data for ${year}`);
+    console.log(`🔍 DEBUG: Available data keys:`, Object.keys(jsonData));
+    if (jsonData.timelineObjects) {
+      console.log(`🔍 DEBUG: timelineObjects type:`, typeof jsonData.timelineObjects);
+    }
     return samples;
   }
   
