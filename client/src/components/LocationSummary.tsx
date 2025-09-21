@@ -18,6 +18,7 @@ interface LocationData {
 }
 
 interface InterestingPlace {
+  name: string;
   description: string;
   location: string;
   websiteUrl: string;
