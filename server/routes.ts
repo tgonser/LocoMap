@@ -86,6 +86,60 @@ function getOpenAIClient() {
   });
 }
 
+// URL validation helper to filter out dead links and parking pages
+async function validateBusinessUrls(places: Array<{description: string, location: string, websiteUrl: string}>): Promise<Array<{description: string, location: string, websiteUrl: string}>> {
+  const validPlaces = [];
+  
+  for (const place of places) {
+    try {
+      console.log(`🔍 Validating URL: ${place.websiteUrl}`);
+      
+      // Quick HEAD request with short timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+      
+      const response = await fetch(place.websiteUrl, {
+        method: 'HEAD',
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; LocationAnalyzer/1.0)'
+        }
+      });
+      
+      clearTimeout(timeoutId);
+      
+      // Check for successful response
+      if (response.ok && response.status < 400) {
+        // Check if it's likely a real website (not a parking page)
+        const contentType = response.headers.get('content-type') || '';
+        const isHtml = contentType.includes('text/html');
+        
+        // Additional check: avoid common parking page indicators
+        const url = response.url.toLowerCase();
+        const isParkingPage = url.includes('godaddy') || 
+                             url.includes('parked') || 
+                             url.includes('forsale') || 
+                             url.includes('domains') ||
+                             url.includes('sedo.com');
+        
+        if (isHtml && !isParkingPage) {
+          console.log(`✅ Valid URL: ${place.websiteUrl}`);
+          validPlaces.push(place);
+        } else {
+          console.log(`❌ Parking page detected: ${place.websiteUrl}`);
+        }
+      } else {
+        console.log(`❌ HTTP error ${response.status}: ${place.websiteUrl}`);
+      }
+      
+    } catch (error) {
+      console.log(`❌ URL validation failed: ${place.websiteUrl} - ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+  
+  return validPlaces;
+}
+
 // OpenAI curation removed for performance - analytics now return in under 2 seconds
 
 // Configure multer for file uploads using disk storage to avoid memory issues
@@ -2661,9 +2715,14 @@ Return your response as a JSON object with this exact structure:
         
         console.log(`🎉 Successfully generated ${validatedPlaces.places.length} interesting places for user ${userId}`);
         
+        // Validate URLs to filter out dead links and parking pages
+        const validatedUrls = await validateBusinessUrls(validatedPlaces.places);
+        
+        console.log(`✅ URL validation complete: ${validatedUrls.length}/${validatedPlaces.places.length} URLs are valid`);
+        
         // Return successful response
         res.json({
-          places: validatedPlaces.places,
+          places: validatedUrls,
           tokenUsage,
           model: "gpt-4o-mini"
         });
