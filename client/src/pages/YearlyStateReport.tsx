@@ -67,7 +67,9 @@ export default function YearlyStateReport() {
       return;
     }
 
+    console.log('Creating PDF document...');
     const doc = new jsPDF();
+    console.log('PDF document created successfully');
     const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 20;
     let yPosition = margin;
@@ -145,7 +147,13 @@ export default function YearlyStateReport() {
     doc.text('Analysis based on 2-4 representative points per day for faster processing', margin, yPosition + 5);
 
     // Save the PDF
-    doc.save(`Location-Analysis-${reportData.year}.pdf`);
+    console.log('About to save PDF...');
+    try {
+      doc.save(`Location-Analysis-${reportData.year}.pdf`);
+      console.log('PDF save completed!');
+    } catch (error) {
+      console.error('PDF save failed:', error);
+    }
   };
 
   return (
