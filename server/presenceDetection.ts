@@ -73,26 +73,72 @@ export function parseVisitsActivitiesModern(jsonData: any, year: number): Locati
   
   console.log(`🏠 Parsing visits/activities for presence detection in ${year}...`);
   
-  // Debug: Log the top-level keys in the JSON structure
-  const topLevelKeys = Object.keys(jsonData);
-  console.log(`🔍 DEBUG: Top-level JSON keys:`, topLevelKeys);
-  
   const yearStart = new Date(year, 0, 1);
   const yearEnd = new Date(year + 1, 0, 1);
   
-  // Handle different JSON structures
-  const timelineObjects = jsonData.timelineObjects || jsonData.locations || [];
+  // Check if this is old format (array of locations) or new format (timelineObjects)
+  const isOldFormat = Array.isArray(jsonData) || (typeof jsonData === 'object' && Object.keys(jsonData)[0] === '0');
   
-  if (!Array.isArray(timelineObjects)) {
-    console.warn(`🚫 No valid timelineObjects found in JSON data for ${year}`);
-    console.log(`🔍 DEBUG: Available data keys:`, Object.keys(jsonData));
-    if (jsonData.timelineObjects) {
-      console.log(`🔍 DEBUG: timelineObjects type:`, typeof jsonData.timelineObjects);
-    }
+  if (isOldFormat) {
+    console.log(`📍 Processing OLD FORMAT with ${Array.isArray(jsonData) ? jsonData.length : Object.keys(jsonData).length} location points for ${year}`);
+    
+    // Convert object with numeric keys to array if needed
+    const locations = Array.isArray(jsonData) ? jsonData : Object.values(jsonData);
+    
+    // Group locations by day and sample representative points for presence detection
+    const dailyGroups: { [date: string]: any[] } = {};
+    
+    locations.forEach((location: any) => {
+      if (location.timestampMs && location.latitudeE7 && location.longitudeE7) {
+        const timestamp = new Date(parseInt(location.timestampMs));
+        
+        if (timestamp >= yearStart && timestamp < yearEnd) {
+          const date = getLocalDateKey(timestamp);
+          
+          if (!dailyGroups[date]) {
+            dailyGroups[date] = [];
+          }
+          
+          dailyGroups[date].push({
+            lat: location.latitudeE7 / 1e7,
+            lng: location.longitudeE7 / 1e7,
+            timestamp,
+            accuracy: location.accuracy || 100
+          });
+        }
+      }
+    });
+    
+    // For each day, select the most representative location (highest accuracy/lowest value)
+    Object.entries(dailyGroups).forEach(([date, dayLocations]) => {
+      if (dayLocations.length > 0) {
+        // Sort by accuracy (lower is better) and take the best point
+        const bestLocation = dayLocations.sort((a, b) => a.accuracy - b.accuracy)[0];
+        
+        samples.push({
+          date,
+          lat: bestLocation.lat,
+          lng: bestLocation.lng,
+          durationMs: 24 * 60 * 60 * 1000, // Assume full day presence
+          provenance: 'location_history',
+          timestamp: bestLocation.timestamp
+        });
+      }
+    });
+    
+    console.log(`🏠 Extracted ${samples.length} daily location samples from old format for ${year}`);
     return samples;
   }
   
-  console.log(`📍 Processing ${timelineObjects.length} timeline objects for ${year}`);
+  // Handle new semantic format with timelineObjects
+  const timelineObjects = jsonData.timelineObjects || [];
+  
+  if (!Array.isArray(timelineObjects)) {
+    console.warn(`🚫 No valid timelineObjects found in JSON data for ${year}`);
+    return samples;
+  }
+  
+  console.log(`📍 Processing NEW FORMAT with ${timelineObjects.length} timeline objects for ${year}`);
   
   timelineObjects.forEach((obj: any) => {
     // Parse placeVisit records (stationary periods - high value for presence)
