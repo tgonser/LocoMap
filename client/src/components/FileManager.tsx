@@ -72,8 +72,15 @@ export default function FileManager({ onFileUpload }: FileManagerProps) {
     const fileName = currentDataset.filename;
     setIsDeleting(true);
     try {
+      const token = localStorage.getItem('authToken');
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      
       const response = await fetch(`/api/datasets/${currentDataset.id}`, {
         method: 'DELETE',
+        headers,
       });
 
       if (response.ok) {
@@ -102,8 +109,15 @@ export default function FileManager({ onFileUpload }: FileManagerProps) {
     try {
       console.log(`🚀 Starting processing for dataset ${currentDataset.id}`);
       
+      const token = localStorage.getItem('authToken');
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      
       const response = await fetch(`/api/datasets/${currentDataset.id}/process`, {
         method: 'POST',
+        headers,
       });
 
       const result = await response.json();
