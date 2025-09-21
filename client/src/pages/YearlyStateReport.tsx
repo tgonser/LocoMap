@@ -68,24 +68,24 @@ export default function YearlyStateReport() {
 
     // Title
     doc.setFontSize(20);
-    doc.setFont(undefined, 'bold');
+    doc.setFont("helvetica", 'bold');
     doc.text(`${reportData.year} Location Analysis Report`, margin, yPosition);
     yPosition += 15;
 
     // Subtitle
     doc.setFontSize(12);
-    doc.setFont(undefined, 'normal');
+    doc.setFont("helvetica", 'normal');
     doc.text('Yearly State & Country Breakdown', margin, yPosition);
     yPosition += 20;
 
     // Summary Statistics
     doc.setFontSize(14);
-    doc.setFont(undefined, 'bold');
+    doc.setFont("helvetica", 'bold');
     doc.text('Summary Statistics', margin, yPosition);
     yPosition += 10;
 
     doc.setFontSize(11);
-    doc.setFont(undefined, 'normal');
+    doc.setFont("helvetica", 'normal');
     doc.text(`Total Days with Location Data: ${reportData.totalDays}`, margin, yPosition);
     yPosition += 6;
     doc.text(`Total Location Points Analyzed: ${reportData.processingStats.totalPoints.toLocaleString()}`, margin, yPosition);
@@ -98,13 +98,13 @@ export default function YearlyStateReport() {
 
     // State/Country Breakdown
     doc.setFontSize(14);
-    doc.setFont(undefined, 'bold');
+    doc.setFont("helvetica", 'bold');
     doc.text('Location Breakdown', margin, yPosition);
     yPosition += 10;
 
     // Table headers
     doc.setFontSize(10);
-    doc.setFont(undefined, 'bold');
+    doc.setFont("helvetica", 'bold');
     doc.text('Location', margin, yPosition);
     doc.text('Type', margin + 80, yPosition);
     doc.text('Days', margin + 120, yPosition);
@@ -116,7 +116,7 @@ export default function YearlyStateReport() {
     yPosition += 2;
 
     // Data rows
-    doc.setFont(undefined, 'normal');
+    doc.setFont("helvetica", 'normal');
     reportData.stateCountryData.forEach((location, index) => {
       // Check if we need a new page
       if (yPosition > 270) {
@@ -134,7 +134,7 @@ export default function YearlyStateReport() {
     // Footer
     yPosition += 10;
     doc.setFontSize(9);
-    doc.setFont(undefined, 'italic');
+    doc.setFont("helvetica", 'italic');
     doc.text(`Generated on ${new Date().toLocaleDateString()} using optimized location sampling`, margin, yPosition);
     doc.text('Analysis based on 2-4 representative points per day for faster processing', margin, yPosition + 5);
 
