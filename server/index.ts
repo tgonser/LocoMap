@@ -2,6 +2,14 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
+// Debug environment variables for Render deployment
+console.log('🔍 ENVIRONMENT DEBUG:');
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('AUTH_BYPASS:', process.env.AUTH_BYPASS);
+console.log('OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? 'SET' : 'MISSING');
+console.log('REPLIT_DOMAINS:', process.env.REPLIT_DOMAINS ? 'SET' : 'MISSING');
+console.log('---');
+
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
