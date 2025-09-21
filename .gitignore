@@ -1,6 +1,68 @@
-node_modules
-dist
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables (CRITICAL - protects API keys)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build outputs
+dist/
+build/
+server/public/
+
+# Development files
 .DS_Store
-server/public
-vite.config.ts.*
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+logs/
+*.log
+/tmp/logs/
+
+# Runtime and temporary files
+.cache/
+.temp/
+.tmp/
+*.tmp
+*.temp
+
+# Database files (if using local DB)
+*.db
+*.sqlite
+*.sqlite3
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Archive files
 *.tar.gz
+*.zip
+*.rar
+
+# Vite specific
+vite.config.ts.*
+
+# Test coverage
+coverage/
+
+# Backup files
+*.bak
+*.backup
+
+# IDE and editor files
+.vscode/
+.idea/
+*.sublime-*
+.editorconfig
