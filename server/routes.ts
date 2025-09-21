@@ -2775,10 +2775,15 @@ Return your response as a JSON object with this exact structure:
         console.log(`🎉 Successfully generated ${validatedPlaces.places.length} interesting places for user ${userId}`);
         
         // Convert names to concise Google search URLs for reliable results
-        const placesWithGoogleSearch = validatedPlaces.places.map(place => ({
-          ...place,
-          websiteUrl: `https://www.google.com/search?q=${encodeURIComponent(`${place.name} ${place.location}`)}`
-        }));
+        const placesWithGoogleSearch = validatedPlaces.places.map(place => {
+          const searchQuery = `${place.name} ${place.location}`;
+          const websiteUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
+          console.log(`🔍 [DEBUG] Search query for "${place.name}": "${searchQuery}" -> URL length: ${websiteUrl.length}`);
+          return {
+            ...place,
+            websiteUrl
+          };
+        });
         
         console.log(`✅ Generated ${placesWithGoogleSearch.length} Google search URLs for interesting places`);
         
