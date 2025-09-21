@@ -85,9 +85,25 @@ export function parseVisitsActivitiesModern(jsonData: any, year: number): Locati
     // Convert object with numeric keys to array if needed
     const allItems = Array.isArray(jsonData) ? jsonData : Object.values(jsonData);
     
-    // Look at the FIRST ~600k items which contain activity/visit data
-    const activityVisitSection = allItems.slice(0, 600000);
-    console.log(`🏠 Analyzing first 600k items for activity/visit data in ${year}`);
+    // Find the boundary between activity/visit data and timelinePath data
+    let boundaryIndex = allItems.length;
+    console.log(`🔍 Scanning ${allItems.length} items to find activity/visit vs timelinePath boundary...`);
+    
+    // Sample items to detect the boundary (check every 1000th item for efficiency)
+    for (let i = 0; i < allItems.length; i += 1000) {
+      const item = allItems[i];
+      if (item && typeof item === 'object') {
+        // If we find timelinePath but no placeVisit/activitySegment, we've hit the boundary
+        if (item.timelinePath && !item.placeVisit && !item.activitySegment) {
+          boundaryIndex = i;
+          console.log(`📍 Found boundary at index ${i} - timelinePath section starts here`);
+          break;
+        }
+      }
+    }
+    
+    const activityVisitSection = allItems.slice(0, boundaryIndex);
+    console.log(`🏠 Analyzing first ${activityVisitSection.length} items for activity/visit data in ${year}`);
     
     // Group locations by day and sample representative points for presence detection
     const dailyGroups: { [date: string]: any[] } = {};
