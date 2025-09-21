@@ -5,7 +5,7 @@ import multer from "multer";
 import fs from 'fs';
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { parseGoogleLocationHistory, validateGoogleLocationHistory, analyzePlaceVisitCoverage } from "./googleLocationParser";
+import { parseGoogleLocationHistory, validateGoogleLocationHistory } from "./googleLocationParser";
 import { batchReverseGeocode, deduplicateCoordinates } from "./geocodingService";
 import { GoogleLocationIngest } from "./googleLocationIngest";
 import { z } from "zod";
@@ -1251,28 +1251,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`🗓️ Generating yearly report for ${year}: ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
-      // Get user's datasets to access original JSON for placeVisit analysis  
-      const datasets = await storage.getUserLocationDatasets(userId);
-      let placeVisitAnalysis = null;
-      
-      if (datasets.length > 0) {
-        // Use the most recent dataset for analysis
-        const latestDataset = datasets[datasets.length - 1];
-        try {
-          const rawContent = await storage.getRawFile(latestDataset.id, userId);
-          
-          if (rawContent) {
-            const jsonData = JSON.parse(rawContent);
-            
-            if (jsonData.timelineObjects) {
-              placeVisitAnalysis = analyzePlaceVisitCoverage(jsonData, year);
-            }
-          }
-        } catch (error) {
-          const err = error as Error;
-          console.warn(`⚠️ Could not analyze placeVisit data: ${err.message}`);
-        }
-      }
 
       // Get all location points for the year
       const allPoints = await storage.getUserLocationPointsByDateRange(userId, startDate, endDate);
@@ -1293,15 +1271,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           totalDays: 0,
           stateCountryData: [],
           summary: "No location data found for this year",
-          coverageAnalysis: placeVisitAnalysis ? {
-            timelinePathDays: 0,
-            placeVisitDays: placeVisitAnalysis.placeVisitDays.size,
-            totalDaysInYear,
-            potentialImprovement: placeVisitAnalysis.placeVisitDays.size,
-            currentCoveragePercent: 0,
-            potentialCoveragePercent: parseFloat(((placeVisitAnalysis.placeVisitDays.size / totalDaysInYear) * 100).toFixed(1)),
-            coverageGap: `Current approach captures 0 days, placeVisit data could add ${placeVisitAnalysis.placeVisitDays.size} days for ${parseFloat(((placeVisitAnalysis.placeVisitDays.size / totalDaysInYear) * 100).toFixed(1))}% total coverage`
-          } : null,
           processingStats: {
             totalPoints: 0,
             sampledPoints: 0,
@@ -1328,35 +1297,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Aggregate state/country statistics
       const stateCountryStats = aggregateStateCountryStats(dailyLocations, year);
 
-      // Calculate coverage analysis with proper leap year logic
-      const isLeapYear = (y: number) => y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0);
-      const totalDaysInYear = isLeapYear(year) ? 366 : 365;
-      let coverageAnalysis = null;
-
-      if (placeVisitAnalysis) {
-        // Calculate union of timelinePath and placeVisit days
-        const timelineDays = new Set(Object.keys(dailyLocations));
-        const visitDays = placeVisitAnalysis.placeVisitDays;
-        
-        // Find additional days from placeVisit data (not already covered by timelinePath)
-        const additionalDays = Array.from(visitDays).filter(d => !timelineDays.has(d));
-        const totalUnionDays = timelineDays.size + additionalDays.length;
-        
-        const currentCoverage = ((timelineDays.size / totalDaysInYear) * 100).toFixed(1);
-        const potentialCoverage = ((totalUnionDays / totalDaysInYear) * 100).toFixed(1);
-        
-        coverageAnalysis = {
-          timelinePathDays: timelineDays.size,
-          placeVisitDays: visitDays.size,
-          totalDaysInYear,
-          potentialImprovement: additionalDays.length,
-          currentCoveragePercent: parseFloat(currentCoverage),
-          potentialCoveragePercent: parseFloat(potentialCoverage),
-          coverageGap: additionalDays.length > 0 
-            ? `TimelinePath captures ${timelineDays.size} days (${currentCoverage}%), placeVisit data could add ${additionalDays.length} more days for ${potentialCoverage}% total coverage`
-            : `TimelinePath already captures ${timelineDays.size} days (${currentCoverage}%), no additional days available from placeVisit data`
-        };
-      }
 
       // Add cache-busting headers to ensure fresh data
       res.set({
@@ -1369,7 +1309,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         year,
         totalDays: Object.keys(dailyLocations).length,
         stateCountryData: stateCountryStats,
-        coverageAnalysis,
         processingStats: {
           totalPoints: allPoints.length,
           sampledPoints: sampledPoints.length,

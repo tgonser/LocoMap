@@ -17,15 +17,6 @@ interface YearlyReportData {
     percentage: number;
     type: "us_state" | "country";
   }>;
-  coverageAnalysis?: {
-    timelinePathDays: number;
-    placeVisitDays: number;
-    totalDaysInYear: number;
-    potentialImprovement: number;
-    currentCoveragePercent: number;
-    potentialCoveragePercent: number;
-    coverageGap: string;
-  };
   processingStats: {
     totalPoints: number;
     sampledPoints: number;
@@ -113,27 +104,6 @@ export default function YearlyStateReport() {
     doc.text(`Processing Efficiency: ${efficiency}% (100x faster than full analysis)`, margin, yPosition);
     yPosition += 15;
 
-    // Coverage Analysis
-    if (reportData.coverageAnalysis) {
-      doc.setFontSize(14);
-      doc.setFont("helvetica", 'bold');
-      doc.text('Data Coverage Analysis', margin, yPosition);
-      yPosition += 10;
-
-      doc.setFontSize(11);
-      doc.setFont("helvetica", 'normal');
-      doc.text(`Current timelinePath coverage: ${reportData.coverageAnalysis.currentCoveragePercent}% (${reportData.coverageAnalysis.timelinePathDays} of ${reportData.coverageAnalysis.totalDaysInYear} days)`, margin, yPosition);
-      yPosition += 6;
-      doc.text(`Potential with placeVisit data: ${reportData.coverageAnalysis.potentialCoveragePercent}% (${reportData.coverageAnalysis.placeVisitDays} days)`, margin, yPosition);
-      yPosition += 6;
-      doc.text(`Additional days possible: +${reportData.coverageAnalysis.potentialImprovement}`, margin, yPosition);
-      yPosition += 10;
-      
-      // Split long coverage gap text into multiple lines
-      const coverageGapLines = doc.splitTextToSize(reportData.coverageAnalysis.coverageGap, pageWidth - 2 * margin);
-      doc.text(coverageGapLines, margin, yPosition);
-      yPosition += coverageGapLines.length * 6 + 10;
-    }
 
     // State/Country Breakdown
     doc.setFontSize(14);
@@ -292,82 +262,6 @@ export default function YearlyStateReport() {
             </Card>
           </div>
 
-          {/* Coverage Analysis */}
-          {reportData.coverageAnalysis && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5" />
-                  Data Coverage Analysis
-                </CardTitle>
-                <CardDescription>
-                  Comparison of current timelinePath data vs potential placeVisit data for comprehensive day attribution
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-blue-600" data-testid="text-timeline-coverage">
-                      {reportData.coverageAnalysis.currentCoveragePercent}%
-                    </div>
-                    <p className="text-sm text-muted-foreground">Current Coverage</p>
-                    <p className="text-xs text-muted-foreground">
-                      {reportData.coverageAnalysis.timelinePathDays} of {reportData.coverageAnalysis.totalDaysInYear} days
-                    </p>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-green-600" data-testid="text-potential-coverage">
-                      {reportData.coverageAnalysis.potentialCoveragePercent}%
-                    </div>
-                    <p className="text-sm text-muted-foreground">Potential Coverage</p>
-                    <p className="text-xs text-muted-foreground">
-                      With placeVisit data ({reportData.coverageAnalysis.placeVisitDays} days)
-                    </p>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-purple-600" data-testid="text-potential-improvement">
-                      +{reportData.coverageAnalysis.potentialImprovement}
-                    </div>
-                    <p className="text-sm text-muted-foreground">Additional Days</p>
-                    <p className="text-xs text-muted-foreground">
-                      Possible with placeVisit integration
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Current timelinePath coverage</span>
-                    <span>{reportData.coverageAnalysis.currentCoveragePercent}%</span>
-                  </div>
-                  <Progress 
-                    value={reportData.coverageAnalysis.currentCoveragePercent} 
-                    className="h-2"
-                  />
-                  <div className="flex justify-between text-sm">
-                    <span>Potential with placeVisit data</span>
-                    <span>{reportData.coverageAnalysis.potentialCoveragePercent}%</span>
-                  </div>
-                  <Progress 
-                    value={reportData.coverageAnalysis.potentialCoveragePercent} 
-                    className="h-2"
-                  />
-                </div>
-                
-                <div className="bg-muted/50 p-4 rounded-lg">
-                  <p className="text-sm" data-testid="text-coverage-explanation">
-                    {reportData.coverageAnalysis.coverageGap}
-                  </p>
-                  {reportData.coverageAnalysis.potentialImprovement > 0 && (
-                    <p className="text-xs text-muted-foreground mt-2">
-                      PlaceVisit data could capture stationary days (home, work, extended stays) that timelinePath misses, 
-                      providing more comprehensive yearly analysis for accurate state/country time calculations.
-                    </p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
 
           {/* Export Button */}
           <Card>
