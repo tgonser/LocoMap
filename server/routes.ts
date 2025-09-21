@@ -1301,6 +1301,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`🔍 Parsed ${allSamples.length} visit/activity samples for ${year}`);
 
+      // FALLBACK: If presence detection found 0 samples, use the existing working parser
+      if (allSamples.length === 0) {
+        console.log(`🔄 Presence detection found 0 samples, falling back to existing route parser for ${year}`);
+        
+        for (const data of semanticData) {
+          try {
+            // Use the existing parser that works with your data format
+            const routePoints = parseGoogleLocationHistory(data.jsonData);
+            
+            // Filter to target year and group by day
+            const yearStart = new Date(year, 0, 1);
+            const yearEnd = new Date(year + 1, 0, 1);
+            const dailyGroups: { [date: string]: any[] } = {};
+            
+            routePoints.forEach(point => {
+              if (point.timestamp >= yearStart && point.timestamp < yearEnd) {
+                const date = `${point.timestamp.getFullYear()}-${String(point.timestamp.getMonth() + 1).padStart(2, '0')}-${String(point.timestamp.getDate()).padStart(2, '0')}`;
+                
+                if (!dailyGroups[date]) {
+                  dailyGroups[date] = [];
+                }
+                dailyGroups[date].push(point);
+              }
+            });
+            
+            // Select 2-3 representative points per day
+            Object.entries(dailyGroups).forEach(([date, dayPoints]) => {
+              if (dayPoints.length > 0) {
+                // Select evenly spaced points (start, middle, end if enough points)
+                const indices = dayPoints.length === 1 ? [0] : 
+                                dayPoints.length === 2 ? [0, 1] :
+                                [0, Math.floor(dayPoints.length / 2), dayPoints.length - 1];
+                
+                indices.forEach(i => {
+                  const point = dayPoints[i];
+                  allSamples.push({
+                    date,
+                    lat: point.lat,
+                    lng: point.lng,
+                    durationMs: 8 * 60 * 60 * 1000, // 8 hours estimated presence
+                    provenance: 'visit',
+                    timestamp: point.timestamp
+                  });
+                });
+              }
+            });
+            
+            console.log(`🔄 Extracted ${Object.keys(dailyGroups).length} days from fallback parser`);
+          } catch (parseError) {
+            console.warn(`Failed to parse with fallback parser for dataset ${data.id}:`, parseError);
+          }
+        }
+      }
+
       if (allSamples.length === 0) {
         res.set({
           'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -1312,7 +1366,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           year,
           totalDays: 0,
           stateCountryData: [],
-          summary: "No valid visit/activity samples found for this year",
+          summary: "No valid location data found for this year",
           processingStats: {
             totalPoints: 0,
             sampledPoints: 0,
