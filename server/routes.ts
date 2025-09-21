@@ -2665,9 +2665,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Construct AI prompt for interesting places
       const prompt = `You are a knowledgeable local guide who specializes in diverse recommendations spanning businesses, history, culture, and unique experiences. Focus on actionable recommendations across different geographic areas.
 
-⚠️ CRITICAL: Only provide REAL, EXISTING websites that you are confident exist. NEVER make up or guess URLs. If a place doesn't have an official website, use a tourism office or directory site instead.
-
-AVOID: Government tourism sites (.gov, .us), generic travel sites (TripAdvisor, Yelp), booking aggregators, Wikipedia.
+AVOID: Generic or overly broad recommendations. Be specific and actionable.
 PRIORITIZE: Independent businesses, historical sites with visitor facilities, cultural landmarks, famous people connections, local events.
 
 Based on these visited cities:
@@ -2690,32 +2688,22 @@ HISTORICAL & CULTURAL:
 
 GEOGRAPHIC DISTRIBUTION: Spread recommendations across different cities/areas from the list above, not concentrated in one location.
 
-WEBSITE REQUIREMENTS:
-- ONLY provide URLs for websites that ACTUALLY EXIST
-- For established businesses: use their official business website
-- For historical sites: use museum or visitor center websites
-- For events: use official event organizer or tourism office websites
-- If no official website exists, use a reputable local tourism site that mentions the place
-- NEVER create fictional URLs like "www.placename.com" or guess domain names
-
 EXAMPLE for Sun Valley/Ketchum area:
-- Galena Lodge (cross-country skiing and mountain dining) - galenalodge.com
-- Ernest Hemingway Memorial (famous writer who lived in Ketchum) - visitsunvalley.com
-- Redfish Lake Lodge (lakeside dining and historic cabins) - redfishlake.com  
-- Sun Valley Film Festival (annual cultural event) - sunvalleyfilmfestival.org
+- Galena Lodge offers year-round activities including cross-country skiing in winter and mountain biking in summer with on-site dining
+- Ernest Hemingway Memorial and gravesite in Ketchum cemetery honors the famous writer who spent his final years here  
+- Redfish Lake Lodge provides lakeside dining and rustic cabin accommodations in the Sawtooth Mountains
+- Sun Valley Film Festival showcases independent films annually each fall with screenings and celebrity appearances
 
 For each place, provide:
-- One sentence about what makes it special and actionable
+- One sentence about what makes it special and what you can do there (be specific and actionable)
 - The specific location/city from the visited areas
-- A REAL, EXISTING website URL (never make up domains)
 
 Return your response as a JSON object with this exact structure:
 {
   "places": [
     {
       "description": "One sentence about what makes this place special and what you can do there",
-      "location": "City/Location Name", 
-      "websiteUrl": "https://real-existing-website.com"
+      "location": "City/Location Name"
     }
   ]
 }`;
@@ -2769,8 +2757,7 @@ Return your response as a JSON object with this exact structure:
         const placesSchema = z.object({
           places: z.array(z.object({
             description: z.string(),
-            location: z.string(),
-            websiteUrl: z.string().url()
+            location: z.string()
           })).min(1).max(15)
         });
         
@@ -2784,14 +2771,17 @@ Return your response as a JSON object with this exact structure:
         
         console.log(`🎉 Successfully generated ${validatedPlaces.places.length} interesting places for user ${userId}`);
         
-        // Validate URLs to filter out dead links and parking pages
-        const validatedUrls = await validateBusinessUrls(validatedPlaces.places);
+        // Convert descriptions to Google search URLs for reliable results
+        const placesWithGoogleSearch = validatedPlaces.places.map(place => ({
+          ...place,
+          websiteUrl: `https://www.google.com/search?q=${encodeURIComponent(`${place.description} ${place.location}`)}`
+        }));
         
-        console.log(`✅ URL validation complete: ${validatedUrls.length}/${validatedPlaces.places.length} URLs are valid`);
+        console.log(`✅ Generated ${placesWithGoogleSearch.length} Google search URLs for interesting places`);
         
         // Return successful response
         res.json({
-          places: validatedUrls,
+          places: placesWithGoogleSearch,
           tokenUsage,
           model: "gpt-4o-mini"
         });

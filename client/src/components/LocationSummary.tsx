@@ -335,7 +335,7 @@ export default function LocationSummary({
                       data-testid={`button-view-website-${index}`}
                     >
                       <ExternalLink className="h-4 w-4" />
-                      Visit Website
+                      Search Google
                     </Button>
                   </div>
                 </div>
