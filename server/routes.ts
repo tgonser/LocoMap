@@ -2564,24 +2564,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
 Based on these visited cities:
 ${topCities.join('\n')}
 
-Find exactly 5 interesting tourist attractions, landmarks, or unique spots that are:
+Find interesting places around the cities from our list, and bring back one sentence about the attraction, and a hyperlink to get more information about it. When we say interesting, we mean "places that people may not know about, but would stand out".
+
+Find exactly 5 places that are:
 - Near or accessible from these visited cities
-- Well-known, publicly accessible places
-- Worth visiting for tourists
+- Lesser-known gems that locals might recommend
+- Unique, standout attractions that aren't typical tourist spots
+- Publicly accessible and worth visiting
 - Diverse (different types of attractions)
 
 For each place, provide:
-- A brief description (1-2 sentences)
+- One sentence description about what makes it special
 - The location/city it's near
-- A Google Maps search URL
+- A direct website URL for the attraction or area (not Google Maps)
 
 Return your response as a JSON object with this exact structure:
 {
   "places": [
     {
-      "description": "Brief description of the place",
+      "description": "One sentence about what makes this place special",
       "location": "City/Location Name",
-      "googleMapsUrl": "https://www.google.com/maps/search/Place+Name+Location"
+      "websiteUrl": "https://example.com/attraction-official-site"
     }
   ]
 }`;
@@ -2636,7 +2639,7 @@ Return your response as a JSON object with this exact structure:
           places: z.array(z.object({
             description: z.string(),
             location: z.string(),
-            googleMapsUrl: z.string().url()
+            websiteUrl: z.string().url()
           })).min(1).max(5)
         });
         

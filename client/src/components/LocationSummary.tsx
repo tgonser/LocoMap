@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { MapPin, Building, Globe2, Download, Sparkles, Loader2, ChevronDown, ChevronUp, Eye } from 'lucide-react';
+import { MapPin, Building, Globe2, Download, Sparkles, Loader2, ChevronDown, ChevronUp, Eye, ExternalLink } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 
@@ -20,7 +20,7 @@ interface LocationData {
 interface InterestingPlace {
   description: string;
   location: string;
-  googleMapsUrl: string;
+  websiteUrl: string;
 }
 
 interface TokenUsage {
@@ -326,12 +326,12 @@ export default function LocationSummary({
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => window.open(place.googleMapsUrl, '_blank')}
+                      onClick={() => window.open(place.websiteUrl, '_blank')}
                       className="flex items-center gap-2 w-full"
-                      data-testid={`button-view-maps-${index}`}
+                      data-testid={`button-view-website-${index}`}
                     >
-                      <MapPin className="h-4 w-4" />
-                      View on Google Maps
+                      <ExternalLink className="h-4 w-4" />
+                      Visit Website
                     </Button>
                   </div>
                 </div>
