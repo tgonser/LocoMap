@@ -6,7 +6,8 @@ import fs from 'fs';
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { parseGoogleLocationHistory, validateGoogleLocationHistory } from "./googleLocationParser";
-import { batchReverseGeocode, deduplicateCoordinates } from "./geocodingService";
+import { batchReverseGeocode, deduplicateCoordinates, getAllCachedLocations } from "./geocodingService";
+import { parseVisitsActivitiesModern, selectDailySamples, resolveSamples, buildDailyPresence } from "./presenceDetection";
 import { GoogleLocationIngest } from "./googleLocationIngest";
 import { z } from "zod";
 import OpenAI from "openai";
@@ -229,7 +230,7 @@ async function geocodeUserLocationPoints(userId: string, datasetId: string) {
     // Update locations with geocoded information
     for (let i = 0; i < uniqueCoords.length; i++) {
       const uniqueCoord = uniqueCoords[i];
-      const geocodeResult = geocodeResults[i];
+      const geocodeResult = geocodeResults.results[i];
       
       // Update all locations that match this coordinate
       for (const index of uniqueCoord.indices) {
@@ -298,7 +299,7 @@ async function geocodeDailyCentroids(userId: string) {
         // Update daily centroids with geocoding results
         for (let i = 0; i < ungeocoded.length; i++) {
           const centroid = ungeocoded[i];
-          const geocodeResult = geocodeResults[i];
+          const geocodeResult = geocodeResults.results[i];
           
           await storage.updateDailyCentroidGeocoding(
             centroid.id,
@@ -393,7 +394,7 @@ async function geocodeDailyCentroidsByDateRange(
         // Update daily centroids with geocoding results
         for (let i = 0; i < ungeocoded.length; i++) {
           const centroid = ungeocoded[i];
-          const geocodeResult = geocodeResults[i];
+          const geocodeResult = geocodeResults.results[i];
           
           await storage.updateDailyCentroidGeocoding(
             centroid.id,
@@ -1234,7 +1235,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Optimized yearly state/country report endpoint
+  // Visit/activity-based yearly state/country report endpoint (COMPLETE REPLACEMENT)
   app.get("/api/yearly-state-report", isAuthenticated, async (req, res) => {
     try {
       const user = getAuthenticatedUser(req);
@@ -1245,20 +1246,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Valid year parameter required" });
       }
 
-      // Date range for the entire year
-      const startDate = new Date(`${year}-01-01T00:00:00Z`);
-      const endDate = new Date(`${year + 1}-01-01T00:00:00Z`);
+      console.log(`🏠 Generating visit/activity-based yearly report for ${year}`);
 
-      console.log(`🗓️ Generating yearly report for ${year}: ${startDate.toISOString()} to ${endDate.toISOString()}`);
-
-
-      // Get all location points for the year
-      const allPoints = await storage.getUserLocationPointsByDateRange(userId, startDate, endDate);
+      // Get user's location datasets and raw files (contains semantic data)
+      const datasets = await storage.getUserLocationDatasets(userId);
       
-      if (allPoints.length === 0) {
-        const isLeapYear = (y: number) => y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0);
-        const totalDaysInYear = isLeapYear(year) ? 366 : 365;
-        
+      const semanticData: Array<{id: string, jsonData: any}> = [];
+      for (const dataset of datasets) {
+        try {
+          const rawContent = await storage.getRawFile(dataset.id, userId);
+          if (rawContent) {
+            const jsonData = JSON.parse(rawContent);
+            semanticData.push({ id: dataset.id, jsonData });
+          }
+        } catch (parseError) {
+          console.warn(`Failed to parse dataset ${dataset.id}:`, parseError);
+        }
+      }
+      
+      if (!semanticData || semanticData.length === 0) {
         // Add cache-busting headers to ensure fresh data
         res.set({
           'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -1270,7 +1276,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           year,
           totalDays: 0,
           stateCountryData: [],
-          summary: "No location data found for this year",
+          summary: "No visit/activity data found for this year",
           processingStats: {
             totalPoints: 0,
             sampledPoints: 0,
@@ -1280,23 +1286,97 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      console.log(`📍 Found ${allPoints.length} total points for ${year}`);
+      console.log(`🏛️ Found ${semanticData.length} semantic data files for ${year}`);
 
-      // Sample 2-4 points per day for efficient processing
-      const sampledPoints = samplePointsByDay(allPoints, 4);
-      console.log(`📊 Sampled ${sampledPoints.length} points from ${allPoints.length} total points`);
+      // Step 1: Parse visits/activities for the target year
+      let allSamples: any[] = [];
+      for (const data of semanticData) {
+        try {
+          const samples = parseVisitsActivitiesModern(data.jsonData, year);
+          allSamples.push(...samples);
+        } catch (parseError) {
+          console.warn(`Failed to parse semantic data file ${data.id}:`, parseError);
+        }
+      }
 
-      // Geocode only the sampled points (much faster!)
-      const geocodedSamples = await geocodeSampledPoints(sampledPoints);
-      console.log(`🗺️ Geocoded ${geocodedSamples.length} sample points`);
+      console.log(`🔍 Parsed ${allSamples.length} visit/activity samples for ${year}`);
 
-      // Group by day and determine primary state/country for each day
-      const dailyLocations = groupSamplesByDay(geocodedSamples);
-      console.log(`📅 Processed ${Object.keys(dailyLocations).length} days with location data`);
+      if (allSamples.length === 0) {
+        res.set({
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        });
+        
+        return res.json({
+          year,
+          totalDays: 0,
+          stateCountryData: [],
+          summary: "No valid visit/activity samples found for this year",
+          processingStats: {
+            totalPoints: 0,
+            sampledPoints: 0,
+            geocodedSamples: 0,
+            daysWithData: 0
+          }
+        });
+      }
 
-      // Aggregate state/country statistics
-      const stateCountryStats = aggregateStateCountryStats(dailyLocations, year);
+      // Step 2: Select daily samples (max 3 per day)
+      const selectedSamples = selectDailySamples(allSamples, 3);
+      console.log(`📊 Selected ${selectedSamples.length} samples (max 3 per day)`);
 
+      // Step 3: Build cache array for 20-mile radius lookup
+      const cacheArray = await getAllCachedLocations();
+      console.log(`💾 Loaded ${cacheArray.length} cached locations for radius lookup`);
+
+      // Step 4: Resolve samples with cache-first approach
+      const resolvedSamples = await resolveSamples(selectedSamples, cacheArray, 20);
+      console.log(`🗺️ Resolved ${resolvedSamples.length} samples with state/country data`);
+
+      // Step 5: Build daily presence records
+      const dailyPresence = buildDailyPresence(resolvedSamples);
+      console.log(`📅 Built ${dailyPresence.length} daily presence records`);
+
+      // Step 6: Aggregate state/country statistics
+      const stateCountryStats: any[] = [];
+      const stateCounts: { [key: string]: number } = {};
+      const countryCounts: { [key: string]: number } = {};
+
+      dailyPresence.forEach(day => {
+        if (day.country === 'United States' && day.state) {
+          stateCounts[day.state] = (stateCounts[day.state] || 0) + 1;
+        } else if (day.country) {
+          countryCounts[day.country] = (countryCounts[day.country] || 0) + 1;
+        }
+      });
+
+      const totalDays = dailyPresence.length;
+
+      // Add US states to stats
+      Object.entries(stateCounts).forEach(([state, days]) => {
+        stateCountryStats.push({
+          location: state,
+          type: 'state',
+          days,
+          percentage: Math.round((days / totalDays) * 100 * 10) / 10
+        });
+      });
+
+      // Add countries to stats (excluding US if we have state data)
+      Object.entries(countryCounts).forEach(([country, days]) => {
+        if (country !== 'United States' || Object.keys(stateCounts).length === 0) {
+          stateCountryStats.push({
+            location: country,
+            type: 'country',
+            days,
+            percentage: Math.round((days / totalDays) * 100 * 10) / 10
+          });
+        }
+      });
+
+      // Sort by days descending
+      stateCountryStats.sort((a, b) => b.days - a.days);
 
       // Add cache-busting headers to ensure fresh data
       res.set({
@@ -1307,18 +1387,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({
         year,
-        totalDays: Object.keys(dailyLocations).length,
+        totalDays: dailyPresence.length,
         stateCountryData: stateCountryStats,
         processingStats: {
-          totalPoints: allPoints.length,
-          sampledPoints: sampledPoints.length,
-          geocodedSamples: geocodedSamples.length,
-          daysWithData: Object.keys(dailyLocations).length
+          totalPoints: allSamples.length,
+          sampledPoints: selectedSamples.length,
+          geocodedSamples: resolvedSamples.length,
+          daysWithData: dailyPresence.length
         }
       });
 
     } catch (error) {
-      console.error("Error generating yearly state report:", error);
+      console.error("Error generating visit/activity-based yearly report:", error);
       res.status(500).json({ error: "Failed to generate yearly report" });
     }
   });
