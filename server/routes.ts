@@ -133,9 +133,23 @@ async function validateBusinessUrls(places: Array<{description: string, location
       }
       
     } catch (error) {
-      // Don't filter out if it's just a timeout or network issue - many legitimate business sites are slow
+      // More selective about keeping failed URLs - many could be AI hallucinations
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      if (errorMsg.includes('aborted') || errorMsg.includes('timeout') || errorMsg.includes('fetch failed')) {
+      const url = place.websiteUrl.toLowerCase();
+      
+      // Check if it looks like a made-up domain pattern
+      const likelyFakePatterns = [
+        /www\.\w+festival\.com$/,  // www.eventnamefestival.com
+        /www\.\w+wine\w*\.com$/,   // www.camporealewinefestival.com
+        /www\.\w+event\w*\.com$/,  // www.eventname.com
+        /\w+\.\w+\.\w+\.\w+/       // too many subdomains
+      ];
+      
+      const looksLikeFakeDomain = likelyFakePatterns.some(pattern => pattern.test(url));
+      
+      if (looksLikeFakeDomain) {
+        console.log(`❌ Suspected AI hallucination: ${place.websiteUrl} - ${errorMsg}`);
+      } else if (errorMsg.includes('aborted') || errorMsg.includes('timeout')) {
         console.log(`⚠️ URL slow but keeping: ${place.websiteUrl} - ${errorMsg}`);
         validPlaces.push(place); // Keep it - probably just slow loading
       } else {
@@ -2651,6 +2665,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Construct AI prompt for interesting places
       const prompt = `You are a knowledgeable local guide who specializes in diverse recommendations spanning businesses, history, culture, and unique experiences. Focus on actionable recommendations across different geographic areas.
 
+⚠️ CRITICAL: Only provide REAL, EXISTING websites that you are confident exist. NEVER make up or guess URLs. If a place doesn't have an official website, use a tourism office or directory site instead.
+
 AVOID: Government tourism sites (.gov, .us), generic travel sites (TripAdvisor, Yelp), booking aggregators, Wikipedia.
 PRIORITIZE: Independent businesses, historical sites with visitor facilities, cultural landmarks, famous people connections, local events.
 
@@ -2674,16 +2690,24 @@ HISTORICAL & CULTURAL:
 
 GEOGRAPHIC DISTRIBUTION: Spread recommendations across different cities/areas from the list above, not concentrated in one location.
 
+WEBSITE REQUIREMENTS:
+- ONLY provide URLs for websites that ACTUALLY EXIST
+- For established businesses: use their official business website
+- For historical sites: use museum or visitor center websites
+- For events: use official event organizer or tourism office websites
+- If no official website exists, use a reputable local tourism site that mentions the place
+- NEVER create fictional URLs like "www.placename.com" or guess domain names
+
 EXAMPLE for Sun Valley/Ketchum area:
-- Galena Lodge (cross-country skiing and mountain dining)
-- Ernest Hemingway Memorial (famous writer who lived in Ketchum)
-- Redfish Lake Lodge (lakeside dining and historic cabins)
-- Sun Valley Film Festival (annual cultural event)
+- Galena Lodge (cross-country skiing and mountain dining) - galenalodge.com
+- Ernest Hemingway Memorial (famous writer who lived in Ketchum) - visitsunvalley.com
+- Redfish Lake Lodge (lakeside dining and historic cabins) - redfishlake.com  
+- Sun Valley Film Festival (annual cultural event) - sunvalleyfilmfestival.org
 
 For each place, provide:
 - One sentence about what makes it special and actionable
 - The specific location/city from the visited areas
-- The official website (business, museum, event, or facility site)
+- A REAL, EXISTING website URL (never make up domains)
 
 Return your response as a JSON object with this exact structure:
 {
@@ -2691,7 +2715,7 @@ Return your response as a JSON object with this exact structure:
     {
       "description": "One sentence about what makes this place special and what you can do there",
       "location": "City/Location Name", 
-      "websiteUrl": "https://official-website.com"
+      "websiteUrl": "https://real-existing-website.com"
     }
   ]
 }`;
