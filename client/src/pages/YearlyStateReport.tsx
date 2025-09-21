@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { CalendarDays, MapPin, Globe, TrendingUp, Download } from "lucide-react";
 import jsPDF from "jspdf";
+import { apiRequest } from "@/lib/queryClient";
 
 interface YearlyReportData {
   year: number;
@@ -44,14 +45,7 @@ export default function YearlyStateReport() {
       try {
         // Add timestamp to force fresh request and bypass browser cache
         const timestamp = Date.now();
-        const response = await fetch(`/api/yearly-state-report?year=${selectedYear}&t=${timestamp}`, {
-          cache: 'no-cache',
-          headers: {
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache'
-          }
-        });
-        if (!response.ok) throw new Error("Failed to fetch yearly report");
+        const response = await apiRequest('GET', `/api/yearly-state-report?year=${selectedYear}&t=${timestamp}`);
         
         setProcessingProgress("Processing complete!");
         return response.json();
