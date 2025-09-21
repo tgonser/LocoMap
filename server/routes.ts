@@ -1251,11 +1251,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`🗓️ Generating yearly report for ${year}: ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
-      // Get user's datasets to access original JSON for placeVisit analysis
+      // Get user's datasets to access original JSON for placeVisit analysis  
       const datasets = await storage.getUserLocationDatasets(userId);
       let placeVisitAnalysis = null;
       
-      console.log(`🔍 DEBUG: Found ${datasets.length} datasets for user ${userId}`);
+      console.log(`🚨 PLACEVISIT DEBUG: Found ${datasets.length} datasets for user ${userId}`);
+      console.log(`🚨 PLACEVISIT DEBUG: This message should ALWAYS appear in logs`);
       
       if (datasets.length > 0) {
         // Use the most recent dataset for analysis
