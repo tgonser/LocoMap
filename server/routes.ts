@@ -28,10 +28,15 @@ function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: numbe
   return R * c;
 }
 
-// OpenAI client setup for interesting places feature
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// OpenAI client setup for interesting places feature - lazy initialization
+function getOpenAIClient() {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("OpenAI API key not configured. Set OPENAI_API_KEY environment variable.");
+  }
+  return new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+}
 
 // OpenAI curation removed for performance - analytics now return in under 2 seconds
 
@@ -2384,6 +2389,7 @@ Return your response as a JSON object with this exact structure:
 
       try {
         // Call OpenAI API with GPT-4o mini for cost efficiency
+        const openai = getOpenAIClient();
         const completion = await openai.chat.completions.create({
           model: "gpt-4o-mini",
           messages: [
