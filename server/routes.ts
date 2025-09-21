@@ -2774,6 +2774,11 @@ Return your response as a JSON object with this exact structure:
         
         console.log(`🎉 Successfully generated ${validatedPlaces.places.length} interesting places for user ${userId}`);
         
+        // Debug: Check what fields are actually in the response
+        validatedPlaces.places.forEach((place, index) => {
+          console.log(`🔍 [DEBUG] Place ${index + 1}: name="${place.name || 'MISSING'}", description="${place.description?.substring(0, 50) || 'MISSING'}..."`);
+        });
+        
         // Convert names to concise Google search URLs for reliable results
         const placesWithGoogleSearch = validatedPlaces.places.map(place => {
           const searchQuery = `${place.name} ${place.location}`;
