@@ -25,8 +25,15 @@ export default function FileUploader({ onFileUpload, isProcessing = false }: Fil
       const formData = new FormData();
       formData.append('file', file);
 
+      const token = localStorage.getItem('authToken');
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
       const response = await fetch('/api/upload-location-history', {
         method: 'POST',
+        headers: headers,
         body: formData,
       });
 
