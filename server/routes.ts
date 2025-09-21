@@ -971,7 +971,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: 'uploaded_not_processed',
         metadata: {
           filename: req.file.originalname,
-          fileSize: Math.round(req.file.buffer.length / (1024 * 1024)) + 'MB',
+          fileSize: Math.round((req.file.size || Buffer.byteLength(JSON.stringify(jsonData))) / (1024 * 1024)) + 'MB',
           totalElements: metadata.totalElements,
           estimatedPoints: metadata.estimatedPoints,
           dateRange: metadata.dateRange,
