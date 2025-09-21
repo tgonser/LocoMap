@@ -321,11 +321,14 @@ export default function LocationSummary({
                   data-testid={`card-interesting-place-${index}`}
                 >
                   <div className="space-y-2">
-                    <p className="font-medium text-sm" data-testid={`text-place-number-${index}`}>
-                      {index + 1}. {place.description}
-                    </p>
+                    <h3 className="font-medium text-sm" data-testid={`text-place-name-${index}`}>
+                      {index + 1}. {place.name}
+                    </h3>
                     <p className="text-xs text-muted-foreground">
                       Near: {place.location}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {place.description}
                     </p>
                     <Button
                       variant="outline"

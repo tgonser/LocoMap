@@ -2689,12 +2689,13 @@ HISTORICAL & CULTURAL:
 GEOGRAPHIC DISTRIBUTION: Spread recommendations across different cities/areas from the list above, not concentrated in one location.
 
 EXAMPLE for Sun Valley/Ketchum area:
-- Galena Lodge offers year-round activities including cross-country skiing in winter and mountain biking in summer with on-site dining
-- Ernest Hemingway Memorial and gravesite in Ketchum cemetery honors the famous writer who spent his final years here  
-- Redfish Lake Lodge provides lakeside dining and rustic cabin accommodations in the Sawtooth Mountains
-- Sun Valley Film Festival showcases independent films annually each fall with screenings and celebrity appearances
+- Name: "Galena Lodge", Description: "Offers year-round activities including cross-country skiing in winter and mountain biking in summer with on-site dining"
+- Name: "Ernest Hemingway Memorial", Description: "Memorial and gravesite in Ketchum cemetery honors the famous writer who spent his final years here"  
+- Name: "Redfish Lake Lodge", Description: "Provides lakeside dining and rustic cabin accommodations in the Sawtooth Mountains"
+- Name: "Sun Valley Film Festival", Description: "Showcases independent films annually each fall with screenings and celebrity appearances"
 
 For each place, provide:
+- A concise name/topic (business name, landmark name, or event name)
 - One sentence about what makes it special and what you can do there (be specific and actionable)
 - The specific location/city from the visited areas
 
@@ -2702,6 +2703,7 @@ Return your response as a JSON object with this exact structure:
 {
   "places": [
     {
+      "name": "Concise topic or business name",
       "description": "One sentence about what makes this place special and what you can do there",
       "location": "City/Location Name"
     }
@@ -2756,6 +2758,7 @@ Return your response as a JSON object with this exact structure:
         // Validate the AI response structure
         const placesSchema = z.object({
           places: z.array(z.object({
+            name: z.string(),
             description: z.string(),
             location: z.string()
           })).min(1).max(15)
@@ -2771,10 +2774,10 @@ Return your response as a JSON object with this exact structure:
         
         console.log(`🎉 Successfully generated ${validatedPlaces.places.length} interesting places for user ${userId}`);
         
-        // Convert descriptions to Google search URLs for reliable results
+        // Convert names to concise Google search URLs for reliable results
         const placesWithGoogleSearch = validatedPlaces.places.map(place => ({
           ...place,
-          websiteUrl: `https://www.google.com/search?q=${encodeURIComponent(`${place.description} ${place.location}`)}`
+          websiteUrl: `https://www.google.com/search?q=${encodeURIComponent(`${place.name} ${place.location}`)}`
         }));
         
         console.log(`✅ Generated ${placesWithGoogleSearch.length} Google search URLs for interesting places`);
