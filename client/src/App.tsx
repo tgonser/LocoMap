@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LogIn, MapPin, UserPlus, User } from "lucide-react";
+import { LogIn, MapPin, UserPlus, User, Eye, EyeOff, AlertCircle } from "lucide-react";
 import LocationHistoryApp from "@/components/LocationHistoryApp";
 import ThemeToggle from "@/components/ThemeToggle";
 import { useState } from "react";
@@ -46,6 +46,8 @@ function AuthenticatedApp() {
 function LoginScreen() {
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -55,12 +57,26 @@ function LoginScreen() {
   });
   const { toast } = useToast();
 
+  // Password validation
+  const passwordRequirements = [
+    { text: 'At least 8 characters', met: formData.password.length >= 8 },
+    { text: 'Contains uppercase letter', met: /[A-Z]/.test(formData.password) },
+    { text: 'Contains lowercase letter', met: /[a-z]/.test(formData.password) },
+    { text: 'Contains number', met: /\d/.test(formData.password) },
+  ];
+  const isPasswordValid = passwordRequirements.every(req => req.met);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
       const url = isLogin ? '/api/auth/login' : '/api/auth/register';
+      // Validate password for registration
+      if (!isLogin && !isPasswordValid) {
+        throw new Error('Password does not meet requirements');
+      }
+
       const body = isLogin 
         ? { username: formData.username, password: formData.password }
         : formData;
@@ -175,15 +191,46 @@ function LoginScreen() {
 
             <div>
               <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                value={formData.password}
-                onChange={handleInputChange}
-                required
-                data-testid="input-password"
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  value={formData.password}
+                  onChange={handleInputChange}
+                  required
+                  className={!isLogin && formData.password && !isPasswordValid ? "border-destructive" : ""}
+                  data-testid="input-password"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                  onClick={() => setShowPassword(!showPassword)}
+                  data-testid="button-toggle-password"
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+              {!isLogin && formData.password && (
+                <div className="mt-2 space-y-1">
+                  {passwordRequirements.map((req, index) => (
+                    <div key={index} className="flex items-center text-xs">
+                      <AlertCircle className={`h-3 w-3 mr-1 ${
+                        req.met ? 'text-green-500' : 'text-muted-foreground'
+                      }`} />
+                      <span className={req.met ? 'text-green-500' : 'text-muted-foreground'}>
+                        {req.text}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <Button 
@@ -209,7 +256,7 @@ function LoginScreen() {
             </Button>
           </form>
 
-          <div className="mt-4 text-center">
+          <div className="mt-4 text-center space-y-2">
             <Button
               variant="ghost"
               onClick={() => setIsLogin(!isLogin)}
@@ -217,6 +264,42 @@ function LoginScreen() {
             >
               {isLogin ? "Need an account? Sign up" : "Already have an account? Sign in"}
             </Button>
+            
+            {isLogin && (
+              <div>
+                <Button
+                  variant="link"
+                  size="sm"
+                  onClick={() => setShowForgotPassword(!showForgotPassword)}
+                  data-testid="button-forgot-password"
+                  className="text-xs"
+                >
+                  Forgot your password?
+                </Button>
+              </div>
+            )}
+            
+            {showForgotPassword && (
+              <div className="text-left p-4 bg-muted rounded-lg text-sm">
+                <h4 className="font-medium mb-2">Reset Your Password</h4>
+                <p className="text-muted-foreground mb-3">
+                  Since this is a self-hosted application, password resets need to be handled manually.
+                </p>
+                <div className="space-y-2 text-xs">
+                  <p><strong>Option 1:</strong> Contact your administrator if this is deployed by someone else.</p>
+                  <p><strong>Option 2:</strong> If you deployed this yourself, you can create a new account or reset via the database.</p>
+                  <p><strong>Option 3:</strong> Redeploy the application to start fresh (all data will be lost).</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowForgotPassword(false)}
+                  className="mt-2 text-xs"
+                >
+                  Close
+                </Button>
+              </div>
+            )}
           </div>
 
           <p className="text-xs text-muted-foreground text-center mt-4">
