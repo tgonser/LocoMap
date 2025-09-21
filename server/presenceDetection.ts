@@ -88,9 +88,44 @@ export function parseVisitsActivitiesModern(jsonData: any, year: number): Locati
     // Group locations by day and sample representative points for presence detection
     const dailyGroups: { [date: string]: any[] } = {};
     
-    locations.forEach((location: any) => {
-      if (location.timestampMs && location.latitudeE7 && location.longitudeE7) {
-        const timestamp = new Date(parseInt(location.timestampMs));
+    locations.forEach((item: any) => {
+      // Handle legacy format with timelinePath structure
+      if (item.timelinePath && Array.isArray(item.timelinePath) && item.startTime) {
+        const segmentStartTime = parseToUTCDate(item.startTime);
+        if (!segmentStartTime) return;
+        
+        item.timelinePath.forEach((point: any) => {
+          if (point.latE7 && point.lngE7) {
+            let pointTimestamp = segmentStartTime;
+            
+            // Calculate actual point timestamp if time offset available
+            if (point.time) {
+              const pointTime = parseToUTCDate(point.time);
+              if (pointTime) pointTimestamp = pointTime;
+            } else if (point.durationMinutesOffsetFromStartTime !== undefined) {
+              pointTimestamp = new Date(segmentStartTime.getTime() + point.durationMinutesOffsetFromStartTime * 60 * 1000);
+            }
+            
+            if (pointTimestamp >= yearStart && pointTimestamp < yearEnd) {
+              const date = getLocalDateKey(pointTimestamp);
+              
+              if (!dailyGroups[date]) {
+                dailyGroups[date] = [];
+              }
+              
+              dailyGroups[date].push({
+                lat: point.latE7 / 1e7,
+                lng: point.lngE7 / 1e7,
+                timestamp: pointTimestamp,
+                accuracy: 50 // Default good accuracy for timelinePath points
+              });
+            }
+          }
+        });
+      }
+      // Fallback: simple timestampMs format (if any exist)
+      else if (item.timestampMs && item.latitudeE7 && item.longitudeE7) {
+        const timestamp = new Date(parseInt(item.timestampMs));
         
         if (timestamp >= yearStart && timestamp < yearEnd) {
           const date = getLocalDateKey(timestamp);
@@ -100,10 +135,10 @@ export function parseVisitsActivitiesModern(jsonData: any, year: number): Locati
           }
           
           dailyGroups[date].push({
-            lat: location.latitudeE7 / 1e7,
-            lng: location.longitudeE7 / 1e7,
+            lat: item.latitudeE7 / 1e7,
+            lng: item.longitudeE7 / 1e7,
             timestamp,
-            accuracy: location.accuracy || 100
+            accuracy: item.accuracy || 100
           });
         }
       }
