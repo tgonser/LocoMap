@@ -211,17 +211,24 @@ export class DatabaseStorage implements IStorage {
     
     for (let i = 0; i < points.length; i += BATCH_SIZE) {
       const batch = points.slice(i, i + BATCH_SIZE);
-      const batchResults = await db.insert(locationPoints).values(batch).returning();
-      allResults.push(...batchResults);
-      
-      // Log progress for large uploads
-      if (points.length > BATCH_SIZE) {
-        const progress = Math.min(i + BATCH_SIZE, points.length);
-        console.log(`Inserted batch ${Math.floor(i / BATCH_SIZE) + 1}: ${progress}/${points.length} location points`);
+      try {
+        const batchResults = await db.insert(locationPoints).values(batch).onConflictDoNothing().returning();
+        allResults.push(...batchResults);
+        
+        // Log progress for large uploads
+        if (points.length > BATCH_SIZE) {
+          const progress = Math.min(i + BATCH_SIZE, points.length);
+          const inserted = batchResults.length;
+          const skipped = batch.length - inserted;
+          console.log(`Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${progress}/${points.length} processed (${inserted} inserted, ${skipped} duplicates skipped)`);
+        }
+      } catch (error) {
+        console.error(`❌ Failed to insert batch ${Math.floor(i / BATCH_SIZE) + 1}:`, error);
+        // Continue with next batch instead of failing completely
       }
     }
     
-    console.log(`Successfully inserted ${allResults.length} location points in ${Math.ceil(points.length / BATCH_SIZE)} batches`);
+    console.log(`Successfully processed ${points.length} location points - ${allResults.length} inserted (${points.length - allResults.length} duplicates skipped)`);
     return allResults;
   }
 
