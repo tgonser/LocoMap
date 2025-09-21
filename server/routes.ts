@@ -1255,22 +1255,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const datasets = await storage.getUserLocationDatasets(userId);
       let placeVisitAnalysis = null;
       
+      console.log(`🔍 DEBUG: Found ${datasets.length} datasets for user ${userId}`);
+      
       if (datasets.length > 0) {
         // Use the most recent dataset for analysis
         const latestDataset = datasets[datasets.length - 1];
         try {
           console.log(`🔍 Analyzing placeVisit coverage for dataset ${latestDataset.id}`);
           const rawContent = await storage.getRawFile(latestDataset.id, userId);
+          console.log(`🔍 DEBUG: Raw content available: ${rawContent ? 'YES' : 'NO'}, length: ${rawContent?.length || 0}`);
+          
           if (rawContent) {
             const jsonData = JSON.parse(rawContent);
+            console.log(`🔍 DEBUG: JSON parsed successfully, has timelineObjects: ${jsonData.timelineObjects ? 'YES' : 'NO'}`);
+            console.log(`🔍 DEBUG: JSON keys: ${Object.keys(jsonData).join(', ')}`);
+            
             if (jsonData.timelineObjects) {
+              console.log(`🔍 DEBUG: Starting placeVisit analysis for year ${year}`);
               placeVisitAnalysis = analyzePlaceVisitCoverage(jsonData, year);
               console.log(`📊 PlaceVisit analysis: ${placeVisitAnalysis.placeVisitDays.size} unique days from ${placeVisitAnalysis.totalPlaceVisits} visits`);
+            } else {
+              console.log(`⚠️ DEBUG: JSON does not have timelineObjects array`);
             }
+          } else {
+            console.log(`⚠️ DEBUG: No raw content found for dataset ${latestDataset.id}`);
           }
         } catch (error) {
-          console.warn(`⚠️ Could not analyze placeVisit data: ${error.message}`);
+          const err = error as Error;
+          console.warn(`⚠️ Could not analyze placeVisit data: ${err.message}`);
+          console.warn(`⚠️ DEBUG: Error stack: ${err.stack}`);
         }
+      } else {
+        console.log(`⚠️ DEBUG: No datasets found for user ${userId}`);
       }
 
       // Get all location points for the year
@@ -1331,7 +1347,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const visitDays = placeVisitAnalysis.placeVisitDays;
         
         // Find additional days from placeVisit data (not already covered by timelinePath)
-        const additionalDays = [...visitDays].filter(d => !timelineDays.has(d));
+        const additionalDays = Array.from(visitDays).filter(d => !timelineDays.has(d));
         const totalUnionDays = timelineDays.size + additionalDays.length;
         
         const currentCoverage = ((timelineDays.size / totalDaysInYear) * 100).toFixed(1);
