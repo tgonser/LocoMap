@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import DateRangePicker from "@/components/DateRangePicker";
 import LocationSummary from "@/components/LocationSummary";
 import { ProgressIndicator } from "@/components/ui/progress-indicator";
+import { apiRequest } from "@/lib/queryClient";
 
 interface CityJump {
   fromCity: string;
@@ -234,17 +235,10 @@ export default function AnalyticsPanel({
         description: "Running complete analytics pipeline - this may take a few minutes for large datasets...",
       });
       
-      const response = await fetch('/api/analytics/run', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          startDate,
-          endDate,
-          taskId // Send taskId to backend for progress tracking
-        })
+      const response = await apiRequest('POST', '/api/analytics/run', {
+        startDate,
+        endDate,
+        taskId // Send taskId to backend for progress tracking
       });
       
       console.log('AnalyticsPanel: Response status:', response.status);
