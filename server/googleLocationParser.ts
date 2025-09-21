@@ -115,7 +115,9 @@ function parseModernFormat(jsonData: ModernExport): ParsedLocationPoint[] {
   results.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
   
   console.log(`🎯 TimelinePath parser extracted ${results.length} total points`);
-  return results;
+  
+  // Apply deduplication as designed
+  return applyDeduplication(results);
 }
 
 
