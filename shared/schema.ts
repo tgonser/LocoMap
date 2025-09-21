@@ -25,10 +25,12 @@ export const sessions = pgTable(
   (table) => [index("IDX_session_expire").on(table.expire)],
 );
 
-// User storage table - MANDATORY for Replit Auth  
+// User storage table - Updated for username/password authentication
 export const users = pgTable("users", {
-  id: varchar("id").primaryKey(),  // Replit user ID from claims.sub
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  username: varchar("username", { length: 50 }).unique(),
   email: varchar("email").unique(),
+  password: varchar("password", { length: 255 }), // Hashed password
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
@@ -92,8 +94,30 @@ export const uniqueLocations = pgTable('unique_locations', {
 
 // Zod schemas for validation
 
-// Replit Auth schemas
-export const insertUserSchema = createInsertSchema(users);
+// Authentication schemas
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const registerSchema = insertUserSchema.pick({
+  username: true,
+  email: true,
+  password: true,
+  firstName: true,
+  lastName: true,
+}).extend({
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  username: z.string().min(3, "Username must be at least 3 characters").max(50),
+  email: z.string().email("Invalid email address"),
+});
+
+export const loginSchema = z.object({
+  username: z.string().min(1, "Username is required"),
+  password: z.string().min(1, "Password is required"),
+});
+
 export const insertLocationDatasetSchema = createInsertSchema(locationDatasets).omit({
   id: true,
   uploadedAt: true,
