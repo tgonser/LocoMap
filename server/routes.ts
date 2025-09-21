@@ -1094,8 +1094,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ error: "No valid location points found in the data" });
         }
 
-        // Mark dataset as processed
-        await storage.updateDatasetProcessed(datasetId, result.processed);
+        // Mark dataset as processed with robust error handling
+        console.log(`🔄 Marking dataset ${datasetId} as processed with ${result.processed.toLocaleString()} points...`);
+        try {
+          await storage.updateDatasetProcessed(datasetId, result.processed);
+          console.log(`✅ Successfully updated dataset status: processedAt set, deduplicatedPoints = ${result.processed}`);
+          
+          // Verify the update actually worked
+          const verifyDataset = await storage.getLocationDataset(datasetId, userId);
+          if (!verifyDataset?.processedAt) {
+            console.error(`❌ CRITICAL: Status update failed - processedAt is still null after update!`);
+            throw new Error("Failed to update dataset processed status - verification failed");
+          }
+          console.log(`✅ Verification successful: dataset.processedAt = ${verifyDataset.processedAt}`);
+          
+        } catch (statusError) {
+          console.error(`❌ CRITICAL: Failed to update dataset processed status:`, statusError);
+          // Still return success since the data was processed, but log the status issue
+          console.warn(`⚠️ Data processing succeeded (${result.processed.toLocaleString()} points) but status update failed`);
+          // Re-throw to ensure proper error handling
+          throw new Error(`Data processed successfully but failed to update status: ${statusError instanceof Error ? statusError.message : 'Unknown error'}`);
+        }
 
         console.log(`🎉 Successfully processed dataset ${datasetId}: ${result.processed.toLocaleString()} points`);
 
