@@ -1,7 +1,7 @@
 // Location presence detection from Google location visit/activity data
 // Separate from timelinePath route visualization to preserve existing functionality
 
-import { DailyPresence } from "@/shared/schema";
+import { DailyPresence } from "../shared/schema";
 import { batchReverseGeocode } from "./geocodingService";
 
 // Google location JSON types for visit/activity parsing
@@ -252,7 +252,7 @@ export async function resolveSamples(
     const geocodeResults = await batchReverseGeocode(coordinates);
     
     needsGeocoding.forEach((sample, index) => {
-      const result = geocodeResults[index];
+      const result = geocodeResults.results[index];
       if (result && result.country) {
         resolved.push({
           ...sample,
@@ -309,7 +309,7 @@ export function buildDailyPresence(resolvedSamples: Array<LocationSample & {stat
     // Find best location by count, then by total duration
     let bestLocation: {count: number, totalDuration: number, sample: typeof daySamples[0]} | null = null;
     
-    for (const location of locationCounts.values()) {
+    for (const [, location] of locationCounts) {
       if (!bestLocation || 
           location.count > bestLocation.count ||
           (location.count === bestLocation.count && location.totalDuration > bestLocation.totalDuration)) {
