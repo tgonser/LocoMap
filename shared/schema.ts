@@ -230,6 +230,20 @@ export type InsertTravelStop = z.infer<typeof insertTravelStopSchema>;
 export type TravelSegment = typeof travelSegments.$inferSelect;
 export type InsertTravelSegment = z.infer<typeof insertTravelSegmentSchema>;
 
+// Yearly report cache to avoid expensive regeneration
+export const yearlyReportCache = pgTable('yearly_report_cache', {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar('user_id').references(() => users.id).notNull(),
+  year: integer('year').notNull(),
+  reportType: varchar('report_type').notNull(), // 'state_country', etc.
+  reportData: jsonb('report_data').notNull(), // Cached JSON report
+  generatedAt: timestamp('generated_at').defaultNow(),
+  cacheVersion: varchar('cache_version').default('v1'), // For cache invalidation
+}, (table) => [
+  index('idx_yearly_report_cache_user_year').on(table.userId, table.year, table.reportType),
+  unique('unique_yearly_report_cache').on(table.userId, table.year, table.reportType)
+]);
+
 // Daily presence detection types (for visit/activity analysis)
 export const dailyPresenceSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), // YYYY-MM-DD format

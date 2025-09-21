@@ -1245,6 +1245,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!year || year < 2000 || year > new Date().getFullYear()) {
         return res.status(400).json({ error: "Valid year parameter required" });
       }
+      
+      const refresh = req.query.refresh === 'true';
+      if (refresh) {
+        console.log(`🔄 Force refresh requested for year ${year}`);
+      }
 
       console.log(`🏠 Generating visit/activity-based yearly report for ${year}`);
 
