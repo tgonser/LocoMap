@@ -100,8 +100,11 @@ export default function MapDisplay({
     : locations;
 
   // Create clean path segments for realistic track visualization
-  const createCleanPathSegments = (locations: LocationPoint[]): [number, number][][] => {
-    if (locations.length < 2) return [];
+  const createCleanPathSegments = (locations: LocationPoint[]): {
+    segments: [number, number][][];
+    gaps: [[number, number], [number, number]][];
+  } => {
+    if (locations.length < 2) return { segments: [], gaps: [] };
     
     // Sort chronologically and filter for accuracy (defensive copy to avoid mutation)
     const sortedLocations = [...locations]
@@ -112,7 +115,7 @@ export default function MapDisplay({
         return loc.accuracy ? loc.accuracy <= 200 : true;
       });
 
-    if (sortedLocations.length < 2) return [];
+    if (sortedLocations.length < 2) return { segments: [], gaps: [] };
 
     // Smart filtering: Remove points that don't add value
     const smartFilteredLocations = [];
@@ -145,9 +148,10 @@ export default function MapDisplay({
       }
     }
     
-    if (smartFilteredLocations.length < 2) return [];
+    if (smartFilteredLocations.length < 2) return { segments: [], gaps: [] };
 
     const segments: [number, number][][] = [];
+    const gaps: [[number, number], [number, number]][] = [];
     let currentSegment: [number, number][] = [];
     
     for (let i = 0; i < smartFilteredLocations.length; i++) {
@@ -173,6 +177,9 @@ export default function MapDisplay({
       if (isGap && currentSegment.length > 1) {
         // End current segment and start new one
         segments.push([...currentSegment]);
+        // Add gap connection from end of last segment to start of new segment
+        const lastPoint = currentSegment[currentSegment.length - 1];
+        gaps.push([lastPoint, coords]);
         currentSegment = [coords];
       } else {
         // Continue current segment
@@ -185,10 +192,10 @@ export default function MapDisplay({
       segments.push(currentSegment);
     }
     
-    return segments;
+    return { segments, gaps };
   };
 
-  const pathSegments = createCleanPathSegments(filteredLocations);
+  const { segments: pathSegments, gaps: pathGaps } = createCleanPathSegments(filteredLocations);
 
   // Use first location as center if available, ensure valid coordinates
   const mapCenter = filteredLocations.length > 0 
@@ -238,14 +245,27 @@ export default function MapDisplay({
             zoomOffset={0}
           />
           
-          {/* Draw clean path segments (multiple polylines for gaps) */}
+          {/* Draw clean path segments (GPS-tracked routes) */}
           {pathSegments.map((segment, segmentIndex) => (
             <Polyline
-              key={segmentIndex}
+              key={`segment-${segmentIndex}`}
               positions={segment}
               color="#3b82f6"
               weight={3}
               opacity={0.9}
+              smoothFactor={1.0}
+            />
+          ))}
+          
+          {/* Draw dotted lines for gaps (inferred travel) */}
+          {pathGaps.map((gap, gapIndex) => (
+            <Polyline
+              key={`gap-${gapIndex}`}
+              positions={gap}
+              color="#6b7280"
+              weight={2}
+              opacity={0.6}
+              dashArray="8,12"
               smoothFactor={1.0}
             />
           ))}
