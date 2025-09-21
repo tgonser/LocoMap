@@ -51,7 +51,15 @@ export default function YearlyStateReport() {
       setProcessingProgress("Starting yearly report generation...");
       
       try {
-        const response = await fetch(`/api/yearly-state-report?year=${selectedYear}`);
+        // Add timestamp to force fresh request and bypass browser cache
+        const timestamp = Date.now();
+        const response = await fetch(`/api/yearly-state-report?year=${selectedYear}&t=${timestamp}`, {
+          cache: 'no-cache',
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          }
+        });
         if (!response.ok) throw new Error("Failed to fetch yearly report");
         
         setProcessingProgress("Processing complete!");
