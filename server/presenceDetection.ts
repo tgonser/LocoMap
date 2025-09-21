@@ -68,7 +68,7 @@ function getLocalDateKey(date: Date): string {
  * Extract visit and activity location samples from Google location JSON
  * Focuses on placeVisit (stationary periods) and activitySegment (movement periods)
  */
-export function parseVisitsActivitiesModern(jsonData: ModernExport, year: number): LocationSample[] {
+export function parseVisitsActivitiesModern(jsonData: any, year: number): LocationSample[] {
   const samples: LocationSample[] = [];
   
   console.log(`🏠 Parsing visits/activities for presence detection in ${year}...`);
@@ -76,7 +76,17 @@ export function parseVisitsActivitiesModern(jsonData: ModernExport, year: number
   const yearStart = new Date(year, 0, 1);
   const yearEnd = new Date(year + 1, 0, 1);
   
-  jsonData.timelineObjects.forEach((obj) => {
+  // Handle different JSON structures
+  const timelineObjects = jsonData.timelineObjects || jsonData.locations || [];
+  
+  if (!Array.isArray(timelineObjects)) {
+    console.warn(`🚫 No valid timelineObjects found in JSON data for ${year}`);
+    return samples;
+  }
+  
+  console.log(`📍 Processing ${timelineObjects.length} timeline objects for ${year}`);
+  
+  timelineObjects.forEach((obj: any) => {
     // Parse placeVisit records (stationary periods - high value for presence)
     if (obj.placeVisit) {
       const visit = obj.placeVisit;
