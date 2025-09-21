@@ -2609,22 +2609,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Calculate analysis period for dynamic result count
-      let weeksAnalyzed = 1;
+      let daysAnalyzed = 1;
       if (dateRange) {
         const startDate = new Date(dateRange.start);
         const endDate = new Date(dateRange.end);
-        const daysDifference = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-        weeksAnalyzed = Math.max(1, Math.ceil(daysDifference / 7));
+        daysAnalyzed = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
       }
       
-      // Calculate result count: 5 per week, max 15
-      const targetResults = Math.min(15, weeksAnalyzed * 5);
+      // Calculate result count based on analysis period:
+      // 5 days or fewer: 2 items
+      // 6-15 days: 3 items  
+      // 16-30 days: 5 items
+      // 31-60 days: 10 items
+      // 61+ days: 15 items
+      let targetResults;
+      if (daysAnalyzed <= 5) {
+        targetResults = 2;
+      } else if (daysAnalyzed <= 15) {
+        targetResults = 3;
+      } else if (daysAnalyzed <= 30) {
+        targetResults = 5;
+      } else if (daysAnalyzed <= 60) {
+        targetResults = 10;
+      } else {
+        targetResults = 15;
+      }
       
       // Get top cities for AI input, ensuring geographic distribution
       const sortedCities = Object.entries(cities).sort(([,a], [,b]) => b - a);
       const topCities = sortedCities.slice(0, 10).map(([city, count]) => `${city} (visited ${count} days)`);
       
-      console.log(`🚀 Generating ${targetResults} AI recommendations for ${topCities.length} cities (${weeksAnalyzed} weeks analyzed)`);
+      console.log(`🚀 Generating ${targetResults} AI recommendations for ${topCities.length} cities (${daysAnalyzed} days analyzed)`);
       
       // Construct AI prompt for interesting places
       const prompt = `You are a knowledgeable local guide who specializes in diverse recommendations spanning businesses, history, culture, and unique experiences. Focus on actionable recommendations across different geographic areas.
