@@ -6,6 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { MapPin, Building, Globe2, Download, Sparkles, Loader2, ChevronDown, ChevronUp, Eye } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { apiRequest } from '@/lib/queryClient';
 
 interface LocationData {
   city: string;
@@ -142,21 +143,9 @@ export default function LocationSummary({
         description: "Using AI to discover cool places near your visited cities...",
       });
 
-      const response = await fetch('/api/interesting-places', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          cities: citiesData
-        })
+      const response = await apiRequest('POST', '/api/interesting-places', {
+        cities: citiesData
       });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `API request failed (${response.status})`);
-      }
 
       const data = await response.json();
       const places = data.places || [];
