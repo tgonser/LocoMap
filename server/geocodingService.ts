@@ -1,6 +1,6 @@
 import { db } from './db';
 import { geocodeCache, insertGeocodeCacheSchema } from '@shared/schema';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, sql } from 'drizzle-orm';
 
 interface GeocodeResult {
   city?: string;
@@ -685,14 +685,14 @@ function mergeResultsInOrder(
 export async function getAllCachedLocations(): Promise<Array<{lat: number, lng: number, state?: string, country: string}>> {
   try {
     const cached = await db.select({
-      lat: geocodeCache.lat,
-      lng: geocodeCache.lng,
+      lat: geocodeCache.latRounded,
+      lng: geocodeCache.lngRounded,
       state: geocodeCache.state,
       country: geocodeCache.country,
     }).from(geocodeCache)
-    .where(eq(geocodeCache.country, geocodeCache.country)); // Simple WHERE to ensure only valid results
+    .where(sql`${geocodeCache.country} IS NOT NULL`); // Filter for valid countries
     
-    return cached.filter(item => item.country); // Filter out any null countries
+    return cached.filter(item => item.country) as Array<{lat: number, lng: number, state?: string, country: string}>; // Filter out any null countries
   } catch (error) {
     console.warn('Failed to fetch cached locations:', error);
     return [];
