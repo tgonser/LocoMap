@@ -1,5 +1,10 @@
 // Modern Google Location History parser - handles timelineObjects format only
 
+// Helper function for consistent local date key generation
+function getLocalDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 type ISO = string;
 
 interface ActivityTopCandidate { type?: string }
@@ -111,6 +116,71 @@ function parseModernFormat(jsonData: ModernExport): ParsedLocationPoint[] {
   
   console.log(`🎯 TimelinePath parser extracted ${results.length} total points`);
   return results;
+}
+
+// Analysis function: Parse placeVisit data to see potential day coverage
+export function analyzePlaceVisitCoverage(jsonData: ModernExport, year: number): {
+  placeVisitDays: Set<string>;
+  totalPlaceVisits: number;
+  placeVisitsWithLocation: number;
+} {
+  const placeVisitDays = new Set<string>();
+  let totalPlaceVisits = 0;
+  let placeVisitsWithLocation = 0;
+  
+  console.log(`🏠 Analyzing placeVisit data for year ${year}...`);
+  
+  jsonData.timelineObjects.forEach((obj) => {
+    if (obj.placeVisit) {
+      totalPlaceVisits++;
+      
+      const visit = obj.placeVisit;
+      if (visit.location && visit.duration?.startTimestamp && visit.duration?.endTimestamp) {
+        placeVisitsWithLocation++;
+        
+        const startTime = parseToUTCDate(visit.duration.startTimestamp);
+        const endTime = parseToUTCDate(visit.duration.endTimestamp);
+        
+        if (startTime && endTime) {
+          // Define year boundaries (using local time to match existing timelinePath processing)
+          const yearStart = new Date(year, 0, 1); // Jan 1 of target year
+          const yearEnd = new Date(year + 1, 0, 1); // Jan 1 of next year
+          
+          // Clamp visit dates to the target year
+          const clampedStart = new Date(Math.max(startTime.getTime(), yearStart.getTime()));
+          const clampedEnd = new Date(Math.min(endTime.getTime(), yearEnd.getTime() - 1)); // -1 to stay within year
+          
+          // Only process if the visit overlaps with the target year
+          if (clampedStart < clampedEnd) {
+            let currentDate = new Date(clampedStart);
+            // Set to start of day using local time (consistent with existing logic)
+            currentDate.setHours(0, 0, 0, 0);
+            
+            while (currentDate < yearEnd) {
+              // Use helper function for consistent date key generation
+              const dateStr = getLocalDateKey(currentDate);
+              placeVisitDays.add(dateStr);
+              
+              // Move to next day using local time
+              currentDate.setDate(currentDate.getDate() + 1);
+              
+              // Break if we've gone beyond the clamped end date
+              if (currentDate > clampedEnd) break;
+            }
+          }
+        }
+      }
+    }
+  });
+  
+  console.log(`🏠 Found ${totalPlaceVisits} total placeVisits, ${placeVisitsWithLocation} with location data`);
+  console.log(`🏠 PlaceVisit data covers ${placeVisitDays.size} unique days in ${year}`);
+  
+  return {
+    placeVisitDays,
+    totalPlaceVisits,
+    placeVisitsWithLocation
+  };
 }
 
 // Apply efficient deduplication for large datasets
