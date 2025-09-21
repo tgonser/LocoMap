@@ -144,7 +144,11 @@ export default function LocationSummary({
       });
 
       const response = await apiRequest('POST', '/api/interesting-places', {
-        cities: citiesData
+        cities: citiesData,
+        dateRange: {
+          start: dateRange.start.toISOString().split('T')[0],
+          end: dateRange.end.toISOString().split('T')[0]
+        }
       });
 
       const data = await response.json();

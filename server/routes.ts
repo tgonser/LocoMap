@@ -2580,7 +2580,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Validate request body
       const requestSchema = z.object({
-        cities: z.record(z.string(), z.number()).optional().default({})
+        cities: z.record(z.string(), z.number()).optional().default({}),
+        dateRange: z.object({
+          start: z.string(),
+          end: z.string()
+        }).optional()
       });
       
       let validatedInput;
@@ -2594,7 +2598,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      const { cities } = validatedInput;
+      const { cities, dateRange } = validatedInput;
       
       if (Object.keys(cities).length === 0) {
         return res.json({
@@ -2604,41 +2608,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      // Get top 10 visited cities for AI input (sorted by visit count)
-      const topCities = Object.entries(cities)
-        .sort(([,a], [,b]) => b - a)
-        .slice(0, 10)
-        .map(([city, count]) => `${city} (visited ${count} days)`);
+      // Calculate analysis period for dynamic result count
+      let weeksAnalyzed = 1;
+      if (dateRange) {
+        const startDate = new Date(dateRange.start);
+        const endDate = new Date(dateRange.end);
+        const daysDifference = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+        weeksAnalyzed = Math.max(1, Math.ceil(daysDifference / 7));
+      }
       
-      console.log(`🚀 Generating AI recommendations for ${topCities.length} cities`);
+      // Calculate result count: 5 per week, max 15
+      const targetResults = Math.min(15, weeksAnalyzed * 5);
+      
+      // Get top cities for AI input, ensuring geographic distribution
+      const sortedCities = Object.entries(cities).sort(([,a], [,b]) => b - a);
+      const topCities = sortedCities.slice(0, 10).map(([city, count]) => `${city} (visited ${count} days)`);
+      
+      console.log(`🚀 Generating ${targetResults} AI recommendations for ${topCities.length} cities (${weeksAnalyzed} weeks analyzed)`);
       
       // Construct AI prompt for interesting places
-      const prompt = `You are a local trip concierge who specializes in recommending independent businesses, lodges, guides, and hidden gems. Focus on actionable recommendations where people can stay, eat, book activities, or have unique experiences.
+      const prompt = `You are a knowledgeable local guide who specializes in diverse recommendations spanning businesses, history, culture, and unique experiences. Focus on actionable recommendations across different geographic areas.
 
 AVOID: Government tourism sites (.gov, .us), generic travel sites (TripAdvisor, Yelp), booking aggregators, Wikipedia.
-PRIORITIZE: Independent lodges, local guides/outfitters, unique restaurants, scenic spots with specific facilities.
+PRIORITIZE: Independent businesses, historical sites with visitor facilities, cultural landmarks, famous people connections, local events.
 
 Based on these visited cities:
 ${topCities.join('\n')}
 
-Find exactly 5 diverse recommendations across these categories:
-- Mountain lodges, glamping, or unique accommodations
-- Fishing/hiking guides and outdoor outfitters  
-- Local restaurants, bakeries, or food experiences
-- Scenic spots with visitor facilities (not just viewpoints)
-- Hidden gems that locals actually recommend
+Find exactly ${targetResults} diverse recommendations distributed across different geographic areas from the cities above. Include a good cross-section from these categories:
+
+BUSINESS & EXPERIENCES:
+- Independent lodges, unique accommodations, glamping
+- Local guides, outfitters, fishing/hunting guides
+- Distinctive restaurants, bakeries, food experiences
+- Scenic spots with visitor facilities
+
+HISTORICAL & CULTURAL:
+- Historical battle sites, landmarks with visitor centers
+- Birthplaces or homes of famous people (with museums/tours)
+- Sites of significant historical events
+- Cultural festivals, annual events the area is known for
+- Architectural landmarks or cultural institutions
+
+GEOGRAPHIC DISTRIBUTION: Spread recommendations across different cities/areas from the list above, not concentrated in one location.
 
 EXAMPLE for Sun Valley/Ketchum area:
 - Galena Lodge (cross-country skiing and mountain dining)
-- Smiley Creek Lodge (rustic mountain accommodation)
-- Redfish Lake Lodge (lakeside dining and cabins)
-- Silver Creek Outfitters (fly fishing guides)
-- Stanley Baking Company (local bakery and gathering spot)
+- Ernest Hemingway Memorial (famous writer who lived in Ketchum)
+- Redfish Lake Lodge (lakeside dining and historic cabins)
+- Sun Valley Film Festival (annual cultural event)
 
 For each place, provide:
 - One sentence about what makes it special and actionable
-- The specific location/city
-- The official business website (not government or booking sites)
+- The specific location/city from the visited areas
+- The official website (business, museum, event, or facility site)
 
 Return your response as a JSON object with this exact structure:
 {
@@ -2646,7 +2669,7 @@ Return your response as a JSON object with this exact structure:
     {
       "description": "One sentence about what makes this place special and what you can do there",
       "location": "City/Location Name", 
-      "websiteUrl": "https://business-official-website.com"
+      "websiteUrl": "https://official-website.com"
     }
   ]
 }`;
@@ -2667,7 +2690,7 @@ Return your response as a JSON object with this exact structure:
             }
           ],
           response_format: { type: "json_object" },
-          max_tokens: 1000,
+          max_tokens: 2000,
           temperature: 0.7
         });
         
@@ -2702,7 +2725,7 @@ Return your response as a JSON object with this exact structure:
             description: z.string(),
             location: z.string(),
             websiteUrl: z.string().url()
-          })).min(1).max(5)
+          })).min(1).max(15)
         });
         
         let validatedPlaces;
