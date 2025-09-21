@@ -154,8 +154,8 @@ export default function FileManager({ onFileUpload }: FileManagerProps) {
 
   if (showUploader) {
     return (
-      <div className="h-full flex items-center justify-center p-6">
-        <div className="w-full max-w-2xl">
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <div className="w-full max-w-2xl mx-auto">
           <div className="text-center mb-6">
             <Upload className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
             <h2 className="text-2xl font-semibold mb-2">

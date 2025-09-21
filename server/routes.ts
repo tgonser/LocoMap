@@ -956,7 +956,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const dataset = await storage.createLocationDataset({
         userId,
         filename: req.file.originalname || 'location-history.json',
-        fileSize: req.file.buffer.length,
+        fileSize: req.file.size || Buffer.byteLength(JSON.stringify(jsonData)),
         totalPoints: metadata.estimatedPoints,
         deduplicatedPoints: 0, // Will be set during processing
       });
