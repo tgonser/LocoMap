@@ -2559,32 +2559,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`🚀 Generating AI recommendations for ${topCities.length} cities`);
       
       // Construct AI prompt for interesting places
-      const prompt = `You are a travel expert helping someone discover interesting places near cities they've visited. 
+      const prompt = `You are a local trip concierge who specializes in recommending independent businesses, lodges, guides, and hidden gems. Focus on actionable recommendations where people can stay, eat, book activities, or have unique experiences.
+
+AVOID: Government tourism sites (.gov, .us), generic travel sites (TripAdvisor, Yelp), booking aggregators, Wikipedia.
+PRIORITIZE: Independent lodges, local guides/outfitters, unique restaurants, scenic spots with specific facilities.
 
 Based on these visited cities:
 ${topCities.join('\n')}
 
-Find interesting places around the cities from our list, and bring back one sentence about the attraction, and a hyperlink to get more information about it. When we say interesting, we mean "places that people may not know about, but would stand out".
+Find exactly 5 diverse recommendations across these categories:
+- Mountain lodges, glamping, or unique accommodations
+- Fishing/hiking guides and outdoor outfitters  
+- Local restaurants, bakeries, or food experiences
+- Scenic spots with visitor facilities (not just viewpoints)
+- Hidden gems that locals actually recommend
 
-Find exactly 5 places that are:
-- Near or accessible from these visited cities
-- Lesser-known gems that locals might recommend
-- Unique, standout attractions that aren't typical tourist spots
-- Publicly accessible and worth visiting
-- Diverse (different types of attractions)
+EXAMPLE for Sun Valley/Ketchum area:
+- Galena Lodge (cross-country skiing and mountain dining)
+- Smiley Creek Lodge (rustic mountain accommodation)
+- Redfish Lake Lodge (lakeside dining and cabins)
+- Silver Creek Outfitters (fly fishing guides)
+- Stanley Baking Company (local bakery and gathering spot)
 
 For each place, provide:
-- One sentence description about what makes it special
-- The location/city it's near
-- A direct website URL for the attraction or area (not Google Maps)
+- One sentence about what makes it special and actionable
+- The specific location/city
+- The official business website (not government or booking sites)
 
 Return your response as a JSON object with this exact structure:
 {
   "places": [
     {
-      "description": "One sentence about what makes this place special",
-      "location": "City/Location Name",
-      "websiteUrl": "https://example.com/attraction-official-site"
+      "description": "One sentence about what makes this place special and what you can do there",
+      "location": "City/Location Name", 
+      "websiteUrl": "https://business-official-website.com"
     }
   ]
 }`;
