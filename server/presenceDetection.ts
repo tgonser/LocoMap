@@ -1,0 +1,369 @@
+// Location presence detection from Google location visit/activity data
+// Separate from timelinePath route visualization to preserve existing functionality
+
+import { DailyPresence } from "@/shared/schema";
+import { batchReverseGeocode } from "./geocodingService";
+
+// Google location JSON types for visit/activity parsing
+interface ModernExport {
+  timelineObjects: Array<{
+    placeVisit?: {
+      location?: {
+        latitudeE7?: number;
+        longitudeE7?: number;
+      };
+      duration?: {
+        startTimestamp?: string;
+        endTimestamp?: string;
+      };
+    };
+    activitySegment?: {
+      startLocation?: {
+        latitudeE7?: number;
+        longitudeE7?: number;
+      };
+      endLocation?: {
+        latitudeE7?: number;
+        longitudeE7?: number;
+      };
+      duration?: {
+        startTimestamp?: string;
+        endTimestamp?: string;
+      };
+    };
+  }>;
+}
+
+interface LocationSample {
+  date: string; // YYYY-MM-DD
+  lat: number;
+  lng: number;
+  durationMs: number;
+  provenance: 'visit' | 'activity';
+  timestamp: Date;
+}
+
+// Parse timestamp from Google location format
+function parseToUTCDate(timestampStr: string): Date | null {
+  try {
+    if (timestampStr.endsWith('Z')) {
+      return new Date(timestampStr);
+    } else {
+      return new Date(timestampStr + 'Z');
+    }
+  } catch {
+    return null;
+  }
+}
+
+// Generate consistent date key (YYYY-MM-DD) using local time
+function getLocalDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Extract visit and activity location samples from Google location JSON
+ * Focuses on placeVisit (stationary periods) and activitySegment (movement periods)
+ */
+export function parseVisitsActivitiesModern(jsonData: ModernExport, year: number): LocationSample[] {
+  const samples: LocationSample[] = [];
+  
+  console.log(`🏠 Parsing visits/activities for presence detection in ${year}...`);
+  
+  const yearStart = new Date(year, 0, 1);
+  const yearEnd = new Date(year + 1, 0, 1);
+  
+  jsonData.timelineObjects.forEach((obj) => {
+    // Parse placeVisit records (stationary periods - high value for presence)
+    if (obj.placeVisit) {
+      const visit = obj.placeVisit;
+      if (visit.location?.latitudeE7 && visit.location?.longitudeE7 && 
+          visit.duration?.startTimestamp && visit.duration?.endTimestamp) {
+        
+        const startTime = parseToUTCDate(visit.duration.startTimestamp);
+        const endTime = parseToUTCDate(visit.duration.endTimestamp);
+        
+        if (startTime && endTime && startTime >= yearStart && startTime < yearEnd) {
+          const lat = visit.location.latitudeE7 / 1e7;
+          const lng = visit.location.longitudeE7 / 1e7;
+          const durationMs = endTime.getTime() - startTime.getTime();
+          const date = getLocalDateKey(startTime);
+          
+          samples.push({
+            date,
+            lat,
+            lng,
+            durationMs,
+            provenance: 'visit',
+            timestamp: startTime
+          });
+        }
+      }
+    }
+    
+    // Parse activitySegment records (movement periods - fallback for presence)
+    if (obj.activitySegment) {
+      const activity = obj.activitySegment;
+      if (activity.duration?.startTimestamp && activity.duration?.endTimestamp) {
+        
+        const startTime = parseToUTCDate(activity.duration.startTimestamp);
+        const endTime = parseToUTCDate(activity.duration.endTimestamp);
+        
+        if (startTime && endTime && startTime >= yearStart && startTime < yearEnd) {
+          const durationMs = endTime.getTime() - startTime.getTime();
+          const date = getLocalDateKey(startTime);
+          
+          // Use start location if available, otherwise end location
+          let lat: number | undefined, lng: number | undefined;
+          
+          if (activity.startLocation?.latitudeE7 && activity.startLocation?.longitudeE7) {
+            lat = activity.startLocation.latitudeE7 / 1e7;
+            lng = activity.startLocation.longitudeE7 / 1e7;
+          } else if (activity.endLocation?.latitudeE7 && activity.endLocation?.longitudeE7) {
+            lat = activity.endLocation.latitudeE7 / 1e7;
+            lng = activity.endLocation.longitudeE7 / 1e7;
+          }
+          
+          if (lat !== undefined && lng !== undefined) {
+            samples.push({
+              date,
+              lat,
+              lng,
+              durationMs,
+              provenance: 'activity',
+              timestamp: startTime
+            });
+          }
+        }
+      }
+    }
+  });
+  
+  console.log(`🏠 Extracted ${samples.length} visit/activity samples`);
+  return samples;
+}
+
+/**
+ * Select up to maxPerDay representative samples per day
+ * Prioritizes: 1) Longest placeVisits, 2) Spaced activities throughout day
+ */
+export function selectDailySamples(samples: LocationSample[], maxPerDay: number = 3): LocationSample[] {
+  const samplesByDate = new Map<string, LocationSample[]>();
+  
+  // Group samples by date
+  samples.forEach(sample => {
+    if (!samplesByDate.has(sample.date)) {
+      samplesByDate.set(sample.date, []);
+    }
+    samplesByDate.get(sample.date)!.push(sample);
+  });
+  
+  const selectedSamples: LocationSample[] = [];
+  
+  samplesByDate.forEach((daySamples, date) => {
+    // Sort by provenance priority (visits first) then by duration (longest first)
+    daySamples.sort((a, b) => {
+      if (a.provenance !== b.provenance) {
+        return a.provenance === 'visit' ? -1 : 1; // visits first
+      }
+      return b.durationMs - a.durationMs; // longest duration first
+    });
+    
+    // Take up to maxPerDay samples, prioritizing visits and long durations
+    const selected = daySamples.slice(0, maxPerDay);
+    selectedSamples.push(...selected);
+  });
+  
+  console.log(`🏠 Selected ${selectedSamples.length} representative samples from ${samplesByDate.size} days`);
+  return selectedSamples;
+}
+
+/**
+ * Calculate distance between two coordinates using Haversine formula (returns miles)
+ */
+function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 3959; // Earth's radius in miles
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLng = (lng2 - lng1) * (Math.PI / 180);
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+/**
+ * Resolve state/country for location samples using cache-first approach
+ * Attempts to find cached results within radiusMiles, falls back to geocoding API
+ */
+export async function resolveSamples(
+  samples: LocationSample[], 
+  existingCache: Array<{lat: number, lng: number, state?: string, country: string}>,
+  radiusMiles: number = 20
+): Promise<Array<LocationSample & {state?: string, country: string, resolution: 'cache' | 'api'}>> {
+  
+  const resolved: Array<LocationSample & {state?: string, country: string, resolution: 'cache' | 'api'}> = [];
+  const needsGeocoding: LocationSample[] = [];
+  
+  console.log(`🗺️ Resolving ${samples.length} samples using cache (${radiusMiles}mi radius) + API fallback`);
+  
+  // Try to resolve each sample from cache first
+  for (const sample of samples) {
+    let bestMatch: {state?: string, country: string, distance: number} | null = null;
+    
+    // Search cache for nearby locations
+    for (const cached of existingCache) {
+      const distance = calculateDistance(sample.lat, sample.lng, cached.lat, cached.lng);
+      
+      if (distance <= radiusMiles) {
+        if (!bestMatch || distance < bestMatch.distance) {
+          bestMatch = {
+            state: cached.state,
+            country: cached.country,
+            distance
+          };
+        }
+      }
+    }
+    
+    if (bestMatch) {
+      // Found cached result within radius
+      resolved.push({
+        ...sample,
+        state: bestMatch.state,
+        country: bestMatch.country,
+        resolution: 'cache'
+      });
+    } else {
+      // Need to geocode this location
+      needsGeocoding.push(sample);
+    }
+  }
+  
+  console.log(`🗺️ Cache hits: ${resolved.length}, API lookups needed: ${needsGeocoding.length}`);
+  
+  // Geocode remaining samples
+  if (needsGeocoding.length > 0) {
+    const coordinates = needsGeocoding.map(s => ({ lat: s.lat, lng: s.lng }));
+    const geocodeResults = await batchReverseGeocode(coordinates);
+    
+    needsGeocoding.forEach((sample, index) => {
+      const result = geocodeResults[index];
+      if (result && result.country) {
+        resolved.push({
+          ...sample,
+          state: result.state,
+          country: result.country,
+          resolution: 'api'
+        });
+      } else {
+        // Fallback for failed geocoding
+        resolved.push({
+          ...sample,
+          state: undefined,
+          country: 'Unknown',
+          resolution: 'api'
+        });
+      }
+    });
+  }
+  
+  return resolved;
+}
+
+/**
+ * Build daily presence data by consolidating multiple samples per day
+ * Uses majority vote for state/country, tie-breaks by longest duration
+ */
+export function buildDailyPresence(resolvedSamples: Array<LocationSample & {state?: string, country: string, resolution: 'cache' | 'api'}>): DailyPresence[] {
+  const presenceByDate = new Map<string, Array<LocationSample & {state?: string, country: string, resolution: 'cache' | 'api'}>>();
+  
+  // Group by date
+  resolvedSamples.forEach(sample => {
+    if (!presenceByDate.has(sample.date)) {
+      presenceByDate.set(sample.date, []);
+    }
+    presenceByDate.get(sample.date)!.push(sample);
+  });
+  
+  const dailyPresence: DailyPresence[] = [];
+  
+  presenceByDate.forEach((daySamples, date) => {
+    // Count occurrences of each state/country combination
+    const locationCounts = new Map<string, {count: number, totalDuration: number, sample: typeof daySamples[0]}>();
+    
+    daySamples.forEach(sample => {
+      const key = `${sample.state || 'N/A'}_${sample.country}`;
+      if (!locationCounts.has(key)) {
+        locationCounts.set(key, {count: 0, totalDuration: 0, sample});
+      }
+      const entry = locationCounts.get(key)!;
+      entry.count++;
+      entry.totalDuration += sample.durationMs;
+    });
+    
+    // Find best location by count, then by total duration
+    let bestLocation: {count: number, totalDuration: number, sample: typeof daySamples[0]} | null = null;
+    
+    for (const location of locationCounts.values()) {
+      if (!bestLocation || 
+          location.count > bestLocation.count ||
+          (location.count === bestLocation.count && location.totalDuration > bestLocation.totalDuration)) {
+        bestLocation = location;
+      }
+    }
+    
+    if (bestLocation) {
+      dailyPresence.push({
+        date,
+        lat: bestLocation.sample.lat,
+        lng: bestLocation.sample.lng,
+        state: bestLocation.sample.state,
+        country: bestLocation.sample.country,
+        provenance: bestLocation.sample.provenance,
+        resolution: bestLocation.sample.resolution,
+        sampleCount: daySamples.length
+      });
+    }
+  });
+  
+  console.log(`🏠 Built daily presence for ${dailyPresence.length} days`);
+  return dailyPresence;
+}
+
+/**
+ * Main function: Generate daily presence data from Google location JSON
+ * Uses visit/activity records to determine state/country presence per day
+ */
+export async function getDailyPresence(
+  jsonData: ModernExport, 
+  year: number,
+  existingCache: Array<{lat: number, lng: number, state?: string, country: string}> = []
+): Promise<DailyPresence[]> {
+  
+  console.log(`🏠 Starting presence detection for ${year}...`);
+  
+  // Step 1: Parse visits and activities
+  const samples = parseVisitsActivitiesModern(jsonData, year);
+  
+  if (samples.length === 0) {
+    console.log(`🏠 No visit/activity samples found for ${year}`);
+    return [];
+  }
+  
+  // Step 2: Select representative samples per day
+  const selectedSamples = selectDailySamples(samples, 3);
+  
+  // Step 3: Resolve state/country using cache + API
+  const resolvedSamples = await resolveSamples(selectedSamples, existingCache, 20);
+  
+  // Step 4: Build daily presence data
+  const dailyPresence = buildDailyPresence(resolvedSamples);
+  
+  console.log(`🏠 Presence detection complete: ${dailyPresence.length} days with location presence`);
+  return dailyPresence;
+}
