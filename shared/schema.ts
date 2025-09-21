@@ -229,3 +229,17 @@ export type TravelStop = typeof travelStops.$inferSelect;
 export type InsertTravelStop = z.infer<typeof insertTravelStopSchema>;
 export type TravelSegment = typeof travelSegments.$inferSelect;
 export type InsertTravelSegment = z.infer<typeof insertTravelSegmentSchema>;
+
+// Daily presence detection types (for visit/activity analysis)
+export const dailyPresenceSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), // YYYY-MM-DD format
+  lat: z.number(),
+  lng: z.number(),
+  state: z.string().optional(),
+  country: z.string(),
+  provenance: z.enum(['visit', 'activity']), // Source of the location data
+  resolution: z.enum(['cache', 'api']), // How state/country was determined
+  sampleCount: z.number(), // Number of visits/activities on this day
+});
+
+export type DailyPresence = z.infer<typeof dailyPresenceSchema>;
