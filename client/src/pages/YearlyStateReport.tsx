@@ -59,7 +59,13 @@ export default function YearlyStateReport() {
   };
 
   const downloadPDF = () => {
-    if (!reportData) return;
+    console.log('Download PDF button clicked!');
+    console.log('Report data:', reportData);
+    
+    if (!reportData) {
+      console.log('No report data available');
+      return;
+    }
 
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
