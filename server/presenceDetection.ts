@@ -80,16 +80,89 @@ export function parseVisitsActivitiesModern(jsonData: any, year: number): Locati
   const isOldFormat = Array.isArray(jsonData) || (typeof jsonData === 'object' && Object.keys(jsonData)[0] === '0');
   
   if (isOldFormat) {
-    console.log(`📍 Processing OLD FORMAT with ${Array.isArray(jsonData) ? jsonData.length : Object.keys(jsonData).length} location points for ${year}`);
+    console.log(`📍 Processing MOBILE DOWNLOAD with ${Array.isArray(jsonData) ? jsonData.length : Object.keys(jsonData).length} total items for ${year}`);
     
     // Convert object with numeric keys to array if needed
-    const locations = Array.isArray(jsonData) ? jsonData : Object.values(jsonData);
+    const allItems = Array.isArray(jsonData) ? jsonData : Object.values(jsonData);
+    
+    // Look at the FIRST ~600k items which contain activity/visit data
+    const activityVisitSection = allItems.slice(0, 600000);
+    console.log(`🏠 Analyzing first 600k items for activity/visit data in ${year}`);
     
     // Group locations by day and sample representative points for presence detection
     const dailyGroups: { [date: string]: any[] } = {};
     
-    locations.forEach((item: any) => {
-      // Handle legacy format with timelinePath structure
+    activityVisitSection.forEach((item: any) => {
+      // Parse placeVisit records (stationary periods - high value for presence)
+      if (item.placeVisit) {
+        const visit = item.placeVisit;
+        if (visit.location?.latitudeE7 && visit.location?.longitudeE7 && 
+            visit.duration?.startTimestamp && visit.duration?.endTimestamp) {
+          
+          const startTime = parseToUTCDate(visit.duration.startTimestamp);
+          const endTime = parseToUTCDate(visit.duration.endTimestamp);
+          
+          if (startTime && endTime && startTime >= yearStart && startTime < yearEnd) {
+            const date = getLocalDateKey(startTime);
+            const durationMs = endTime.getTime() - startTime.getTime();
+            
+            if (!dailyGroups[date]) {
+              dailyGroups[date] = [];
+            }
+            
+            dailyGroups[date].push({
+              lat: visit.location.latitudeE7 / 1e7,
+              lng: visit.location.longitudeE7 / 1e7,
+              timestamp: startTime,
+              durationMs,
+              accuracy: 20, // High accuracy for place visits
+              type: 'visit'
+            });
+          }
+        }
+      }
+      
+      // Parse activitySegment records (movement periods - fallback for presence)
+      if (item.activitySegment) {
+        const activity = item.activitySegment;
+        if (activity.duration?.startTimestamp && activity.duration?.endTimestamp) {
+          
+          const startTime = parseToUTCDate(activity.duration.startTimestamp);
+          const endTime = parseToUTCDate(activity.duration.endTimestamp);
+          
+          if (startTime && endTime && startTime >= yearStart && startTime < yearEnd) {
+            const date = getLocalDateKey(startTime);
+            const durationMs = endTime.getTime() - startTime.getTime();
+            
+            // Use start location if available, otherwise end location
+            let lat, lng;
+            if (activity.startLocation?.latitudeE7 && activity.startLocation?.longitudeE7) {
+              lat = activity.startLocation.latitudeE7 / 1e7;
+              lng = activity.startLocation.longitudeE7 / 1e7;
+            } else if (activity.endLocation?.latitudeE7 && activity.endLocation?.longitudeE7) {
+              lat = activity.endLocation.latitudeE7 / 1e7;
+              lng = activity.endLocation.longitudeE7 / 1e7;
+            }
+            
+            if (lat && lng) {
+              if (!dailyGroups[date]) {
+                dailyGroups[date] = [];
+              }
+              
+              dailyGroups[date].push({
+                lat,
+                lng,
+                timestamp: startTime,
+                durationMs,
+                accuracy: 50, // Medium accuracy for activities
+                type: 'activity'
+              });
+            }
+          }
+        }
+      }
+      
+      // Legacy timelinePath parsing (skip - this is what route visualization uses)
       if (item.timelinePath && Array.isArray(item.timelinePath) && item.startTime) {
         const segmentStartTime = parseToUTCDate(item.startTime);
         if (!segmentStartTime) return;
