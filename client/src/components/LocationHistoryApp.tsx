@@ -10,6 +10,7 @@ import AnalyticsPanel from './AnalyticsPanel';
 import TimelineViewer from './TimelineViewer';
 import DateRangePicker from './DateRangePicker';
 import YearlyStateReport from '@/pages/YearlyStateReport';
+import { apiRequest } from '@/lib/queryClient';
 
 interface LocationData {
   lat: number;
@@ -82,11 +83,10 @@ export default function LocationHistoryApp() {
       });
       
       // Fetch only the requested date range from API (efficient backend filtering)
-      const response = await fetch(`/api/locations?${params.toString()}`);
-      if (response.ok) {
-        const locations = await response.json();
+      const response = await apiRequest('GET', `/api/locations?${params.toString()}`);
+      const locations = await response.json();
         
-        // Convert timestamps to Date objects
+      // Convert timestamps to Date objects
         const locationData = locations.map((loc: any) => ({
           ...loc,
           timestamp: new Date(loc.timestamp)
@@ -107,9 +107,6 @@ export default function LocationHistoryApp() {
         }
         
         console.log(`Location data loaded: ${locationData.length} points for date range ${startDateStr} to ${endDateStr} (server-side filtered)`);
-      } else {
-        console.error('Failed to load location data:', response.statusText);
-      }
     } catch (error) {
       console.error('Error loading location data:', error);
     } finally {
@@ -120,9 +117,8 @@ export default function LocationHistoryApp() {
   // Load full location data (fallback method for non-date-range requests)
   const loadFullLocationData = async () => {
     try {
-      const response = await fetch('/api/locations');
-      if (response.ok) {
-        const locations = await response.json();
+      const response = await apiRequest('GET', '/api/locations');
+      const locations = await response.json();
         
         // Convert timestamps to Date objects
         const processedData = locations.map((loc: any) => ({
@@ -140,7 +136,6 @@ export default function LocationHistoryApp() {
         }
         
         console.log('Location data loaded:', processedData.length, 'points');
-      }
     } catch (error) {
       console.error('Error loading location data:', error);
     }
