@@ -1296,6 +1296,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const isLeapYear = (y: number) => y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0);
         const totalDaysInYear = isLeapYear(year) ? 366 : 365;
         
+        // Add cache-busting headers to ensure fresh data
+        res.set({
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        });
+        
         return res.json({
           year,
           totalDays: 0,
@@ -1365,6 +1372,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
             : `TimelinePath already captures ${timelineDays.size} days (${currentCoverage}%), no additional days available from placeVisit data`
         };
       }
+
+      // Add cache-busting headers to ensure fresh data
+      res.set({
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      });
 
       res.json({
         year,
