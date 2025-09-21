@@ -4,6 +4,9 @@ import { createServer, type Server } from "http";
 import multer from "multer";
 import fs from 'fs';
 import { storage } from "./storage";
+import { db } from "./db";
+import { yearlyReportCache } from "@shared/schema";
+import { eq, and } from "drizzle-orm";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { parseGoogleLocationHistory, validateGoogleLocationHistory } from "./googleLocationParser";
 import { batchReverseGeocode, deduplicateCoordinates, getAllCachedLocations } from "./geocodingService";
@@ -1251,7 +1254,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`🔄 Force refresh requested for year ${year}`);
       }
 
-      console.log(`🏠 Generating visit/activity-based yearly report for ${year}`);
+      // Try to get cached report first (unless refresh is requested)
+      if (!refresh) {
+        try {
+          const cachedReport = await db.select()
+            .from(yearlyReportCache)
+            .where(and(
+              eq(yearlyReportCache.userId, userId),
+              eq(yearlyReportCache.year, year),
+              eq(yearlyReportCache.reportType, 'state_country')
+            ))
+            .limit(1);
+
+          if (cachedReport.length > 0) {
+            const cached = cachedReport[0];
+            console.log(`📋 Returning cached yearly report for ${year} (generated: ${cached.generatedAt})`);
+            return res.json(cached.reportData);
+          }
+        } catch (cacheError) {
+          console.log(`📋 Cache lookup failed (table may not exist yet): ${cacheError}`);
+          // Continue with fresh generation
+        }
+      }
+
+      console.log(`🏠 Generating fresh visit/activity-based yearly report for ${year}`);
 
       // Get user's location datasets and raw files (contains semantic data)
       const datasets = await storage.getUserLocationDatasets(userId);
@@ -1444,7 +1470,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         'Expires': '0'
       });
 
-      res.json({
+      // Prepare report data for response and caching
+      const reportData = {
         year,
         totalDays: dailyPresence.length,
         stateCountryData: stateCountryStats,
@@ -1454,7 +1481,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
           geocodedSamples: resolvedSamples.length,
           daysWithData: dailyPresence.length
         }
-      });
+      };
+
+      // Cache the generated report for future requests
+      try {
+        await db.insert(yearlyReportCache)
+          .values({
+            userId,
+            year,
+            reportType: 'state_country',
+            reportData,
+            cacheVersion: 'v1'
+          })
+          .onConflictDoUpdate({
+            target: [yearlyReportCache.userId, yearlyReportCache.year, yearlyReportCache.reportType],
+            set: {
+              reportData,
+              generatedAt: new Date(),
+              cacheVersion: 'v1'
+            }
+          });
+        console.log(`📋 Cached yearly report for ${year} (${dailyPresence.length} days, ${resolvedSamples.length} geocoded samples)`);
+      } catch (cacheError) {
+        console.log(`📋 Failed to cache yearly report (table may not exist yet): ${cacheError}`);
+        // Continue anyway - caching is optional
+      }
+
+      res.json(reportData);
 
     } catch (error) {
       console.error("Error generating visit/activity-based yearly report:", error);

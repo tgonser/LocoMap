@@ -214,6 +214,25 @@ export const insertTravelSegmentSchema = createInsertSchema(travelSegments).omit
   createdAt: true,
 });
 
+// Yearly report cache to avoid expensive regeneration
+export const yearlyReportCache = pgTable('yearly_report_cache', {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar('user_id').references(() => users.id).notNull(),
+  year: integer('year').notNull(),
+  reportType: varchar('report_type').notNull(), // 'state_country', etc.
+  reportData: jsonb('report_data').notNull(), // Cached JSON report
+  generatedAt: timestamp('generated_at').defaultNow(),
+  cacheVersion: varchar('cache_version').default('v1'), // For cache invalidation
+}, (table) => [
+  index('idx_yearly_report_cache_user_year').on(table.userId, table.year, table.reportType),
+  unique('unique_yearly_report_cache').on(table.userId, table.year, table.reportType)
+]);
+
+export const insertYearlyReportCacheSchema = createInsertSchema(yearlyReportCache).omit({
+  id: true,
+  generatedAt: true,
+});
+
 // TypeScript types for location data
 export type LocationDataset = typeof locationDatasets.$inferSelect;
 export type InsertLocationDataset = z.infer<typeof insertLocationDatasetSchema>;
@@ -229,20 +248,8 @@ export type TravelStop = typeof travelStops.$inferSelect;
 export type InsertTravelStop = z.infer<typeof insertTravelStopSchema>;
 export type TravelSegment = typeof travelSegments.$inferSelect;
 export type InsertTravelSegment = z.infer<typeof insertTravelSegmentSchema>;
-
-// Yearly report cache to avoid expensive regeneration
-export const yearlyReportCache = pgTable('yearly_report_cache', {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar('user_id').references(() => users.id).notNull(),
-  year: integer('year').notNull(),
-  reportType: varchar('report_type').notNull(), // 'state_country', etc.
-  reportData: jsonb('report_data').notNull(), // Cached JSON report
-  generatedAt: timestamp('generated_at').defaultNow(),
-  cacheVersion: varchar('cache_version').default('v1'), // For cache invalidation
-}, (table) => [
-  index('idx_yearly_report_cache_user_year').on(table.userId, table.year, table.reportType),
-  unique('unique_yearly_report_cache').on(table.userId, table.year, table.reportType)
-]);
+export type YearlyReportCache = typeof yearlyReportCache.$inferSelect;
+export type InsertYearlyReportCache = z.infer<typeof insertYearlyReportCacheSchema>;
 
 // Daily presence detection types (for visit/activity analysis)
 export const dailyPresenceSchema = z.object({
