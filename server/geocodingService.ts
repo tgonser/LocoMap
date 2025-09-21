@@ -72,6 +72,72 @@ function normalizeCountryName(country?: string): string | undefined {
   return countryMappings[normalized] || normalized;
 }
 
+// Infer country from marine area using geographic knowledge and bounding boxes
+function inferCountryFromMarineArea(marineArea: string, bbox: any, lat: number, lng: number): string | undefined {
+  const marineName = marineArea.toLowerCase();
+  
+  // Define marine areas and their likely countries based on geography
+  const marineToCountries: Record<string, string[]> = {
+    'mediterranean sea': ['Italy', 'France', 'Spain', 'Greece', 'Turkey'],
+    'ligurian sea': ['Italy', 'France'],
+    'tyrrhenian sea': ['Italy'],
+    'adriatic sea': ['Italy', 'Croatia'],
+    'aegean sea': ['Greece', 'Turkey'],
+    'north sea': ['United Kingdom', 'Germany', 'Netherlands', 'Denmark', 'Norway'],
+    'baltic sea': ['Germany', 'Denmark', 'Sweden', 'Finland', 'Poland'],
+    'bay of biscay': ['France', 'Spain'],
+    'english channel': ['United Kingdom', 'France'],
+    'irish sea': ['United Kingdom', 'Ireland'],
+    'celtic sea': ['United Kingdom', 'Ireland'],
+    'caribbean sea': ['United States', 'Mexico', 'Cuba', 'Jamaica'],
+    'gulf of mexico': ['United States', 'Mexico'],
+    'persian gulf': ['Iran', 'Kuwait', 'Saudi Arabia', 'United Arab Emirates'],
+    'red sea': ['Egypt', 'Saudi Arabia', 'Sudan'],
+    'arabian sea': ['Iran', 'Pakistan', 'India'],
+    'south china sea': ['China', 'Vietnam', 'Philippines'],
+    'east china sea': ['China', 'Japan'],
+    'sea of japan': ['Japan', 'South Korea'],
+    'bering sea': ['United States', 'Russia'],
+    'barents sea': ['Norway', 'Russia']
+  };
+  
+  // Find matching marine area
+  const possibleCountries = marineToCountries[marineName];
+  if (!possibleCountries) {
+    return undefined;
+  }
+  
+  // If only one country option, return it
+  if (possibleCountries.length === 1) {
+    return possibleCountries[0];
+  }
+  
+  // For multiple countries, use geographic heuristics based on coordinates
+  // This is a simplified approach - in reality you'd want more sophisticated logic
+  if (marineName === 'mediterranean sea') {
+    if (lng < 2) return 'Spain';
+    if (lng < 7) return 'France'; 
+    if (lng < 15) return 'Italy';
+    if (lng < 25) return 'Greece';
+    return 'Turkey';
+  }
+  
+  if (marineName === 'north sea') {
+    if (lat > 58) return 'Norway';
+    if (lng < 4) return 'United Kingdom';
+    if (lng < 7) return 'Netherlands';
+    return 'Germany';
+  }
+  
+  if (marineName === 'caribbean sea') {
+    if (lat > 24) return 'United States';
+    return 'Mexico';
+  }
+  
+  // Default to first country if no specific rules
+  return possibleCountries[0];
+}
+
 // Reverse geocoding using GeoApify API - more reliable than Nominatim
 // Returns result with provider info for rate limiting
 export async function reverseGeocode(lat: number, lng: number): Promise<GeocodeResult & { provider?: string }> {
@@ -111,13 +177,23 @@ export async function reverseGeocode(lat: number, lng: number): Promise<GeocodeR
     const result = data.results[0];
     console.log(`🔍 [DEBUG-2016] GeoApify first result: ${JSON.stringify(result)}`);
     
-    const geocodeResult = {
+    let geocodeResult = {
       city: result.city || result.town || result.village,
       state: result.state,
       country: normalizeCountryName(result.country),
       address: result.formatted,
       provider: 'geoapify'
     };
+    
+    // Smart fallback for marine areas without country data
+    if (!geocodeResult.country && result.marinearea && result.bbox) {
+      const marineCountry = inferCountryFromMarineArea(result.marinearea, result.bbox, lat, lng);
+      if (marineCountry) {
+        geocodeResult.country = marineCountry;
+        geocodeResult.city = result.marinearea;
+        console.log(`🔍 [DEBUG-2016] Marine area fallback: ${result.marinearea} -> ${marineCountry}`);
+      }
+    }
     
     console.log(`🔍 [DEBUG-2016] GeoApify processed result: ${JSON.stringify(geocodeResult)}`);
     return geocodeResult;
