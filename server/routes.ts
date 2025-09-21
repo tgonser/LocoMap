@@ -94,9 +94,9 @@ async function validateBusinessUrls(places: Array<{description: string, location
     try {
       console.log(`🔍 Validating URL: ${place.websiteUrl}`);
       
-      // Quick HEAD request with short timeout
+      // Quick HEAD request with longer timeout for slow business websites
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
       
       const response = await fetch(place.websiteUrl, {
         method: 'HEAD',
@@ -133,7 +133,14 @@ async function validateBusinessUrls(places: Array<{description: string, location
       }
       
     } catch (error) {
-      console.log(`❌ URL validation failed: ${place.websiteUrl} - ${error instanceof Error ? error.message : 'Unknown error'}`);
+      // Don't filter out if it's just a timeout or network issue - many legitimate business sites are slow
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      if (errorMsg.includes('aborted') || errorMsg.includes('timeout') || errorMsg.includes('fetch failed')) {
+        console.log(`⚠️ URL slow but keeping: ${place.websiteUrl} - ${errorMsg}`);
+        validPlaces.push(place); // Keep it - probably just slow loading
+      } else {
+        console.log(`❌ URL validation failed: ${place.websiteUrl} - ${errorMsg}`);
+      }
     }
   }
   
@@ -2639,7 +2646,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const sortedCities = Object.entries(cities).sort(([,a], [,b]) => b - a);
       const topCities = sortedCities.slice(0, 10).map(([city, count]) => `${city} (visited ${count} days)`);
       
-      console.log(`🚀 Generating ${targetResults} AI recommendations for ${topCities.length} cities (${daysAnalyzed} days analyzed)`);
+      console.log(`🚀 Generating ${targetResults} AI recommendations for ${topCities.length} cities (${daysAnalyzed} days analyzed - target: ${targetResults} results)`);
       
       // Construct AI prompt for interesting places
       const prompt = `You are a knowledgeable local guide who specializes in diverse recommendations spanning businesses, history, culture, and unique experiences. Focus on actionable recommendations across different geographic areas.
