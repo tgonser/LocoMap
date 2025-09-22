@@ -1313,12 +1313,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
         deduplicatedPoints: 0, // Will be set during processing
       });
 
-      // Store the raw file content for processing
-      const jsonString = JSON.stringify(jsonData);
-      const fileSizeMB = jsonString.length / (1024 * 1024);
+      // Store file path instead of raw JSON to avoid database timeouts
+      const fileSizeMB = req.file.size / (1024 * 1024);
       
-      console.log(`💾 Storing raw file (${fileSizeMB.toFixed(2)}MB) in database...`);
-      await storage.storeRawFile(dataset.id, userId, jsonString);
+      if (fileSizeMB > 10) {
+        // For large files, keep the uploaded file and store its path
+        console.log(`📁 Large file (${fileSizeMB.toFixed(2)}MB) - storing file path instead of raw content`);
+        
+        // Move the uploaded file to persistent location  
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        
+        const uploadsDir = path.join(process.cwd(), 'uploads');
+        await fs.mkdir(uploadsDir, { recursive: true });
+        
+        const fileName = `${dataset.id}.json`;
+        const persistentPath = path.join(uploadsDir, fileName);
+        
+        // Move from temp location to persistent location
+        await fs.rename(req.file.path, persistentPath);
+        
+        // Store only the file path in database
+        await storage.storeRawFile(dataset.id, userId, `FILE:${persistentPath}`);
+        
+        console.log(`✅ File stored at: ${persistentPath}`);
+      } else {
+        // For smaller files, store in database as before
+        const jsonString = JSON.stringify(jsonData);
+        console.log(`💾 Small file (${fileSizeMB.toFixed(2)}MB) - storing in database`);
+        await storage.storeRawFile(dataset.id, userId, jsonString);
+      }
 
       res.json({
         success: true,

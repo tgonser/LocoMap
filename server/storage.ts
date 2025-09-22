@@ -199,7 +199,28 @@ export class DatabaseStorage implements IStorage {
       .select({ rawContent: locationDatasets.rawContent })
       .from(locationDatasets)
       .where(and(eq(locationDatasets.id, datasetId), eq(locationDatasets.userId, userId)));
-    return dataset?.rawContent || undefined;
+    
+    if (!dataset?.rawContent) return undefined;
+    
+    // Handle file path format for large files
+    if (dataset.rawContent.startsWith('FILE:')) {
+      try {
+        const filePath = dataset.rawContent.slice(5); // Remove 'FILE:' prefix
+        console.log(`📁 Reading large file from disk: ${filePath}`);
+        
+        const fs = await import('fs/promises');
+        const fileContent = await fs.readFile(filePath, 'utf8');
+        
+        console.log(`✅ File read successfully: ${(fileContent.length / (1024 * 1024)).toFixed(2)}MB`);
+        return fileContent;
+      } catch (error) {
+        console.error(`💥 Failed to read file from disk:`, error);
+        throw new Error(`Failed to read location history file from storage`);
+      }
+    }
+    
+    // Return database-stored content for smaller files
+    return dataset.rawContent;
   }
   
 
