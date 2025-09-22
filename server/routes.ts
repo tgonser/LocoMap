@@ -1815,8 +1815,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Convert to the format expected by the frontend
       const locationPoints = gpsPoints.map(point => ({
         id: `${point.parentId}_${point.timestampMs}`,
-        latitude: point.latitude,
-        longitude: point.longitude,
+        lat: point.latitude,
+        lng: point.longitude,
         timestamp: new Date(point.timestampMs),
         activity: point.parentType === 'activity' ? 'route' : 'visit',
         userId,
