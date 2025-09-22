@@ -9,6 +9,7 @@ import { yearlyReportCache, users } from "@shared/schema";
 import { eq, and, or } from "drizzle-orm";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { parseGoogleLocationHistory, validateGoogleLocationHistory } from "./googleLocationParser";
+import { indexGoogleLocationFile, type LocationFileIndex } from "./googleLocationIndexer";
 import { batchReverseGeocode, deduplicateCoordinates, getAllCachedLocations } from "./geocodingService";
 import { parseVisitsActivitiesModern, selectDailySamples, resolveSamples, buildDailyPresence } from "./presenceDetection";
 import { GoogleLocationIngest } from "./googleLocationIngest";
@@ -1226,6 +1227,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
+  // Protected route: Quick index Google location history file (Phase 1)
+  app.post("/api/index-location-history", requireApprovedUser, upload.single("file"), async (req: Request & { file?: Express.Multer.File }, res) => {
+    const { claims } = getAuthenticatedUser(req);
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const userId = claims.sub;
+      const filePath = req.file.path;
+      
+      console.log(`📂 Indexing Google location file: ${req.file.originalname} (${req.file.size} bytes)`);
+      
+      // Read and parse the file
+      let fileContent: string;
+      try {
+        fileContent = await fs.promises.readFile(filePath, 'utf8');
+      } catch (readError) {
+        console.error("Error reading uploaded file:", readError);
+        await fs.promises.unlink(filePath).catch(() => {}); // Clean up temp file
+        return res.status(400).json({ error: "Failed to read uploaded file" });
+      }
+      
+      let jsonData: any;
+      try {
+        jsonData = JSON.parse(fileContent);
+      } catch (parseError) {
+        console.error("Error parsing JSON:", parseError);
+        await fs.promises.unlink(filePath).catch(() => {}); // Clean up temp file
+        return res.status(400).json({ error: "Invalid JSON file" });
+      }
+      
+      // Normalize array-like objects with numeric keys back to arrays
+      if (!Array.isArray(jsonData) && typeof jsonData === 'object' && jsonData) {
+        const keys = Object.keys(jsonData);
+        const isNumericKeyObject = keys.length > 0 && keys.every(key => !isNaN(Number(key)));
+        
+        if (isNumericKeyObject) {
+          console.log(`🔧 Converting numeric-key object with ${keys.length} elements back to array`);
+          const sortedKeys = keys.sort((a, b) => Number(a) - Number(b));
+          jsonData = sortedKeys.map(key => jsonData[key]);
+        }
+      }
+      
+      // Quick indexing - extract structure and date ranges
+      const index: LocationFileIndex = indexGoogleLocationFile(jsonData);
+      
+      // Validate that this file has usable data
+      if (!index.structure.hasTimelinePath) {
+        await fs.promises.unlink(filePath).catch(() => {}); // Clean up temp file
+        return res.status(400).json({ 
+          error: "File does not contain timelinePath data needed for mapping",
+          analysis: index
+        });
+      }
+      
+      // Store file temporarily for potential processing later
+      // In a real app, you might store this in cloud storage or keep the parsed JSON in memory/cache
+      
+      // Clean up temp file
+      await fs.promises.unlink(filePath).catch(() => {});
+      
+      console.log(`✅ Index complete: ${index.structure.estimatedGpsPoints} GPS points from ${index.dateRange.startDate} to ${index.dateRange.endDate}`);
+      
+      res.json({
+        success: true,
+        analysis: index,
+        message: `Found ${index.structure.totalTimelinePathObjects} timelinePath objects with ${index.structure.estimatedGpsPoints} GPS points`
+      });
+      
+    } catch (error) {
+      console.error("Error indexing location history:", error);
+      res.status(500).json({ error: "Failed to index location history file" });
     }
   });
 
