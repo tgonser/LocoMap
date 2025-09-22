@@ -334,12 +334,19 @@ export default function LocationSummary({
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => window.open(place.websiteUrl, '_blank')}
+                      asChild
                       className="flex items-center gap-2 w-full"
                       data-testid={`button-view-website-${index}`}
                     >
-                      <ExternalLink className="h-4 w-4" />
-                      Search Google
+                      <a 
+                        href={place.websiteUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        Search Google
+                      </a>
                     </Button>
                   </div>
                 </div>
