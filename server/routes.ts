@@ -799,7 +799,44 @@ async function extractQuickMetadata(jsonData: any) {
           }
         }
         
-        // Handle timelinePath elements (second section - MAPPING DATA!)
+        // Handle activitySegment elements with route data (MAPPING DATA!)
+        else if (element?.activitySegment) {
+          // Count points from simplifiedRawPath.points (most common)
+          if (element.activitySegment.simplifiedRawPath?.points && Array.isArray(element.activitySegment.simplifiedRawPath.points)) {
+            const points = element.activitySegment.simplifiedRawPath.points;
+            totalTimelinePath += points.length;
+            estimatedPoints += points.length;
+            
+            // Extract timestamps from points for date range
+            points.slice(0, 10).forEach(point => { // Sample first 10 points
+              if (point?.timestampMs) {
+                const timestamp = new Date(parseInt(point.timestampMs));
+                updateDateRange(timestamp);
+              }
+            });
+            
+            const activityType = element.activitySegment.activityType || 'route';
+            activityCounts[activityType] = (activityCounts[activityType] || 0) + points.length;
+          }
+          
+          // Count points from waypointPath.waypoints
+          if (element.activitySegment.waypointPath?.waypoints && Array.isArray(element.activitySegment.waypointPath.waypoints)) {
+            const waypoints = element.activitySegment.waypointPath.waypoints;
+            totalTimelinePath += waypoints.length;
+            estimatedPoints += waypoints.length;
+            
+            const activityType = element.activitySegment.activityType || 'route';
+            activityCounts[activityType] = (activityCounts[activityType] || 0) + waypoints.length;
+          }
+          
+          // Extract duration for date range
+          if (element.activitySegment.duration?.startTimestamp) {
+            const timestamp = new Date(element.activitySegment.duration.startTimestamp);
+            updateDateRange(timestamp);
+          }
+        }
+        
+        // Handle legacy timelinePath elements (fallback)
         else if (element?.timelinePath?.point && Array.isArray(element.timelinePath.point)) {
           const points = element.timelinePath.point;
           totalTimelinePath += points.length;

@@ -90,7 +90,48 @@ function parseModernFormat(jsonData: ModernExport): ParsedLocationPoint[] {
 
   // Extract ONLY timelinePath.point[] elements - ignore visits and activities
   jsonData.timelineObjects.forEach((obj) => {
-    // Handle timelinePath.point[] with latE7, lngE7, time (ISO)
+    // Handle activitySegment.simplifiedRawPath.points[] (most common timeline data)
+    if (obj.activitySegment?.simplifiedRawPath?.points && Array.isArray(obj.activitySegment.simplifiedRawPath.points)) {
+      obj.activitySegment.simplifiedRawPath.points.forEach((point) => {
+        if (point.latE7 !== undefined && point.lngE7 !== undefined) {
+          const lat = point.latE7 / 1e7;
+          const lng = point.lngE7 / 1e7;
+          const timestamp = point.timestampMs ? new Date(parseInt(point.timestampMs)) : 
+                          obj.duration?.startTimestamp ? parseToUTCDate(obj.duration.startTimestamp) : new Date();
+          
+          if (timestamp) {
+            results.push({
+              lat,
+              lng,
+              timestamp,
+              activity: obj.activitySegment.activityType || 'route'
+            });
+          }
+        }
+      });
+    }
+    
+    // Handle activitySegment.waypointPath.waypoints[] 
+    if (obj.activitySegment?.waypointPath?.waypoints && Array.isArray(obj.activitySegment.waypointPath.waypoints)) {
+      obj.activitySegment.waypointPath.waypoints.forEach((waypoint) => {
+        if (waypoint.latE7 !== undefined && waypoint.lngE7 !== undefined) {
+          const lat = waypoint.latE7 / 1e7;
+          const lng = waypoint.lngE7 / 1e7;
+          const timestamp = obj.duration?.startTimestamp ? parseToUTCDate(obj.duration.startTimestamp) : new Date();
+          
+          if (timestamp) {
+            results.push({
+              lat,
+              lng,
+              timestamp,
+              activity: obj.activitySegment?.activityType || 'route'
+            });
+          }
+        }
+      });
+    }
+    
+    // Handle legacy timelinePath.point[] (fallback for older formats)
     if (obj.timelinePath?.point && Array.isArray(obj.timelinePath.point)) {
       obj.timelinePath.point.forEach((point) => {
         if (point.latE7 !== undefined && point.lngE7 !== undefined && point.time) {
