@@ -1,0 +1,136 @@
+the json files start like this -
+
+[
+  {
+    "endTime" : "2009-11-14T17:49:29.000-08:00",
+    "startTime" : "2009-11-14T17:27:48.000-08:00",
+    "visit" : {
+      "hierarchyLevel" : "0",
+      "topCandidate" : {
+        "probability" : "1.000000",
+        "semanticType" : "Unknown",
+        "placeID" : "ChIJi13lS1dT2YARpYx0CjdGiFY",
+        "placeLocation" : "geo:32.705498,-117.160103"
+      },
+      "probability" : "1.000000"
+    }
+  },
+  {
+    "endTime" : "2010-05-09T16:08:34.000-07:00",
+    "startTime" : "2009-11-14T17:49:29.000-08:00",
+    "activity" : {
+      "end" : "geo:47.637830,-122.191200",
+      "topCandidate" : {
+        "type" : "unknown",
+        "probability" : "0.000000"
+      },
+      "distanceMeters" : "0.000000",
+      "start" : "geo:32.707917,-117.162824"
+    }
+  },
+  {
+    "endTime" : "2010-05-09T17:06:26.000-07:00",
+    "startTime" : "2010-05-09T16:08:34.000-07:00",
+    "visit" : {
+      "hierarchyLevel" : "0",
+      "topCandidate" : {
+        "probability" : "0.195255",
+        "semanticType" : "Unknown",
+        "placeID" : "ChIJIUX7Mt1skFQRt8PHyCkIAS4",
+        "placeLocation" : "geo:47.638273,-122.191286"
+      },
+      "probability" : "0.750000"
+    }
+  },
+
+Those elements continue through time.  In my file there are 20,000 VISITS, same for ACTIVITY - that is just the max that my editor can tell me about - there are more.
+
+Then there is a transition from the last visit/activity - to timelinepaths
+
+ {
+    "endTime" : "2025-09-20T08:11:11.201-10:00",
+    "startTime" : "2025-09-19T17:12:52.919-10:00",
+    "visit" : {
+      "hierarchyLevel" : "0",
+      "topCandidate" : {
+        "probability" : "0.513488",
+        "semanticType" : "Unknown",
+        "placeID" : "ChIJ-2q6kTrbVHkRzddC-BZl_f4",
+        "placeLocation" : "geo:20.696383,-156.434996"
+      },
+      "probability" : "0.837596"
+    }
+  },
+  {
+    "endTime" : "2009-11-15T02:00:00.000Z",
+    "startTime" : "2009-11-15T00:00:00.000Z",
+    "timelinePath" : [
+      {
+        "point" : "geo:32.707779,-117.163190",
+        "durationMinutesOffsetFromStartTime" : "88"
+      },
+      {
+        "point" : "geo:32.707917,-117.162824",
+        "durationMinutesOffsetFromStartTime" : "109"
+      }
+    ]
+  },
+
+Notice how this has a visit on 9/20/2025, then right after it is a timelinepath for 2009-11-15T00:00:00.000Z?
+These timelinepath elements go all the way to the end of the file.
+
+here is the end of the file:
+
+  {
+    "endTime" : "2025-09-20T05:00:00.000Z",
+    "startTime" : "2025-09-20T03:00:00.000Z",
+    "timelinePath" : [
+      {
+        "point" : "geo:20.650934,-156.441108",
+        "durationMinutesOffsetFromStartTime" : "2"
+      },
+      {
+        "point" : "geo:20.655313,-156.442544",
+        "durationMinutesOffsetFromStartTime" : "4"
+      },
+      {
+        "point" : "geo:20.689899,-156.440297",
+        "durationMinutesOffsetFromStartTime" : "10"
+      },
+      {
+        "point" : "geo:20.696145,-156.438875",
+        "durationMinutesOffsetFromStartTime" : "11"
+      },
+      {
+        "point" : "geo:20.697302,-156.436580",
+        "durationMinutesOffsetFromStartTime" : "12"
+      },
+      {
+        "point" : "geo:20.696451,-156.434103",
+        "durationMinutesOffsetFromStartTime" : "13"
+      },
+      {
+        "point" : "geo:20.696340,-156.434322",
+        "durationMinutesOffsetFromStartTime" : "13"
+      },
+      {
+        "point" : "geo:20.696309,-156.435061",
+        "durationMinutesOffsetFromStartTime" : "74"
+      },
+      {
+        "point" : "geo:20.696309,-156.435061",
+        "durationMinutesOffsetFromStartTime" : "79"
+      }
+    ]
+  },
+  {
+    "endTime" : "2025-09-20T07:00:00.000Z",
+    "startTime" : "2025-09-20T05:00:00.000Z",
+    "timelinePath" : [
+      {
+        "point" : "geo:20.696314,-156.435062",
+        "durationMinutesOffsetFromStartTime" : "97"
+      }
+    ]
+  }
+]
