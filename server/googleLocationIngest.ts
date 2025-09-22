@@ -172,7 +172,7 @@ export class GoogleLocationIngest {
    */
   private async extractFromTimelineObject(item: any, batchWriter: Writable): Promise<void> {
     try {
-      // Extract from timelinePath within the timeline object
+      // Extract from timelinePath within the timeline object (legacy format)
       if (item.timelinePath && item.timelinePath.point && Array.isArray(item.timelinePath.point)) {
         const startTime = new Date(item.startTime || item.duration?.startTimestamp || Date.now());
         
@@ -250,6 +250,12 @@ export class GoogleLocationIngest {
         timestamp = new Date(point.time);
       } else if (point.timestampMs) {
         timestamp = new Date(parseInt(point.timestampMs));
+      } else if (point.durationMinutesOffsetFromStartTime && baseTime) {
+        // Mobile timelinePath format: calculate timestamp from segment start + offset
+        const offsetMinutes = parseInt(point.durationMinutesOffsetFromStartTime);
+        if (!isNaN(offsetMinutes)) {
+          timestamp = new Date(baseTime.getTime() + (offsetMinutes * 60 * 1000));
+        }
       }
 
       return {
