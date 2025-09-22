@@ -209,6 +209,23 @@ function parseLegacyArrayFormat(jsonData: any): ParsedLocationPoint[] {
 
   console.log(`🔍 Processing legacy array with ${dataArray.length} elements, extracting ONLY timelinePath data`);
   
+  // Debug: Sample first few items to see actual structure
+  console.log(`🔍 DEBUG: Sampling first 3 items to understand structure:`);
+  dataArray.slice(0, 3).forEach((item, i) => {
+    if (item && typeof item === 'object') {
+      const keys = Object.keys(item);
+      console.log(`  Item ${i}: keys=[${keys.join(', ')}]`);
+      if (item.timelinePath) {
+        console.log(`    timelinePath: ${Array.isArray(item.timelinePath) ? `array[${item.timelinePath.length}]` : typeof item.timelinePath}`);
+        if (Array.isArray(item.timelinePath) && item.timelinePath.length > 0) {
+          const firstPoint = item.timelinePath[0];
+          console.log(`    First point keys: [${Object.keys(firstPoint || {}).join(', ')}]`);
+          console.log(`    First point.point: ${firstPoint?.point}`);
+        }
+      }
+    }
+  });
+  
   dataArray.forEach((item, index) => {
     if (!item || typeof item !== 'object') return;
     
