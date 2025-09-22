@@ -619,6 +619,76 @@ async function geocodeDailyCentroidsByDateRange(
   }
 }
 
+// Helper function to process timeline objects consistently
+function processTimelineObjects(
+  objects: any[], 
+  sampleSize: number, 
+  counters: {
+    estimatedPoints: number;
+    totalTimelinePath: number;
+    badProbability: number;
+    goodProbability: number;
+    zeroDistance: number;
+    goodDistance: number;
+    badAccuracy: number;
+    activityCounts: Record<string, number>;
+    minTimestamp: Date | null;
+    maxTimestamp: Date | null;
+  }
+) {
+  const step = Math.ceil(objects.length / Math.min(objects.length, sampleSize));
+  let processed = 0;
+  
+  for (let i = 0; i < objects.length; i += step) {
+    const obj = objects[i];
+    processed++;
+    
+    // Update date range helper
+    const updateDateRange = (timestamp: Date) => {
+      if (!counters.minTimestamp || timestamp < counters.minTimestamp) counters.minTimestamp = timestamp;
+      if (!counters.maxTimestamp || timestamp > counters.maxTimestamp) counters.maxTimestamp = timestamp;
+    };
+    
+    if (obj.activitySegment) {
+      const segment = obj.activitySegment;
+      counters.estimatedPoints++;
+      
+      if (segment.duration?.startTimestampMs) {
+        updateDateRange(new Date(parseInt(segment.duration.startTimestampMs, 10)));
+      }
+      
+      const activityType = segment.activityType?.toLowerCase() || 'unknown';
+      counters.activityCounts[activityType] = (counters.activityCounts[activityType] || 0) + 1;
+      
+      const distance = parseFloat(segment.distance || '1.0');
+      if (distance <= 1.0) counters.zeroDistance++; else counters.goodDistance++;
+      
+      if (segment.waypointPath?.waypoints) {
+        counters.totalTimelinePath += segment.waypointPath.waypoints.length || 0;
+      }
+    }
+    
+    if (obj.placeVisit) {
+      const visit = obj.placeVisit;
+      counters.estimatedPoints++;
+      counters.activityCounts['still'] = (counters.activityCounts['still'] || 0) + 1;
+      
+      if (visit.duration?.startTimestampMs) {
+        updateDateRange(new Date(parseInt(visit.duration.startTimestampMs, 10)));
+      }
+    }
+  }
+  
+  // Scale results based on sample size
+  const scaleFactor = objects.length / processed;
+  counters.estimatedPoints = Math.round(counters.estimatedPoints * scaleFactor);
+  counters.totalTimelinePath = Math.round(counters.totalTimelinePath * scaleFactor);
+  counters.zeroDistance = Math.round(counters.zeroDistance * scaleFactor);
+  counters.goodDistance = Math.round(counters.goodDistance * scaleFactor);
+  
+  return scaleFactor;
+}
+
 // Quick metadata extraction for smart upload - supports ALL formats
 async function extractQuickMetadata(jsonData: any) {
   console.log('📊 Analyzing file structure and data quality...');
@@ -655,53 +725,158 @@ async function extractQuickMetadata(jsonData: any) {
     if (!maxTimestamp || timestamp > maxTimestamp) maxTimestamp = timestamp;
   };
   
-  // MOBILE ARRAY FORMAT (element.activity, element.visit)
+  // ARRAY FORMAT - Check for nested timeline objects first
   if (Array.isArray(jsonData)) {
-    const sampleSize = Math.min(jsonData.length, 1000);
+    const sampleSize = Math.min(jsonData.length, 100);
     const step = Math.ceil(jsonData.length / sampleSize);
     
-    for (let i = 0; i < jsonData.length; i += step) {
+    // First pass: detect actual Google Location History format
+    // Activity/Visit elements (first section) vs TimelinePath elements (second section)
+    let hasActivityVisit = false;  // First section - for yearly reports
+    let hasTimelinePath = false;   // Second section - for mapping/analysis (CRITICAL)
+    
+    // Sample from beginning (activity/visit) and end (timelinePath) of array
+    const beginSample = Math.min(1000, Math.floor(jsonData.length * 0.1));
+    const endSample = Math.max(jsonData.length - 1000, Math.floor(jsonData.length * 0.9));
+    
+    // Check beginning for activity/visit
+    for (let i = 0; i < beginSample; i += step) {
       const element = jsonData[i];
-      totalElements++;
-      
-      const timestamp = extractTimestamp(element);
-      if (timestamp) updateDateRange(timestamp);
-      
-      if (element.activity) {
-        const activityType = element.activity.topCandidate?.type?.toLowerCase() || 'unknown';
-        activityCounts[activityType] = (activityCounts[activityType] || 0) + 1;
-        estimatedPoints++;
-        
-        const probability = parseFloat(element.activity.topCandidate?.probability || '1.0');
-        if (probability <= 0.1) badProbability++; else goodProbability++;
-        
-        const distance = parseFloat(element.activity.distanceMeters || '1.0');
-        if (distance <= 1.0) zeroDistance++; else goodDistance++;
-        
-        if ((element as any).timelinePath?.points) {
-          totalTimelinePath += (element as any).timelinePath.points.length || 0;
-        }
-      }
-      
-      if (element.visit) {
-        estimatedPoints++;
-        activityCounts['still'] = (activityCounts['still'] || 0) + 1;
-        
-        if (element.visit.timelinePath?.points) {
-          totalTimelinePath += element.visit.timelinePath.points.length || 0;
-        }
+      if (element?.activity || element?.visit) {
+        hasActivityVisit = true;
       }
     }
     
-    const scaleFactor = jsonData.length / totalElements;
-    estimatedPoints = Math.round(estimatedPoints * scaleFactor);
-    totalTimelinePath = Math.round(totalTimelinePath * scaleFactor);
-    badProbability = Math.round(badProbability * scaleFactor);
-    goodProbability = Math.round(goodProbability * scaleFactor);
-    zeroDistance = Math.round(zeroDistance * scaleFactor);
-    goodDistance = Math.round(goodDistance * scaleFactor);
+    // Check end for timelinePath (where mapping data actually lives)
+    for (let i = endSample; i < jsonData.length; i += step) {
+      const element = jsonData[i];
+      if (element?.timelinePath?.point && Array.isArray(element.timelinePath.point)) {
+        hasTimelinePath = true;
+      }
+    }
     
-    totalElements = jsonData.length; // Use actual count
+    console.log(`🔍 Google Location History format detected: activity/visit=${hasActivityVisit}, timelinePath=${hasTimelinePath} (mapping data)`);
+    
+    // Initialize counters object for helper function
+    const counters = {
+      estimatedPoints,
+      totalTimelinePath,
+      badProbability,
+      goodProbability,
+      zeroDistance,
+      goodDistance,
+      badAccuracy,
+      activityCounts,
+      minTimestamp,
+      maxTimestamp
+    };
+    
+    // Process ACTUAL Google Location History format
+    if (hasActivityVisit || hasTimelinePath) {
+      // GOOGLE LOCATION HISTORY: Two-section format
+      const processingSampleSize = Math.min(jsonData.length, 1000);
+      const processingStep = Math.ceil(jsonData.length / processingSampleSize);
+      
+      for (let i = 0; i < jsonData.length; i += processingStep) {
+        const element = jsonData[i];
+        totalElements++;
+        
+        // Handle activity/visit elements (first section - yearly reports)
+        if (element?.activity || element?.visit) {
+          estimatedPoints++;
+          const timestamp = extractTimestamp(element);
+          if (timestamp) updateDateRange(timestamp);
+          
+          if (element.activity) {
+            const activityType = element.activity.topCandidate?.type?.toLowerCase() || 'unknown';
+            activityCounts[activityType] = (activityCounts[activityType] || 0) + 1;
+          } else {
+            activityCounts['still'] = (activityCounts['still'] || 0) + 1;
+          }
+        }
+        
+        // Handle timelinePath elements (second section - MAPPING DATA!)
+        else if (element?.timelinePath?.point && Array.isArray(element.timelinePath.point)) {
+          const points = element.timelinePath.point;
+          totalTimelinePath += points.length;
+          estimatedPoints += points.length;
+          
+          // Extract timestamps from points for date range
+          points.slice(0, 10).forEach(point => { // Sample first 10 points
+            if (point?.time) {
+              const timestamp = new Date(point.time);
+              updateDateRange(timestamp);
+            }
+          });
+          
+          activityCounts['route'] = (activityCounts['route'] || 0) + points.length;
+        }
+      }
+      
+      const scaleFactor = jsonData.length / (totalElements || 1);
+      estimatedPoints = Math.round(estimatedPoints * scaleFactor);
+      totalTimelinePath = Math.round(totalTimelinePath * scaleFactor);
+      
+      totalElements = jsonData.length;
+    } else {
+      // MOBILE LEGACY FORMAT: element.activity, element.visit
+      const mobileSampleSize = Math.min(jsonData.length, 1000);
+      const mobileStep = Math.ceil(jsonData.length / mobileSampleSize);
+      
+      for (let i = 0; i < jsonData.length; i += mobileStep) {
+        const element = jsonData[i];
+        totalElements++;
+        
+        const timestamp = extractTimestamp(element);
+        if (timestamp) updateDateRange(timestamp);
+        
+        if (element.activity) {
+          const activityType = element.activity.topCandidate?.type?.toLowerCase() || 'unknown';
+          activityCounts[activityType] = (activityCounts[activityType] || 0) + 1;
+          estimatedPoints++;
+          
+          const probability = parseFloat(element.activity.topCandidate?.probability || '1.0');
+          if (probability <= 0.1) badProbability++; else goodProbability++;
+          
+          const distance = parseFloat(element.activity.distanceMeters || '1.0');
+          if (distance <= 1.0) zeroDistance++; else goodDistance++;
+          
+          if ((element as any).timelinePath?.points) {
+            totalTimelinePath += (element as any).timelinePath.points.length || 0;
+          }
+        }
+        
+        if (element.visit) {
+          estimatedPoints++;
+          activityCounts['still'] = (activityCounts['still'] || 0) + 1;
+          
+          if (element.visit.timelinePath?.points) {
+            totalTimelinePath += element.visit.timelinePath.points.length || 0;
+          }
+        }
+      }
+      
+      const scaleFactor = jsonData.length / totalElements;
+      estimatedPoints = Math.round(estimatedPoints * scaleFactor);
+      totalTimelinePath = Math.round(totalTimelinePath * scaleFactor);
+      badProbability = Math.round(badProbability * scaleFactor);
+      goodProbability = Math.round(goodProbability * scaleFactor);
+      zeroDistance = Math.round(zeroDistance * scaleFactor);
+      goodDistance = Math.round(goodDistance * scaleFactor);
+      
+      totalElements = jsonData.length; // Use actual count
+    }
+    
+    // Extract values from counters object
+    estimatedPoints = counters.estimatedPoints;
+    totalTimelinePath = counters.totalTimelinePath;
+    badProbability = counters.badProbability;
+    goodProbability = counters.goodProbability;
+    zeroDistance = counters.zeroDistance;
+    goodDistance = counters.goodDistance;
+    badAccuracy = counters.badAccuracy;
+    minTimestamp = counters.minTimestamp;
+    maxTimestamp = counters.maxTimestamp;
   }
   
   // TIMELINEOBJECTS FORMAT (timelineObjects.activitySegment/placeVisit)
@@ -1097,20 +1272,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         deduplicatedPoints: 0, // Will be set during processing
       });
 
-      // SMART UPLOAD: Skip raw content storage for large files to avoid database timeouts
-      console.log(`📊 File analysis complete. Checking if raw content storage is safe...`);
+      // Store raw file content for later processing (smart upload!)
+      // Use connection timeout optimization for large files
       const jsonString = JSON.stringify(jsonData);
       const fileSizeMB = jsonString.length / (1024 * 1024);
       
-      console.log(`📏 File size: ${fileSizeMB.toFixed(2)}MB (limit: 50MB)`);
+      console.log(`📁 Storing raw content (${fileSizeMB.toFixed(2)}MB) for dataset ${dataset.id}...`);
       
-      if (fileSizeMB < 50) {
-        console.log(`✅ File size OK (${fileSizeMB.toFixed(2)}MB) - storing raw content for dataset ${dataset.id}`);
+      try {
+        // Use longer timeout for large files
+        if (fileSizeMB > 30) {
+          console.log(`⏱️  Large file detected - using extended database timeout`);
+        }
+        
         await storage.storeRawFile(dataset.id, userId, jsonString);
-        console.log(`📁 Raw content stored successfully`);
-      } else {
-        console.log(`⚠️  LARGE FILE DETECTED (${fileSizeMB.toFixed(2)}MB) - SKIPPING raw content storage to prevent database timeout`);
-        console.log(`ℹ️  Dataset metadata saved, file can still be processed for viewing`);
+        console.log(`✅ Raw content stored successfully`);
+      } catch (error) {
+        console.error(`💥 Failed to store raw content:`, error);
+        throw new Error(`Database timeout storing large file (${fileSizeMB.toFixed(2)}MB). Please try again or contact support.`);
       }
 
       res.json({

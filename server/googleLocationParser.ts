@@ -303,10 +303,37 @@ export function validateGoogleLocationHistory(jsonData: any): boolean {
     return jsonData.timelineObjects.length > 0;
   }
   
-  // Handle legacy array format (direct array or object with numeric keys)
+  // Handle array format - check for nested timeline objects
   if (Array.isArray(jsonData)) {
-    console.log(`✅ Legacy array format with ${jsonData.length} elements`);
-    return jsonData.length > 0;
+    // Sample first few elements to detect format
+    const sampleSize = Math.min(jsonData.length, 100);
+    let hasNestedTimelineObjects = false;
+    let hasDirectTimeline = false;
+    let hasMobileFormat = false;
+    
+    for (let i = 0; i < sampleSize; i++) {
+      const element = jsonData[i];
+      if (element?.timelineObjects && Array.isArray(element.timelineObjects) && element.timelineObjects.length > 0) {
+        hasNestedTimelineObjects = true;
+      }
+      if (element?.activitySegment || element?.placeVisit) {
+        hasDirectTimeline = true;
+      }
+      if (element?.activity || element?.visit) {
+        hasMobileFormat = true;
+      }
+    }
+    
+    if (hasNestedTimelineObjects || hasDirectTimeline) {
+      console.log(`✅ Semantic Location History format (timelineObjects within array) with ${jsonData.length} elements`);
+      return jsonData.length > 0;
+    } else if (hasMobileFormat) {
+      console.log(`✅ Legacy mobile array format with ${jsonData.length} elements`);
+      return jsonData.length > 0;
+    } else {
+      console.log(`✅ Generic array format with ${jsonData.length} elements`);
+      return jsonData.length > 0;
+    }
   }
   
   // Handle large arrays that get parsed as objects with numeric keys
