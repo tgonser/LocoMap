@@ -958,7 +958,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { claims } = getAuthenticatedUser(req);
       const user = await storage.getUser(claims.sub);
-      res.json(user);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Return user data with role and approval information
+      res.json({
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        first_name: user.firstName, // Keep for backward compatibility
+        last_name: user.lastName,   // Keep for backward compatibility
+        role: user.role,
+        isApproved: user.isApproved,
+        approvalStatus: user.approvalStatus
+      });
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
