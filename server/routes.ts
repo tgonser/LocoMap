@@ -10,6 +10,7 @@ import { eq, and, or } from "drizzle-orm";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { parseGoogleLocationHistory, validateGoogleLocationHistory } from "./googleLocationParser";
 import { indexGoogleLocationFile, type LocationFileIndex } from "./googleLocationIndexer";
+import { buildParentIndex, processTimelinePathsForDateRange, type TimelinePathPoint } from "./timelineAssociation";
 import { batchReverseGeocode, deduplicateCoordinates, getAllCachedLocations } from "./geocodingService";
 import { parseVisitsActivitiesModern, selectDailySamples, resolveSamples, buildDailyPresence } from "./presenceDetection";
 import { GoogleLocationIngest } from "./googleLocationIngest";
@@ -1631,7 +1632,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Protected route: Get user's location points with optional date range filtering
+  // Protected route: Process location points for specific date range using time-based association (Phase 2)
+  app.post("/api/process-date-range", requireApprovedUser, async (req, res) => {
+    const { claims } = getAuthenticatedUser(req);
+    try {
+      const { datasetId, startDate, endDate } = req.body;
+      
+      if (!datasetId || !startDate || !endDate) {
+        return res.status(400).json({ error: "datasetId, startDate, and endDate are required" });
+      }
+      
+      const userId = claims.sub;
+      
+      // Get the dataset to ensure it belongs to the user
+      const dataset = await storage.getDataset(datasetId);
+      if (!dataset || dataset.userId !== userId) {
+        return res.status(404).json({ error: "Dataset not found" });
+      }
+      
+      console.log(`🔗 Processing date range ${startDate} to ${endDate} for dataset ${datasetId}`);
+      
+      // Read the stored JSON file
+      let jsonData: any;
+      try {
+        const fileContent = await fs.promises.readFile(dataset.filePath, 'utf8');
+        jsonData = JSON.parse(fileContent);
+      } catch (error) {
+        console.error('Error reading dataset file:', error);
+        return res.status(500).json({ error: 'Failed to read dataset file' });
+      }
+      
+      // Phase 1: Build parent index (TIME CONTEXT from visit/activity containers)
+      console.log('📊 Building parent time index...');
+      const parentIndex = buildParentIndex(jsonData);
+      
+      // Phase 2: Process timelinePath data for date range (GPS POINTS + TIME ASSOCIATION) 
+      console.log('🔗 Processing GPS data with time-based association...');
+      const gpsPoints: TimelinePathPoint[] = processTimelinePathsForDateRange(
+        jsonData,
+        parentIndex,
+        startDate,
+        endDate
+      );
+      
+      console.log(`✅ Processed ${gpsPoints.length} GPS points with proper time association`);
+      
+      // Convert to the format expected by the frontend
+      const locationPoints = gpsPoints.map(point => ({
+        id: `${point.parentId}_${point.timestampMs}`,
+        latitude: point.latitude,
+        longitude: point.longitude,
+        timestamp: new Date(point.timestampMs),
+        activity: point.parentType === 'activity' ? 'route' : 'visit',
+        userId,
+        datasetId
+      }));
+      
+      // TODO: Store processed points in database for caching (Phase 3)
+      // await storage.saveLocationPoints(locationPoints);
+      
+      res.json({
+        success: true,
+        points: locationPoints.length,
+        message: `Processed ${locationPoints.length} GPS points with time-based association`,
+        data: locationPoints
+      });
+      
+    } catch (error) {
+      console.error('Error processing date range:', error);
+      res.status(500).json({ error: 'Failed to process date range' });
+    }
+  });
+
+  // Protected route: Get user's location points with optional date range filtering (legacy)
   app.get("/api/locations", requireApprovedUser, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
