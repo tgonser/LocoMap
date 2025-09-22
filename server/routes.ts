@@ -748,12 +748,23 @@ async function extractQuickMetadata(jsonData: any) {
       }
     }
     
-    // Check end portion more thoroughly for timelinePath (where mapping data actually lives)
-    console.log(`🔍 Checking for timelinePath from index ${endSample} to ${jsonData.length}`);
+    // Check end portion more thoroughly for activitySegment data (where mapping data actually lives)
+    console.log(`🔍 Checking for activitySegment from index ${endSample} to ${jsonData.length}`);
     for (let i = endSample; i < jsonData.length; i++) {
       const element = jsonData[i];
+      if (element?.activitySegment?.simplifiedRawPath?.points && Array.isArray(element.activitySegment.simplifiedRawPath.points)) {
+        console.log(`✅ Found activitySegment.simplifiedRawPath at index ${i} with ${element.activitySegment.simplifiedRawPath.points.length} points`);
+        hasTimelinePath = true;
+        break; // Found one, that's enough
+      }
+      if (element?.activitySegment?.waypointPath?.waypoints && Array.isArray(element.activitySegment.waypointPath.waypoints)) {
+        console.log(`✅ Found activitySegment.waypointPath at index ${i} with ${element.activitySegment.waypointPath.waypoints.length} waypoints`);
+        hasTimelinePath = true;
+        break; // Found one, that's enough
+      }
+      // Legacy fallback
       if (element?.timelinePath?.point && Array.isArray(element.timelinePath.point)) {
-        console.log(`✅ Found timelinePath at index ${i} with ${element.timelinePath.point.length} points`);
+        console.log(`✅ Found legacy timelinePath at index ${i} with ${element.timelinePath.point.length} points`);
         hasTimelinePath = true;
         break; // Found one, that's enough
       }
@@ -799,9 +810,9 @@ async function extractQuickMetadata(jsonData: any) {
           }
         }
         
-        // Handle activitySegment elements with route data (MAPPING DATA!)
+        // Handle modern GPS route data (where Google actually stores route points now)
         else if (element?.activitySegment) {
-          // Count points from simplifiedRawPath.points (most common)
+          // Count GPS route points from simplifiedRawPath.points (primary source)
           if (element.activitySegment.simplifiedRawPath?.points && Array.isArray(element.activitySegment.simplifiedRawPath.points)) {
             const points = element.activitySegment.simplifiedRawPath.points;
             totalTimelinePath += points.length;
@@ -815,18 +826,16 @@ async function extractQuickMetadata(jsonData: any) {
               }
             });
             
-            const activityType = element.activitySegment.activityType || 'route';
-            activityCounts[activityType] = (activityCounts[activityType] || 0) + points.length;
+            activityCounts['route'] = (activityCounts['route'] || 0) + points.length;
           }
           
-          // Count points from waypointPath.waypoints
+          // Count GPS route points from waypointPath.waypoints (additional source)
           if (element.activitySegment.waypointPath?.waypoints && Array.isArray(element.activitySegment.waypointPath.waypoints)) {
             const waypoints = element.activitySegment.waypointPath.waypoints;
             totalTimelinePath += waypoints.length;
             estimatedPoints += waypoints.length;
             
-            const activityType = element.activitySegment.activityType || 'route';
-            activityCounts[activityType] = (activityCounts[activityType] || 0) + waypoints.length;
+            activityCounts['route'] = (activityCounts['route'] || 0) + waypoints.length;
           }
           
           // Extract duration for date range
@@ -836,7 +845,7 @@ async function extractQuickMetadata(jsonData: any) {
           }
         }
         
-        // Handle legacy timelinePath elements (fallback)
+        // Handle legacy timelinePath elements (fallback for older exports)
         else if (element?.timelinePath?.point && Array.isArray(element.timelinePath.point)) {
           const points = element.timelinePath.point;
           totalTimelinePath += points.length;
@@ -852,6 +861,8 @@ async function extractQuickMetadata(jsonData: any) {
           
           activityCounts['route'] = (activityCounts['route'] || 0) + points.length;
         }
+        
+        // IGNORE placeVisit - those are for yearly state reports only
       }
       
       const scaleFactor = jsonData.length / (totalElements || 1);
@@ -1324,8 +1335,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const fs = await import('fs/promises');
         const path = await import('path');
         
+        // Ensure uploads directory exists
         const uploadsDir = path.join(process.cwd(), 'uploads');
         await fs.mkdir(uploadsDir, { recursive: true });
+        
+        // Ensure multer temp directory exists too
+        const tempDir = path.dirname(req.file.path);
+        await fs.mkdir(tempDir, { recursive: true });
         
         const fileName = `${dataset.id}.json`;
         const persistentPath = path.join(uploadsDir, fileName);

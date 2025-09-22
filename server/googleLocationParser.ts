@@ -88,50 +88,50 @@ function parseModernFormat(jsonData: ModernExport): ParsedLocationPoint[] {
   
   console.log(`🎯 Starting timelinePath-only parser for ${jsonData.timelineObjects.length} timeline objects`);
 
-  // Extract ONLY timelinePath.point[] elements - ignore visits and activities
+  // Extract GPS route points - ignore visit/activity inference per architectural decision
   jsonData.timelineObjects.forEach((obj) => {
-    // Handle activitySegment.simplifiedRawPath.points[] (most common timeline data)
+    // Modern Google exports: GPS route data in activitySegment.simplifiedRawPath.points
     if (obj.activitySegment?.simplifiedRawPath?.points && Array.isArray(obj.activitySegment.simplifiedRawPath.points)) {
       obj.activitySegment.simplifiedRawPath.points.forEach((point) => {
         if (point.latE7 !== undefined && point.lngE7 !== undefined) {
           const lat = point.latE7 / 1e7;
           const lng = point.lngE7 / 1e7;
           const timestamp = point.timestampMs ? new Date(parseInt(point.timestampMs)) : 
-                          obj.duration?.startTimestamp ? parseToUTCDate(obj.duration.startTimestamp) : new Date();
+                          obj.activitySegment?.duration?.startTimestamp ? parseToUTCDate(obj.activitySegment.duration.startTimestamp) : new Date();
           
           if (timestamp) {
             results.push({
               lat,
               lng,
               timestamp,
-              activity: obj.activitySegment.activityType || 'route'
+              activity: 'route'  // All GPS points marked as route for consistent visualization
             });
           }
         }
       });
     }
     
-    // Handle activitySegment.waypointPath.waypoints[] 
+    // Modern Google exports: Additional GPS route data in activitySegment.waypointPath.waypoints
     if (obj.activitySegment?.waypointPath?.waypoints && Array.isArray(obj.activitySegment.waypointPath.waypoints)) {
       obj.activitySegment.waypointPath.waypoints.forEach((waypoint) => {
         if (waypoint.latE7 !== undefined && waypoint.lngE7 !== undefined) {
           const lat = waypoint.latE7 / 1e7;
           const lng = waypoint.lngE7 / 1e7;
-          const timestamp = obj.duration?.startTimestamp ? parseToUTCDate(obj.duration.startTimestamp) : new Date();
+          const timestamp = obj.activitySegment?.duration?.startTimestamp ? parseToUTCDate(obj.activitySegment.duration.startTimestamp) : new Date();
           
           if (timestamp) {
             results.push({
               lat,
               lng,
               timestamp,
-              activity: obj.activitySegment?.activityType || 'route'
+              activity: 'route'  // All GPS points marked as route for consistent visualization
             });
           }
         }
       });
     }
     
-    // Handle legacy timelinePath.point[] (fallback for older formats)
+    // Legacy format fallback: timelinePath.point[] (older Google exports)
     if (obj.timelinePath?.point && Array.isArray(obj.timelinePath.point)) {
       obj.timelinePath.point.forEach((point) => {
         if (point.latE7 !== undefined && point.lngE7 !== undefined && point.time) {
@@ -150,6 +150,8 @@ function parseModernFormat(jsonData: ModernExport): ParsedLocationPoint[] {
         }
       });
     }
+    
+    // IGNORE placeVisit - those are for yearly state reports only, not route visualization
   });
 
   // Sort by timestamp for chronological order
@@ -166,41 +168,22 @@ function parseModernFormat(jsonData: ModernExport): ParsedLocationPoint[] {
 function applyDeduplication(points: ParsedLocationPoint[]): ParsedLocationPoint[] {
   console.log(`🔄 Applying deduplication to ${points.length} points...`);
   
-  let deduplicated: ParsedLocationPoint[];
-  
-  if (points.length > 100000) {
-    // For large datasets, use Map-based deduplication to avoid stack overflow
-    console.log(`⚡ Using efficient deduplication for ${points.length} points`);
-    const seen = new Map<string, boolean>();
-    deduplicated = points.filter(point => {
-      // Create a key from rounded coordinates and time
-      const roundedLat = Math.round(point.lat * 10000) / 10000; // 4 decimal places
-      const roundedLng = Math.round(point.lng * 10000) / 10000;
-      const timeKey = Math.floor(point.timestamp.getTime() / 60000); // 1-minute buckets
-      const key = `${roundedLat},${roundedLng},${timeKey}`;
-      
-      if (seen.has(key)) {
-        return false; // Duplicate
-      }
-      seen.set(key, true);
-      return true;
-    });
-  } else {
-    // For smaller datasets, use the original O(n²) method
-    deduplicated = points.filter((point, index) => {
-      for (let i = 0; i < index; i++) {
-        const other = points[i];
-        const latDiff = Math.abs(point.lat - other.lat);
-        const lngDiff = Math.abs(point.lng - other.lng);
-        const timeDiff = Math.abs(point.timestamp.getTime() - other.timestamp.getTime());
-        
-        if (latDiff < 0.0001 && lngDiff < 0.0001 && timeDiff < 60000) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }
+  // Always use Map-based deduplication for performance (avoid O(n²) for large datasets)
+  console.log(`⚡ Using efficient Map-based deduplication for ${points.length} points`);
+  const seen = new Map<string, boolean>();
+  const deduplicated = points.filter(point => {
+    // Create a key from rounded coordinates and time
+    const roundedLat = Math.round(point.lat * 10000) / 10000; // 4 decimal places
+    const roundedLng = Math.round(point.lng * 10000) / 10000;
+    const timeKey = Math.floor(point.timestamp.getTime() / 60000); // 1-minute buckets
+    const key = `${roundedLat},${roundedLng},${timeKey}`;
+    
+    if (seen.has(key)) {
+      return false; // Duplicate
+    }
+    seen.set(key, true);
+    return true;
+  });
 
   const removedCount = points.length - deduplicated.length;
   if (removedCount > 0) {
@@ -330,7 +313,7 @@ export function parseGoogleLocationHistory(jsonData: any): ParsedLocationPoint[]
     return results;
   }
 
-  // Apply deduplication
+  // Apply efficient deduplication for all datasets to avoid performance issues
   return applyDeduplication(results);
 }
 
