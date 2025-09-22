@@ -15,10 +15,15 @@ const isProduction = process.env.NODE_ENV === 'production';
 let db;
 
 if (isProduction) {
-  // Production: Use regular PostgreSQL client for Render
+  // Production: Use regular PostgreSQL client for Render with optimized settings for large operations
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
+    ssl: { rejectUnauthorized: false },
+    max: 10, // Maximum number of clients in the pool
+    idleTimeoutMillis: 30000, // How long a client is allowed to remain idle before being closed
+    connectionTimeoutMillis: 60000, // How long to wait for a connection
+    statement_timeout: 300000, // 5 minutes for large operations
+    query_timeout: 300000, // 5 minutes query timeout
   });
   db = drizzlePg(pool, { schema });
 } else {
