@@ -1,0 +1,30 @@
+locomap=> \d location_points
+                                 Table "public.location_points"
+    Column     |            Type             | Collation | Nullable |          Default
+---------------+-----------------------------+-----------+----------+----------------------------
+ id            | character varying           |           | not null | gen_random_uuid()
+ user_id       | character varying           |           |          |
+ latitude      | numeric(10,7)               |           | not null |
+ longitude     | numeric(11,7)               |           | not null |
+ timestamp_ms  | bigint                      |           | not null |
+ date_time     | timestamp without time zone |           | not null |
+ activity_type | character varying(50)       |           |          | 'route'::character varying
+ location_name | character varying(255)      |           |          |
+ city          | character varying(100)      |           |          |
+ country       | character varying(100)      |           |          |
+ created_at    | timestamp without time zone |           |          | now()
+ dataset_id    | character varying           |           |          |
+ lat           | real                        |           |          |
+ lng           | real                        |           |          |
+ timestamp     | timestamp without time zone |           |          |
+ accuracy      | integer                     |           |          |
+ activity      | text                        |           |          |
+ address       | text                        |           |          |
+ state         | text                        |           |          |
+Indexes:
+    "location_points_pkey" PRIMARY KEY, btree (id)
+    "idx_location_points_coordinates" btree (latitude, longitude)
+    "idx_location_points_dataset" btree (dataset_id)
+    "idx_location_points_date_time" btree (date_time)
+    "idx_location_points_user_id" btree (user_id)
+    "idx_location_points_user_timestamp" btree (user_id, "timestamp")
