@@ -409,7 +409,7 @@ export function processTimelinePathsForDateRange(
     // NOTE: We do NOT process activitySegment GPS paths for map routes
     // Those should be used ONLY for analytics, not route visualization
     
-    // ONLY PROCESS standalone/explicit timelinePath elements (NOT embedded ones inside activitySegment)
+    // DEBUG: Check for standalone timelinePath objects (no embedded activitySegment/placeVisit)
     if (element.timelinePath && Array.isArray(element.timelinePath) && element.timelinePath.length > 0 
         && !element.activitySegment && !element.placeVisit) {
       processedPaths++;
