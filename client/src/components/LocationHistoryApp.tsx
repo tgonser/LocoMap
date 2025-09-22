@@ -25,7 +25,27 @@ type ViewMode = 'files' | 'map' | 'analytics' | 'yearly-report';
 export default function LocationHistoryApp() {
   const [locationData, setLocationData] = useState<LocationData[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [viewMode, setViewMode] = useState<ViewMode>('files');
+  // View mode state with localStorage persistence
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    try {
+      const saved = localStorage.getItem('viewMode');
+      if (saved) {
+        return saved as ViewMode;
+      }
+    } catch (error) {
+      console.error('Error loading saved view mode:', error);
+    }
+    return 'files'; // Default fallback
+  });
+
+  // Save view mode to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('viewMode', viewMode);
+    } catch (error) {
+      console.error('Error saving view mode:', error);
+    }
+  }, [viewMode]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -35,8 +55,40 @@ export default function LocationHistoryApp() {
   const [mapDataLoaded, setMapDataLoaded] = useState(false);
   const [previousViewMode, setPreviousViewMode] = useState<ViewMode>('analytics');
   
-  // Shared date range state between analytics and map views
-  const [selectedDateRange, setSelectedDateRange] = useState<{start: Date, end: Date} | null>(null);
+  // Shared date range state between analytics and map views with localStorage persistence
+  const [selectedDateRange, setSelectedDateRange] = useState<{start: Date, end: Date} | null>(() => {
+    try {
+      const saved = localStorage.getItem('selectedDateRange');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          start: new Date(parsed.start),
+          end: new Date(parsed.end)
+        };
+      }
+    } catch (error) {
+      console.error('Error loading saved date range:', error);
+    }
+    // Default to current month if no saved range
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return { start, end };
+  });
+
+  // Save date range to localStorage whenever it changes
+  useEffect(() => {
+    if (selectedDateRange) {
+      try {
+        localStorage.setItem('selectedDateRange', JSON.stringify({
+          start: selectedDateRange.start.toISOString(),
+          end: selectedDateRange.end.toISOString()
+        }));
+      } catch (error) {
+        console.error('Error saving date range:', error);
+      }
+    }
+  }, [selectedDateRange]);
 
   // Check for existing data on component mount
   useEffect(() => {
@@ -46,10 +98,15 @@ export default function LocationHistoryApp() {
         if (response.ok) {
           const datasets = await response.json();
           if (datasets && datasets.length > 0) {
-            // User has existing data - default to analytics view but don't load data yet
-            setViewMode('analytics');
+            // User has existing data - keep current viewMode (from localStorage or initial state)
+            // Only default to analytics if no saved viewMode and user has data
+            const savedViewMode = localStorage.getItem('viewMode');
+            if (!savedViewMode) {
+              setViewMode('analytics');
+            }
+            // If savedViewMode exists, we already loaded it in the useState initializer
           } else {
-            // No data exists - show files view
+            // No data exists - force to files view regardless of saved state
             setViewMode('files');
           }
         } else {
