@@ -112,7 +112,7 @@ function parseModernFormat(jsonData: ModernExport): ParsedLocationPoint[] {
           }
           
           // Skip points without valid timestamps - no more artificial data
-          if (!timestamp) continue;
+          if (!timestamp) return;
           
           if (timestamp) {
             results.push({
@@ -148,7 +148,7 @@ function parseModernFormat(jsonData: ModernExport): ParsedLocationPoint[] {
           }
           
           // Skip waypoints without valid timestamps - no more artificial data
-          if (!timestamp) continue;
+          if (!timestamp) return;
           
           if (timestamp) {
             results.push({
