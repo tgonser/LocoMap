@@ -1765,8 +1765,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = claims.sub;
       
       // Get the dataset to ensure it belongs to the user
-      const dataset = await storage.getDataset(datasetId);
-      if (!dataset || dataset.userId !== userId) {
+      const dataset = await storage.getLocationDataset(datasetId, userId);
+      if (!dataset) {
         return res.status(404).json({ error: "Dataset not found" });
       }
       
