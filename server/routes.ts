@@ -5,7 +5,7 @@ import multer from "multer";
 import fs from 'fs';
 import { storage } from "./storage";
 import { db } from "./db";
-import { yearlyReportCache } from "@shared/schema";
+import { yearlyReportCache, users } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { parseGoogleLocationHistory, validateGoogleLocationHistory } from "./googleLocationParser";
@@ -16,7 +16,7 @@ import { z } from "zod";
 import OpenAI from "openai";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { registerSchema, loginSchema, users } from "@shared/schema";
+import { registerSchema, loginSchema } from "@shared/schema";
 
 // JWT verification middleware  
 function verifyJWT(req: any, res: any, next: any) {
@@ -41,7 +41,9 @@ function verifyJWT(req: any, res: any, next: any) {
         sub: decoded.id,
         email: decoded.email,
         first_name: decoded.firstName || '',
-        last_name: decoded.lastName || ''
+        last_name: decoded.lastName || '',
+        isApproved: decoded.isApproved,
+        role: decoded.role
       }
     };
     req.isAuthenticated = () => true;
@@ -62,6 +64,48 @@ function combinedAuth(req: any, res: any, next: any) {
   // Fall back to existing Replit auth
   return isAuthenticated(req, res, next);
 }
+
+// Approval status middleware - requires approved account
+function requireApproval(req: any, res: any, next: any) {
+  // Skip approval check for admin routes and auth routes
+  if (req.path.startsWith('/api/admin') || req.path.startsWith('/api/auth')) {
+    return next();
+  }
+  
+  const user = req.user;
+  if (!user) {
+    return res.status(401).json({ message: "Authentication required" });
+  }
+  
+  // For JWT users, check approval status from token
+  if (user.claims && user.claims.isApproved === false) {
+    return res.status(403).json({ 
+      message: "Account pending admin approval. Please contact the administrator.",
+      status: "pending_approval"
+    });
+  }
+  
+  next();
+}
+
+// Admin role middleware
+function requireAdmin(req: any, res: any, next: any) {
+  const user = req.user;
+  if (!user) {
+    return res.status(401).json({ message: "Authentication required" });
+  }
+  
+  // Check admin role from JWT claims or user object
+  const isAdmin = user.claims?.role === 'admin' || user.role === 'admin';
+  if (!isAdmin) {
+    return res.status(403).json({ message: "Admin access required" });
+  }
+  
+  next();
+}
+
+// Combined middleware for approved users
+const requireApprovedUser = [combinedAuth, requireApproval];
 
 // Distance calculation utility using Haversine formula (returns miles)
 function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -816,14 +860,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           username: newUser.username, 
           email: newUser.email,
           firstName: newUser.firstName,
-          lastName: newUser.lastName
+          lastName: newUser.lastName,
+          isApproved: newUser.isApproved,
+          role: newUser.role
         },
         jwtSecret,
         { expiresIn: '7d' }
       );
 
       res.status(201).json({
-        message: "User created successfully",
+        message: "Registration successful. Account pending admin approval.",
         token,
         user: {
           id: newUser.id,
@@ -831,6 +877,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           email: newUser.email,
           firstName: newUser.firstName,
           lastName: newUser.lastName,
+          isApproved: newUser.isApproved,
+          approvalStatus: newUser.approvalStatus,
+          role: newUser.role
         }
       });
     } catch (error) {
@@ -877,7 +926,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           username: user.username, 
           email: user.email,
           firstName: user.firstName,
-          lastName: user.lastName
+          lastName: user.lastName,
+          isApproved: user.isApproved,
+          role: user.role
         },
         jwtSecret,
         { expiresIn: '7d' }
@@ -892,6 +943,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
+          isApproved: user.isApproved,
+          approvalStatus: user.approvalStatus,
+          role: user.role
         }
       });
     } catch (error) {
@@ -2814,6 +2868,105 @@ Return your response as a JSON object with this exact structure:
         error: "Failed to process interesting places request",
         details: error instanceof Error ? error.message : "Unknown error"
       });
+    }
+  });
+
+  // ========== ADMIN ROUTES ==========
+  
+  // Get pending users for approval
+  app.get('/api/admin/pending-users', [combinedAuth, requireAdmin], async (req, res) => {
+    try {
+      const pendingUsers = await db.select({
+        id: users.id,
+        username: users.username,
+        email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        approvalStatus: users.approvalStatus,
+        createdAt: users.createdAt
+      }).from(users).where(eq(users.approvalStatus, 'pending')).orderBy(users.createdAt);
+
+      res.json({
+        users: pendingUsers,
+        count: pendingUsers.length
+      });
+    } catch (error) {
+      console.error("Error fetching pending users:", error);
+      res.status(500).json({ message: "Failed to fetch pending users" });
+    }
+  });
+
+  // Approve or reject user
+  app.patch('/api/admin/users/:userId/approval', [combinedAuth, requireAdmin], async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { action, reason } = req.body; // action: 'approve' or 'reject'
+      const adminUserId = req.user.claims?.sub || req.user.claims?.id;
+
+      if (!['approve', 'reject'].includes(action)) {
+        return res.status(400).json({ message: "Invalid action. Use 'approve' or 'reject'" });
+      }
+
+      const updateData: any = {
+        approvedBy: adminUserId,
+        approvedAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      if (action === 'approve') {
+        updateData.isApproved = true;
+        updateData.approvalStatus = 'approved';
+      } else {
+        updateData.isApproved = false;
+        updateData.approvalStatus = 'rejected';
+        updateData.rejectedReason = reason || 'No reason provided';
+      }
+
+      const [updatedUser] = await db.update(users)
+        .set(updateData)
+        .where(eq(users.id, userId))
+        .returning({
+          id: users.id,
+          username: users.username,
+          email: users.email,
+          approvalStatus: users.approvalStatus,
+          isApproved: users.isApproved
+        });
+
+      if (!updatedUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      res.json({
+        message: `User ${action}d successfully`,
+        user: updatedUser
+      });
+    } catch (error) {
+      console.error("Error updating user approval:", error);
+      res.status(500).json({ message: "Failed to update user approval status" });
+    }
+  });
+
+  // Get admin user stats
+  app.get('/api/admin/stats', [combinedAuth, requireAdmin], async (req, res) => {
+    try {
+      const allUsers = await db.select({
+        approvalStatus: users.approvalStatus,
+        role: users.role
+      }).from(users);
+
+      const stats = {
+        total: allUsers.length,
+        pending: allUsers.filter(u => u.approvalStatus === 'pending').length,
+        approved: allUsers.filter(u => u.approvalStatus === 'approved').length,
+        rejected: allUsers.filter(u => u.approvalStatus === 'rejected').length,
+        admins: allUsers.filter(u => u.role === 'admin').length
+      };
+
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching admin stats:", error);
+      res.status(500).json({ message: "Failed to fetch admin stats" });
     }
   });
 

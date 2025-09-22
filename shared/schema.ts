@@ -34,6 +34,17 @@ export const users = pgTable("users", {
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
+  
+  // Approval system fields
+  isApproved: boolean("is_approved").default(false),
+  approvalStatus: varchar("approval_status", { length: 20 }).default("pending"), // pending, approved, rejected
+  approvedBy: varchar("approved_by"), // User ID who approved
+  approvedAt: timestamp("approved_at"),
+  rejectedReason: varchar("rejected_reason", { length: 500 }),
+  
+  // Role management
+  role: varchar("role", { length: 20 }).default("user"), // user, admin
+  
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
