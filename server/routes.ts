@@ -1510,7 +1510,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             dateRange: {
               startDate: scanResult.startDate,
               endDate: scanResult.endDate
-            }
+            },
+            dataQuality: { goodProbability: 1000 }, // Placeholder for large files
+            activityBreakdown: {} // Placeholder for large files
           };
         } catch (scanError) {
           console.error('Fast scan failed:', scanError);
@@ -1587,12 +1589,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           totalElements: metadata.totalElements,
           estimatedPoints: metadata.estimatedPoints,
           dateRange: metadata.dateRange,
-          dataQuality: metadata.dataQuality,
-          activityBreakdown: metadata.activityBreakdown
+          dataQuality: metadata.dataQuality || { goodProbability: 0 },
+          activityBreakdown: metadata.activityBreakdown || {}
         }
       });
 
-      console.log(`📁 File uploaded (metadata extracted): ${req.file.originalname} - ${metadata.estimatedPoints} estimated points, quality: ${metadata.dataQuality.goodProbability}/${metadata.totalElements} good probability`);
+      console.log(`📁 File uploaded (metadata extracted): ${req.file.originalname} - ${metadata.estimatedPoints} estimated points, quality: ${metadata.dataQuality?.goodProbability || 'unknown'}/${metadata.totalElements} good probability`);
 
     } catch (error) {
       console.error("Error processing location history:", error);
