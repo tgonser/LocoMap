@@ -110,6 +110,13 @@ A breakthrough performance optimization implementing a shared geocoding cache th
 - **Data Quality**: Analytics now processes same GPS datasets as Maps (1,163+ points) with global coverage
 - **User Confirmation**: Both features tested and confirmed working correctly
 
+**Technical Implementation:**
+- **JSON Processing**: Both features read JSON directly from `./uploads/{datasetId}.json` 
+- **Data Extraction**: Uses `processTimelinePathsForDateRange()` to parse `timelinePath.point[]` arrays
+- **Parent Index**: Builds `parentIndex` via `buildParentIndex()` for timeline context and proper timestamp normalization
+- **Coordinate Conversion**: Handles Google's `latE7/lngE7` format and mixed timestamp formats (ms/ISO)
+- **Database Independence**: No dependency on `locationPoints` table - pure JSON processing for reliable data access
+
 ### Waypoint Detection Algorithm Enhancement (September 2025)
 - **Fixed Critical Gap Detection Bug**: Replaced problematic "moving centroid" clustering approach with stable first-point reference algorithm
 - **Eliminated Travel Gaps**: System now properly detects intermediate stops (gas stations, rest areas, food stops) preventing artificial gaps in travel chains
