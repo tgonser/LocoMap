@@ -15,12 +15,71 @@ import ThemeToggle from "@/components/ThemeToggle";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
+function PendingApprovalScreen({ user, logout }: { user: any, logout: () => void }) {
+  return (
+    <div className="min-h-screen bg-background">
+      <header className="border-b bg-card/50 backdrop-blur">
+        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <MapPin className="h-6 w-6 text-primary" />
+            <h1 className="text-lg font-semibold">Location History Analyzer</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">
+              Welcome, {user?.first_name || user?.email || 'User'}
+            </span>
+            <ThemeToggle />
+            <Button variant="outline" size="sm" onClick={logout} data-testid="button-logout">
+              Logout
+            </Button>
+          </div>
+        </div>
+      </header>
+      <main className="flex items-center justify-center min-h-[calc(100vh-80px)]">
+        <Card className="w-full max-w-md mx-4">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 h-12 w-12 rounded-full bg-yellow-100 flex items-center justify-center">
+              <AlertCircle className="h-6 w-6 text-yellow-600" />
+            </div>
+            <CardTitle>Account Pending Approval</CardTitle>
+            <CardDescription>
+              Your account registration is being reviewed by an administrator
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-center space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Thank you for registering! Your account request has been submitted and is awaiting admin approval. 
+              You'll be able to access the application once your account is approved.
+            </p>
+            <div className="p-4 bg-muted rounded-lg">
+              <p className="text-sm font-medium mb-2">Account Details:</p>
+              <p className="text-sm text-muted-foreground">Email: {user?.email}</p>
+              <p className="text-sm text-muted-foreground">Status: {user?.approvalStatus || 'Pending'}</p>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Please contact the administrator if you have any questions about your account status.
+            </p>
+          </CardContent>
+        </Card>
+      </main>
+    </div>
+  );
+}
+
 function AuthenticatedApp() {
   const { user, logout } = useAuth();
   const [currentView, setCurrentView] = useState<'app' | 'admin'>('app');
   
   // Check if user is admin
   const isAdmin = user?.role === 'admin';
+  
+  // Check if user is approved (admin users are always approved)
+  const isApproved = user?.isApproved === true || isAdmin;
+  
+  // If user is not approved, show pending approval screen
+  if (!isApproved) {
+    return <PendingApprovalScreen user={user} logout={logout} />;
+  }
   
   return (
     <div className="min-h-screen bg-background">
