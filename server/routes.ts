@@ -6,7 +6,7 @@ import fs from 'fs';
 import { storage } from "./storage";
 import { db } from "./db";
 import { yearlyReportCache, users } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or } from "drizzle-orm";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { parseGoogleLocationHistory, validateGoogleLocationHistory } from "./googleLocationParser";
 import { batchReverseGeocode, deduplicateCoordinates, getAllCachedLocations } from "./geocodingService";
