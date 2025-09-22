@@ -166,14 +166,18 @@ export default function MapDisplay({
       const previous = smartFilteredLocations[i - 1];
       const timeDiffMinutes = (current.timestamp.getTime() - previous.timestamp.getTime()) / (1000 * 60);
       
-      // Calculate distance between points (rough estimate)
-      const latDiff = current.lat - previous.lat;
-      const lngDiff = current.lng - previous.lng;
-      const distanceKm = Math.sqrt(latDiff * latDiff + lngDiff * lngDiff) * 111; // Rough km conversion
+      // Use proper distance calculation
+      const distanceMeters = haversineDistanceMeters(previous.lat, previous.lng, current.lat, current.lng);
+      const distanceKm = distanceMeters / 1000;
       
-      // SIMPLE APPROACH: Just avoid connecting points that are very far apart
-      // This prevents spider web patterns while allowing normal route gaps
-      const isGap = distanceKm > 2; // Don't connect points more than 2km apart
+      // Calculate implied speed between points
+      const speedKmh = timeDiffMinutes > 0 ? (distanceKm / (timeDiffMinutes / 60)) : 0;
+      
+      // CONTINUITY GATING: Only connect points that form a logical sequence
+      // Don't connect if any of these conditions are true:
+      const isGap = (distanceMeters > 1500) ||      // > 1.5km apart
+                    (timeDiffMinutes > 15) ||        // > 15 minutes apart  
+                    (speedKmh > 180);                // Impossible speed > 180km/h
       
       if (isGap && currentSegment.length > 1) {
         // End current segment and start new one
@@ -196,6 +200,18 @@ export default function MapDisplay({
     return { segments, gaps };
   };
 
+
+  // Unified distance calculation using proper haversine formula
+  const haversineDistanceMeters = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371000; // Earth's radius in meters
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLng/2) * Math.sin(dLng/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
 
   const { segments: pathSegments, gaps: pathGaps } = createCleanPathSegments(filteredLocations);
 
@@ -259,7 +275,18 @@ export default function MapDisplay({
             />
           ))}
           
-          {/* Gap connections removed to prevent spider web patterns */}
+          {/* Draw dotted lines for gaps (inferred travel) */}
+          {pathGaps.map((gap, gapIndex) => (
+            <Polyline
+              key={`gap-${gapIndex}`}
+              positions={gap}
+              color="#6b7280"
+              weight={2}
+              opacity={0.6}
+              dashArray="8,12"
+              smoothFactor={1.0}
+            />
+          ))}
           
           {/* Auto-pan and auto-zoom controller */}
           <MapViewController 
