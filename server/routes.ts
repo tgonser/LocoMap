@@ -691,7 +691,101 @@ function processTimelineObjects(
   return scaleFactor;
 }
 
-// Quick metadata extraction for smart upload - supports ALL formats
+// Fast streaming date scanner - extracts ONLY start/end dates without parsing JSON
+async function scanDateRangeFromFile(filePath: string): Promise<{ startDate: string; endDate: string; sizeBytes: number }> {
+  const fs = await import('fs');
+  const { stat } = await import('fs/promises');
+  
+  console.log('⚡ Scanning file for date range using streaming approach...');
+  
+  let minMs: number | null = null;
+  let maxMs: number | null = null;
+  let buffer = '';
+  
+  // Timestamp extraction patterns - comprehensive coverage for all Google Location History formats
+  const patterns = [
+    /"timestampMs"\s*:\s*"(\d{10,})"/g,           // Numeric milliseconds
+    /"startTimestampMs"\s*:\s*"(\d{10,})"/g,      // Semantic Location History start (CRITICAL)
+    /"endTimestampMs"\s*:\s*"(\d{10,})"/g,        // Semantic Location History end (CRITICAL)
+    /"startTimestamp"\s*:\s*"([^"]+)"/g,          // ISO start timestamps  
+    /"endTimestamp"\s*:\s*"([^"]+)"/g,            // ISO end timestamps
+    /"timestamp"\s*:\s*"([^"]+)"/g,               // Generic ISO timestamp
+    /"time"\s*:\s*"([^"]+)"/g,                    // Legacy time
+    /"startTime"\s*:\s*"([^"]+)"/g,               // Segment start time
+    /"endTime"\s*:\s*"([^"]+)"/g                  // Segment end time
+  ];
+  
+  return new Promise((resolve, reject) => {
+    const stream = fs.createReadStream(filePath, { encoding: 'utf8', highWaterMark: 1024 * 1024 });
+    
+    stream.on('data', (chunk: string) => {
+      // Combine with previous buffer to handle boundaries
+      const text = buffer + chunk;
+      
+      // Extract timestamps using all patterns
+      for (const pattern of patterns) {
+        let match;
+        pattern.lastIndex = 0; // Reset regex
+        
+        while ((match = pattern.exec(text)) !== null) {
+          const timestampStr = match[1];
+          let ms: number;
+          
+          // Parse based on format
+          if (/^\d{10,}$/.test(timestampStr)) {
+            // Numeric milliseconds
+            ms = parseInt(timestampStr, 10);
+          } else {
+            // ISO timestamp - proper timezone detection (not fooled by date separators)
+            const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(timestampStr);
+            const isoStr = hasTimezone ? timestampStr : timestampStr + 'Z';
+            ms = Date.parse(isoStr);
+          }
+          
+          if (!isNaN(ms) && ms > 0) {
+            if (minMs === null || ms < minMs) minMs = ms;
+            if (maxMs === null || ms > maxMs) maxMs = ms;
+          }
+        }
+      }
+      
+      // Keep last 1024 chars to handle boundary splits safely
+      buffer = text.slice(-1024);
+    });
+    
+    stream.on('end', async () => {
+      try {
+        const stats = await stat(filePath);
+        
+        if (minMs === null || maxMs === null) {
+          reject(new Error('No valid timestamps found in file'));
+          return;
+        }
+        
+        // Convert to UTC dates and format as YYYY-MM-DD
+        const startUTC = new Date(minMs);
+        const endUTC = new Date(maxMs);
+        
+        const startDate = `${startUTC.getUTCFullYear()}-${String(startUTC.getUTCMonth() + 1).padStart(2, '0')}-${String(startUTC.getUTCDate()).padStart(2, '0')}`;
+        const endDate = `${endUTC.getUTCFullYear()}-${String(endUTC.getUTCMonth() + 1).padStart(2, '0')}-${String(endUTC.getUTCDate()).padStart(2, '0')}`;
+        
+        console.log(`⚡ Fast scan complete: ${startDate} to ${endDate} (${Math.round(stats.size / 1024 / 1024)}MB)`);
+        
+        resolve({
+          startDate,
+          endDate,
+          sizeBytes: stats.size
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+    
+    stream.on('error', reject);
+  });
+}
+
+// Quick metadata extraction for smart upload - supports ALL formats (LEGACY - for small files only)
 async function extractQuickMetadata(jsonData: any) {
   console.log('📊 Analyzing file structure and data quality...');
   
@@ -1399,21 +1493,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: errorMsg });
       }
 
-      // SMART UPLOAD: Skip metadata extraction for large files (use time-based association instead)
+      // SMART UPLOAD: Use fast streaming scanner for large files, legacy analysis for small files
       const fileSizeMB = req.file.size / (1024 * 1024);
       let metadata;
       
-      if (fileSizeMB > 50) {
-        // Skip slow metadata extraction for large files - let time-based association handle it
-        console.log(`⚡ Skipping metadata extraction for large file (${fileSizeMB.toFixed(2)}MB) - using time-based association`);
-        metadata = {
-          totalElements: Array.isArray(jsonData) ? jsonData.length : Object.keys(jsonData).length,
-          estimatedPoints: 1000, // Placeholder - actual points will be determined by time-based association
-          hasTimelinePath: true,  // Assume true for large files
-          dateRange: null
-        };
+      if (fileSizeMB > 10) {
+        // Use fast streaming scanner for large files (no JSON parsing)
+        console.log(`⚡ Using fast streaming scanner for large file (${fileSizeMB.toFixed(2)}MB)`);
+        
+        try {
+          const scanResult = await scanDateRangeFromFile(filePath);
+          metadata = {
+            totalElements: Array.isArray(jsonData) ? jsonData.length : Object.keys(jsonData).length,
+            estimatedPoints: 1000, // Placeholder - actual points determined by time-based association
+            hasTimelinePath: true,  // Assume true for large files
+            dateRange: {
+              startDate: scanResult.startDate,
+              endDate: scanResult.endDate
+            }
+          };
+        } catch (scanError) {
+          console.error('Fast scan failed:', scanError);
+          return res.status(400).json({ 
+            error: `Failed to extract date range: ${scanError instanceof Error ? scanError.message : 'Unknown error'}` 
+          });
+        }
       } else {
-        console.log('🔍 Starting smart metadata extraction...');
+        // Use legacy analysis for small files
+        console.log('🔍 Using legacy metadata extraction for small file...');
         metadata = await extractQuickMetadata(jsonData);
         
         if (!metadata || metadata.totalElements === 0) {
