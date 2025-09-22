@@ -59,7 +59,7 @@ export const locationDatasets = pgTable('location_datasets', {
   deduplicatedPoints: integer('deduplicated_points').notNull(),
   uploadedAt: timestamp('uploaded_at').defaultNow(),
   processedAt: timestamp('processed_at'),
-  rawContent: text('raw_content'), // Store raw JSON for later processing
+  rawContent: text('raw_content'), // Store raw JSON for later processing (compressed if large)
 });
 
 // Location data points from Google location history (user-specific)

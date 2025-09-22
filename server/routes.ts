@@ -736,22 +736,26 @@ async function extractQuickMetadata(jsonData: any) {
     let hasTimelinePath = false;   // Second section - for mapping/analysis (CRITICAL)
     
     // Sample from beginning (activity/visit) and end (timelinePath) of array
-    const beginSample = Math.min(1000, Math.floor(jsonData.length * 0.1));
-    const endSample = Math.max(jsonData.length - 1000, Math.floor(jsonData.length * 0.9));
+    // TimelinePath data comes AFTER activity/visit, not mixed by date
+    const beginSample = Math.min(1000, jsonData.length);
+    const endSample = Math.max(jsonData.length - 5000, Math.floor(jsonData.length * 0.5)); // Check last half more thoroughly
     
     // Check beginning for activity/visit
-    for (let i = 0; i < beginSample; i += step) {
+    for (let i = 0; i < Math.min(beginSample, 5000); i += step) {
       const element = jsonData[i];
       if (element?.activity || element?.visit) {
         hasActivityVisit = true;
       }
     }
     
-    // Check end for timelinePath (where mapping data actually lives)
-    for (let i = endSample; i < jsonData.length; i += step) {
+    // Check end portion more thoroughly for timelinePath (where mapping data actually lives)
+    console.log(`🔍 Checking for timelinePath from index ${endSample} to ${jsonData.length}`);
+    for (let i = endSample; i < jsonData.length; i++) {
       const element = jsonData[i];
       if (element?.timelinePath?.point && Array.isArray(element.timelinePath.point)) {
+        console.log(`✅ Found timelinePath at index ${i} with ${element.timelinePath.point.length} points`);
         hasTimelinePath = true;
+        break; // Found one, that's enough
       }
     }
     
@@ -1272,20 +1276,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         deduplicatedPoints: 0, // Will be set during processing
       });
 
-      // Store raw file content for later processing (smart upload!)
-      // Use connection timeout optimization for large files
+      // IMMEDIATE FIX: Compress large files to avoid database timeouts
       const jsonString = JSON.stringify(jsonData);
       const fileSizeMB = jsonString.length / (1024 * 1024);
       
-      console.log(`📁 Storing raw content (${fileSizeMB.toFixed(2)}MB) for dataset ${dataset.id}...`);
+      console.log(`📁 Processing file storage (${fileSizeMB.toFixed(2)}MB) for dataset ${dataset.id}...`);
       
       try {
-        // Use longer timeout for large files
-        if (fileSizeMB > 30) {
-          console.log(`⏱️  Large file detected - using extended database timeout`);
+        if (fileSizeMB > 20) {
+          // Compress large files before database storage
+          console.log(`🗜️  Large file detected - compressing before database storage...`);
+          
+          const zlib = await import('zlib');
+          const { promisify } = await import('util');
+          const gzipAsync = promisify(zlib.gzip);
+          
+          const compressed = await gzipAsync(Buffer.from(jsonString, 'utf8'));
+          const compressionRatio = ((jsonString.length - compressed.length) / jsonString.length * 100).toFixed(1);
+          const compressedSizeMB = compressed.length / (1024 * 1024);
+          
+          console.log(`✅ Compression: ${fileSizeMB.toFixed(2)}MB → ${compressedSizeMB.toFixed(2)}MB (${compressionRatio}% reduction)`);
+          
+          // Store compressed data with special marker
+          await storage.storeRawFile(dataset.id, userId, `GZIP:${compressed.toString('base64')}`);
+        } else {
+          // Store small files uncompressed
+          console.log(`📁 Storing uncompressed file (${fileSizeMB.toFixed(2)}MB)`);
+          await storage.storeRawFile(dataset.id, userId, jsonString);
         }
         
-        await storage.storeRawFile(dataset.id, userId, jsonString);
         console.log(`✅ Raw content stored successfully`);
       } catch (error) {
         console.error(`💥 Failed to store raw content:`, error);
