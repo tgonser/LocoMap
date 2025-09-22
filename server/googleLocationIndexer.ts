@@ -100,8 +100,9 @@ export function indexGoogleLocationFile(jsonData: any, fileSizeBytes?: number): 
   if (Array.isArray(jsonData)) {
     index.fileInfo.format = 'legacy_array';
     console.log(`📊 Processing legacy array format with ${jsonData.length} elements`);
+    console.log(`🔍 Will scan ENTIRE file to find timelinePath data...`);
     
-    // Scan through array elements
+    // Scan through ALL array elements (don't stop early!)
     for (let i = 0; i < jsonData.length; i++) {
       const element = jsonData[i];
       processedCount++;
@@ -121,11 +122,16 @@ export function indexGoogleLocationFile(jsonData: any, fileSizeBytes?: number): 
         index.structure.hasActivities = true;
       }
       
-      // Check for timelinePath - this is what we map!
+      // Check for timelinePath - this is what we map! (appears ~600k lines in)
       if (element.timelinePath && Array.isArray(element.timelinePath)) {
         index.structure.hasTimelinePath = true;
         index.structure.totalTimelinePathObjects++;
         index.structure.totalTimelinePathPoints += element.timelinePath.length;
+        
+        // Log when we first find timelinePath data
+        if (index.structure.totalTimelinePathObjects === 1) {
+          console.log(`🎯 Found first timelinePath at element ${i} with ${element.timelinePath.length} points!`);
+        }
         
         // Extract dates from startTime/endTime
         const startDate = parseGoogleDate(element.startTime);
