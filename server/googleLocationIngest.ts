@@ -176,8 +176,14 @@ export class GoogleLocationIngest {
       }
     }
     
-    // Signal end of processing
+    // Signal end of processing and wait for completion
     batchWriter.end();
+    
+    // Wait for the stream to finish before returning so processed count is accurate
+    await new Promise((resolve, reject) => {
+      batchWriter.once('finish', resolve);
+      batchWriter.once('error', reject);
+    });
   }
 
   /**
