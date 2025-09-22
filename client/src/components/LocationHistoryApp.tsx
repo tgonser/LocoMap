@@ -139,9 +139,29 @@ export default function LocationHistoryApp() {
         end: endDateStr
       });
       
-      // Fetch only the requested date range from API (efficient backend filtering)
-      const response = await apiRequest('GET', `/api/locations?${params.toString()}`);
-      const locations = await response.json();
+      // First try to get processed data from database (fast path)
+      let response = await apiRequest('GET', `/api/locations?${params.toString()}`);
+      let locations = await response.json();
+      
+      // If no data found and we have datasets, use time-based association system
+      if (locations.length === 0 && datasets.length > 0) {
+        console.log('📊 No processed data found, using time-based association system...');
+        const dataset = datasets[0]; // Use first available dataset
+        
+        const processResponse = await apiRequest('POST', '/api/process-date-range', {
+          datasetId: dataset.id,
+          startDate: startDateStr,
+          endDate: endDateStr
+        });
+        
+        const processResult = await processResponse.json();
+        if (processResult.success && processResult.data) {
+          locations = processResult.data;
+          console.log(`🎯 Time-based association found ${locations.length} GPS points`);
+        } else {
+          console.warn('Time-based association failed:', processResult.error);
+        }
+      }
         
       // Convert timestamps to Date objects
         const locationData = locations.map((loc: any) => ({
@@ -163,7 +183,8 @@ export default function LocationHistoryApp() {
           setSelectedDate(endDate);
         }
         
-        console.log(`Location data loaded: ${locationData.length} points for date range ${startDateStr} to ${endDateStr} (server-side filtered)`);
+        const dataSource = locations.length > 0 && locations[0].id?.includes('_') ? 'time-based association' : 'database cache';
+        console.log(`Location data loaded: ${locationData.length} points for date range ${startDateStr} to ${endDateStr} (${dataSource})`);
     } catch (error) {
       console.error('Error loading location data:', error);
     } finally {
