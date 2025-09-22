@@ -92,7 +92,6 @@ async function validateBusinessUrls(places: Array<{description: string, location
   
   for (const place of places) {
     try {
-      console.log(`🔍 Validating URL: ${place.websiteUrl}`);
       
       // Quick HEAD request with longer timeout for slow business websites
       const controller = new AbortController();
@@ -148,9 +147,7 @@ async function validateBusinessUrls(places: Array<{description: string, location
       const looksLikeFakeDomain = likelyFakePatterns.some(pattern => pattern.test(url));
       
       if (looksLikeFakeDomain) {
-        console.log(`❌ Suspected AI hallucination: ${place.websiteUrl} - ${errorMsg}`);
       } else if (errorMsg.includes('aborted') || errorMsg.includes('timeout')) {
-        console.log(`⚠️ URL slow but keeping: ${place.websiteUrl} - ${errorMsg}`);
         validPlaces.push(place); // Keep it - probably just slow loading
       } else {
         console.log(`❌ URL validation failed: ${place.websiteUrl} - ${errorMsg}`);
@@ -940,11 +937,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         jsonData = JSON.parse(fileContent);
         
-        // Debug: Log the parsed structure before validation
-        console.log(`🔍 Upload parsed - Type: ${typeof jsonData}, Array: ${Array.isArray(jsonData)}`);
         if (typeof jsonData === 'object') {
           const keys = Object.keys(jsonData);
-          console.log(`🔍 Object keys count: ${keys.length}`);
           if (keys.length <= 10) {
             console.log(`🔍 First few keys: ${keys.slice(0, 10).join(', ')}`);
           }
@@ -974,14 +968,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 (firstItem.startTime && firstItem.endTime && firstItem.activitySegment);
               
               if (hasModernIndicators) {
-                console.log(`✅ Restored modern timelineObjects format from coerced object`);
                 jsonData = { timelineObjects: arrayData };
               } else {
-                console.log(`📊 Detected legacy array format (no modern format indicators)`);
                 jsonData = arrayData;
               }
             } else {
-              console.log(`📊 Converting to array format`);
               jsonData = arrayData;
             }
           }
@@ -990,10 +981,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Additional fix: If we have an array that looks like modern format, wrap it
         if (Array.isArray(jsonData) && jsonData.length > 0 && jsonData[0] && typeof jsonData[0] === 'object') {
           const firstItem = jsonData[0];
-          console.log(`🔍 Array first item keys: ${Object.keys(firstItem).join(', ')}`);
-          
           if (firstItem.timelinePath || firstItem.activitySegment || firstItem.placeVisit) {
-            console.log(`✅ Detected array of timelineObjects - wrapping in proper format`);
             jsonData = { timelineObjects: jsonData };
           }
         }
@@ -1130,11 +1118,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               console.log(`✅ Processing: Restored modern timelineObjects format from coerced object`);
               jsonData = { timelineObjects: arrayData };
             } else {
-              console.log(`📊 Processing: Detected legacy array format (no modern format indicators)`);
               jsonData = arrayData;
             }
           } else {
-            console.log(`📊 Processing: Converting to array format`);
             jsonData = arrayData;
           }
         }
@@ -1170,15 +1156,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         // Mark dataset as processed with robust error handling
-        console.log(`🔄 Marking dataset ${datasetId} as processed with ${result.processed.toLocaleString()} points...`);
         try {
           await storage.updateDatasetProcessed(datasetId, result.processed);
-          console.log(`✅ Successfully updated dataset status: processedAt set, deduplicatedPoints = ${result.processed}`);
           
           // Verify the update actually worked
           const verifyDataset = await storage.getLocationDataset(datasetId, userId);
           if (!verifyDataset?.processedAt) {
-            console.error(`❌ CRITICAL: Status update failed - processedAt is still null after update!`);
+            console.error(`CRITICAL: Status update failed - processedAt is still null after update!`);
             throw new Error("Failed to update dataset processed status - verification failed");
           }
           console.log(`✅ Verification successful: dataset.processedAt = ${verifyDataset.processedAt}`);
