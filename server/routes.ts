@@ -1399,16 +1399,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: errorMsg });
       }
 
-      // SMART UPLOAD: Quick metadata extraction only - NO PROCESSING
-      console.log('🔍 Starting smart metadata extraction...');
+      // SMART UPLOAD: Skip metadata extraction for large files (use time-based association instead)
+      const fileSizeMB = req.file.size / (1024 * 1024);
+      let metadata;
       
-      // Quick scan for metadata without full parsing
-      const metadata = await extractQuickMetadata(jsonData);
-      
-      if (!metadata || metadata.totalElements === 0) {
-        return res.status(400).json({ 
-          error: "No location data found in the file" 
-        });
+      if (fileSizeMB > 50) {
+        // Skip slow metadata extraction for large files - let time-based association handle it
+        console.log(`⚡ Skipping metadata extraction for large file (${fileSizeMB.toFixed(2)}MB) - using time-based association`);
+        metadata = {
+          totalElements: Array.isArray(jsonData) ? jsonData.length : Object.keys(jsonData).length,
+          estimatedPoints: 1000, // Placeholder - actual points will be determined by time-based association
+          hasTimelinePath: true,  // Assume true for large files
+          dateRange: null
+        };
+      } else {
+        console.log('🔍 Starting smart metadata extraction...');
+        metadata = await extractQuickMetadata(jsonData);
+        
+        if (!metadata || metadata.totalElements === 0) {
+          return res.status(400).json({ 
+            error: "No location data found in the file" 
+          });
+        }
       }
 
       // Create dataset record - UNPROCESSED with metadata
@@ -1421,7 +1433,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Store file path instead of raw JSON to avoid database timeouts
-      const fileSizeMB = req.file.size / (1024 * 1024);
       
       if (fileSizeMB > 10) {
         // For large files, keep the uploaded file and store its path
