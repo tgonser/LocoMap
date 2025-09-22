@@ -264,11 +264,33 @@ export class GoogleLocationIngest {
    */
   private async extractFromLegacyItem(item: any, batchWriter: Writable): Promise<void> {
     try {
-      const startTime = new Date(item.startTime || Date.now());
+      const startTime = item.startTime ? parseToUTCDate(item.startTime) : new Date();
+      const endTime = item.endTime ? parseToUTCDate(item.endTime) : null;
       
       if (item.timelinePath && Array.isArray(item.timelinePath)) {
-        for (const point of item.timelinePath) {
-          const record = this.parseLocationPoint(point, startTime);
+        const points = item.timelinePath;
+        
+        for (let i = 0; i < points.length; i++) {
+          const point = points[i];
+          
+          // Generate unique timestamp for each point to avoid collisions
+          let pointTimestamp: Date;
+          if (point.time) {
+            // Use individual point timestamp if available
+            pointTimestamp = parseToUTCDate(point.time);
+          } 
+          // Generate incremental timestamps for points without individual times
+          else if (startTime && endTime && points.length > 1) {
+            const segmentDuration = endTime.getTime() - startTime.getTime();
+            const pointOffset = (segmentDuration / (points.length - 1)) * i;
+            pointTimestamp = new Date(startTime.getTime() + pointOffset);
+          } 
+          // Fallback to segment start time
+          else {
+            pointTimestamp = startTime || new Date();
+          }
+          
+          const record = this.parseLocationPoint(point, pointTimestamp);
           if (record) {
             batchWriter.write(record);
           }
