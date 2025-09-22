@@ -199,34 +199,7 @@ export class DatabaseStorage implements IStorage {
       .select({ rawContent: locationDatasets.rawContent })
       .from(locationDatasets)
       .where(and(eq(locationDatasets.id, datasetId), eq(locationDatasets.userId, userId)));
-    
-    if (!dataset?.rawContent) return undefined;
-    
-    // Handle compressed data
-    if (dataset.rawContent.startsWith('GZIP:')) {
-      try {
-        console.log(`🗜️  Decompressing raw file for dataset ${datasetId}...`);
-        const zlib = await import('zlib');
-        const { promisify } = await import('util');
-        const gunzipAsync = promisify(zlib.gunzip);
-        
-        const compressedData = Buffer.from(dataset.rawContent.slice(5), 'base64'); // Remove 'GZIP:' prefix
-        const decompressed = await gunzipAsync(compressedData);
-        const result = decompressed.toString('utf8');
-        
-        const originalSizeMB = (compressedData.length / (1024 * 1024)).toFixed(2);
-        const decompressedSizeMB = (result.length / (1024 * 1024)).toFixed(2);
-        console.log(`✅ Decompression: ${originalSizeMB}MB → ${decompressedSizeMB}MB`);
-        
-        return result;
-      } catch (error) {
-        console.error(`💥 Failed to decompress raw file:`, error);
-        throw new Error(`Failed to decompress location history data`);
-      }
-    }
-    
-    // Return uncompressed data as-is
-    return dataset.rawContent;
+    return dataset?.rawContent || undefined;
   }
   
 

@@ -1276,40 +1276,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         deduplicatedPoints: 0, // Will be set during processing
       });
 
-      // IMMEDIATE FIX: Compress large files to avoid database timeouts
+      // Store the raw file content for processing
       const jsonString = JSON.stringify(jsonData);
       const fileSizeMB = jsonString.length / (1024 * 1024);
       
-      console.log(`📁 Processing file storage (${fileSizeMB.toFixed(2)}MB) for dataset ${dataset.id}...`);
-      
-      try {
-        if (fileSizeMB > 20) {
-          // Compress large files before database storage
-          console.log(`🗜️  Large file detected - compressing before database storage...`);
-          
-          const zlib = await import('zlib');
-          const { promisify } = await import('util');
-          const gzipAsync = promisify(zlib.gzip);
-          
-          const compressed = await gzipAsync(Buffer.from(jsonString, 'utf8'));
-          const compressionRatio = ((jsonString.length - compressed.length) / jsonString.length * 100).toFixed(1);
-          const compressedSizeMB = compressed.length / (1024 * 1024);
-          
-          console.log(`✅ Compression: ${fileSizeMB.toFixed(2)}MB → ${compressedSizeMB.toFixed(2)}MB (${compressionRatio}% reduction)`);
-          
-          // Store compressed data with special marker
-          await storage.storeRawFile(dataset.id, userId, `GZIP:${compressed.toString('base64')}`);
-        } else {
-          // Store small files uncompressed
-          console.log(`📁 Storing uncompressed file (${fileSizeMB.toFixed(2)}MB)`);
-          await storage.storeRawFile(dataset.id, userId, jsonString);
-        }
-        
-        console.log(`✅ Raw content stored successfully`);
-      } catch (error) {
-        console.error(`💥 Failed to store raw content:`, error);
-        throw new Error(`Database timeout storing large file (${fileSizeMB.toFixed(2)}MB). Please try again or contact support.`);
-      }
+      console.log(`💾 Storing raw file (${fileSizeMB.toFixed(2)}MB) in database...`);
+      await storage.storeRawFile(dataset.id, userId, jsonString);
 
       res.json({
         success: true,
