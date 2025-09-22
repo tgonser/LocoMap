@@ -1275,7 +1275,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Quick indexing - extract structure and date ranges
-      const index: LocationFileIndex = indexGoogleLocationFile(jsonData);
+      const index: LocationFileIndex = indexGoogleLocationFile(jsonData, req.file.size);
       
       // Validate that this file has usable data
       if (!index.structure.hasTimelinePath) {

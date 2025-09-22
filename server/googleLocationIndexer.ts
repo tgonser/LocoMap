@@ -57,17 +57,20 @@ function parseGoogleDate(dateString: string): Date | null {
 }
 
 /**
- * Extract date in yyyy-mm-dd format
+ * Extract date in yyyy-mm-dd format using local date components to avoid timezone drift
  */
 function extractDateKey(date: Date): string {
-  return date.toISOString().split('T')[0];
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 /**
  * Quick scan of JSON file to extract structure and date ranges
  * This runs in 10-15 seconds instead of full processing
  */
-export function indexGoogleLocationFile(jsonData: any): LocationFileIndex {
+export function indexGoogleLocationFile(jsonData: any, fileSizeBytes?: number): LocationFileIndex {
   const startTime = Date.now();
   console.log('🔍 Starting quick indexing of Google Location file...');
   
@@ -82,7 +85,7 @@ export function indexGoogleLocationFile(jsonData: any): LocationFileIndex {
       estimatedGpsPoints: 0
     },
     fileInfo: {
-      sizeBytes: JSON.stringify(jsonData).length,
+      sizeBytes: fileSizeBytes || 0,  // Fix: use provided file size instead of re-stringifying
       processingTimeMs: 0,
       format: 'unknown'
     },
@@ -194,10 +197,19 @@ export function indexGoogleLocationFile(jsonData: any): LocationFileIndex {
         
         // Count GPS points from waypointPath
         if (obj.activitySegment.waypointPath?.waypoints) {
+          index.structure.hasTimelinePath = true;  // Fix: waypointPath IS timeline data
+          index.structure.totalTimelinePathObjects++;  // Fix: count the object 
           index.structure.totalTimelinePathPoints += obj.activitySegment.waypointPath.waypoints.length;
           
-          const dateKey = earliestDate ? extractDateKey(earliestDate) : '2025-01-01';
-          index.sampleDates[dateKey] = (index.sampleDates[dateKey] || 0) + obj.activitySegment.waypointPath.waypoints.length;
+          // Fix: use the object's actual start date, not earliestDate
+          const startDate = parseGoogleDate(obj.activitySegment.duration?.startTimestamp);
+          if (startDate) {
+            if (!earliestDate || startDate < earliestDate) earliestDate = startDate;
+            if (!latestDate || startDate > latestDate) latestDate = startDate;
+            
+            const dateKey = extractDateKey(startDate);
+            index.sampleDates[dateKey] = (index.sampleDates[dateKey] || 0) + obj.activitySegment.waypointPath.waypoints.length;
+          }
         }
       }
     }
