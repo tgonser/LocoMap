@@ -241,8 +241,24 @@ export class GoogleLocationIngest {
         for (let i = 0; i < points.length; i++) {
           const point = points[i];
           
-          // Use parseLocationPoint to handle all timestamp formats properly
-          const record = this.parseLocationPoint(point, startTime);
+          // Generate unique timestamps for each point to avoid collisions
+          let pointTimestamp: Date;
+          if (point.time) {
+            // Use individual point timestamp if available
+            pointTimestamp = parseToUTCDate(point.time);
+          } 
+          // Generate incremental timestamps for points without individual times
+          else if (startTime && endTime && points.length > 1) {
+            const segmentDuration = endTime.getTime() - startTime.getTime();
+            const pointOffset = (segmentDuration / (points.length - 1)) * i;
+            pointTimestamp = new Date(startTime.getTime() + pointOffset);
+          } 
+          // Fallback to segment start time
+          else {
+            pointTimestamp = startTime || new Date();
+          }
+          
+          const record = this.parseLocationPoint(point, pointTimestamp);
           if (record) {
             batchWriter.write(record);
           }
