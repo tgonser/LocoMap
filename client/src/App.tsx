@@ -8,14 +8,19 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LogIn, MapPin, UserPlus, User, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { LogIn, MapPin, UserPlus, User, Eye, EyeOff, AlertCircle, Shield } from "lucide-react";
 import LocationHistoryApp from "@/components/LocationHistoryApp";
+import AdminPanel from "@/pages/AdminPanel";
 import ThemeToggle from "@/components/ThemeToggle";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
 function AuthenticatedApp() {
   const { user, logout } = useAuth();
+  const [currentView, setCurrentView] = useState<'app' | 'admin'>('app');
+  
+  // Check if user is admin
+  const isAdmin = user?.role === 'admin';
   
   return (
     <div className="min-h-screen bg-background">
@@ -29,6 +34,20 @@ function AuthenticatedApp() {
             <span className="text-sm text-muted-foreground">
               Welcome, {user?.first_name || user?.email || 'User'}
             </span>
+            {isAdmin && (
+              <>
+                <Button 
+                  variant={currentView === 'admin' ? 'default' : 'outline'} 
+                  size="sm" 
+                  onClick={() => setCurrentView(currentView === 'admin' ? 'app' : 'admin')}
+                  className="gap-2"
+                  data-testid="button-admin-panel"
+                >
+                  <Shield className="h-4 w-4" />
+                  {currentView === 'admin' ? 'Back to App' : 'Admin Panel'}
+                </Button>
+              </>
+            )}
             <ThemeToggle />
             <Button variant="outline" size="sm" onClick={logout} data-testid="button-logout">
               Logout
@@ -37,7 +56,7 @@ function AuthenticatedApp() {
         </div>
       </header>
       <main>
-        <LocationHistoryApp />
+        {currentView === 'admin' ? <AdminPanel /> : <LocationHistoryApp />}
       </main>
     </div>
   );

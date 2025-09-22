@@ -9,6 +9,9 @@ interface User {
   lastName?: string;
   first_name?: string;  // Keep for backward compatibility
   last_name?: string;   // Keep for backward compatibility
+  role?: string;
+  isApproved?: boolean;
+  approvalStatus?: string;
 }
 
 export function useAuth() {
