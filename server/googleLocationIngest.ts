@@ -187,15 +187,35 @@ export class GoogleLocationIngest {
     try {
       // Modern Google exports: GPS route data in activitySegment.simplifiedRawPath.points
       if (item.activitySegment?.simplifiedRawPath?.points && Array.isArray(item.activitySegment.simplifiedRawPath.points)) {
-        const startTime = item.activitySegment?.duration?.startTimestamp ? new Date(item.activitySegment.duration.startTimestamp) : new Date();
+        const startTime = item.activitySegment?.duration?.startTimestamp ? parseToUTCDate(item.activitySegment.duration.startTimestamp) : new Date();
+        const endTime = item.activitySegment?.duration?.endTimestamp ? parseToUTCDate(item.activitySegment.duration.endTimestamp) : null;
         
-        for (const point of item.activitySegment.simplifiedRawPath.points) {
+        const points = item.activitySegment.simplifiedRawPath.points;
+        for (let i = 0; i < points.length; i++) {
+          const point = points[i];
           if (point.latE7 !== undefined && point.lngE7 !== undefined) {
+            let timestamp: Date;
+            
+            // Use individual point timestamp if available
+            if (point.timestampMs) {
+              timestamp = new Date(parseInt(point.timestampMs));
+            } 
+            // Generate incremental timestamps for points without individual times
+            else if (startTime && endTime && points.length > 1) {
+              const segmentDuration = endTime.getTime() - startTime.getTime();
+              const pointOffset = (segmentDuration / (points.length - 1)) * i;
+              timestamp = new Date(startTime.getTime() + pointOffset);
+            } 
+            // Fallback to segment start time
+            else {
+              timestamp = startTime || new Date();
+            }
+            
             const record: ThinRecord = {
               lat: point.latE7 / 1e7,
               lng: point.lngE7 / 1e7,
-              timestamp: point.timestampMs ? new Date(parseInt(point.timestampMs)) : startTime,
-              accuracy: point.accuracy ? parseInt(point.accuracy) : undefined
+              timestamp,
+              accuracy: point.accuracy || point.accuracyMeters ? parseInt(point.accuracy || point.accuracyMeters) : undefined
             };
             batchWriter.write(record);
           }
@@ -204,15 +224,31 @@ export class GoogleLocationIngest {
       
       // Modern Google exports: Additional GPS route data in activitySegment.waypointPath.waypoints
       if (item.activitySegment?.waypointPath?.waypoints && Array.isArray(item.activitySegment.waypointPath.waypoints)) {
-        const startTime = item.activitySegment?.duration?.startTimestamp ? new Date(item.activitySegment.duration.startTimestamp) : new Date();
+        const startTime = item.activitySegment?.duration?.startTimestamp ? parseToUTCDate(item.activitySegment.duration.startTimestamp) : new Date();
+        const endTime = item.activitySegment?.duration?.endTimestamp ? parseToUTCDate(item.activitySegment.duration.endTimestamp) : null;
         
-        for (const waypoint of item.activitySegment.waypointPath.waypoints) {
+        const waypoints = item.activitySegment.waypointPath.waypoints;
+        for (let i = 0; i < waypoints.length; i++) {
+          const waypoint = waypoints[i];
           if (waypoint.latE7 !== undefined && waypoint.lngE7 !== undefined) {
+            let timestamp: Date;
+            
+            // Generate incremental timestamps for waypoints (they typically don't have individual timestampMs)
+            if (startTime && endTime && waypoints.length > 1) {
+              const segmentDuration = endTime.getTime() - startTime.getTime();
+              const pointOffset = (segmentDuration / (waypoints.length - 1)) * i;
+              timestamp = new Date(startTime.getTime() + pointOffset);
+            } 
+            // Fallback to segment start time
+            else {
+              timestamp = startTime || new Date();
+            }
+            
             const record: ThinRecord = {
               lat: waypoint.latE7 / 1e7,
               lng: waypoint.lngE7 / 1e7,
-              timestamp: startTime,
-              accuracy: waypoint.accuracy ? parseInt(waypoint.accuracy) : undefined
+              timestamp,
+              accuracy: waypoint.accuracy || waypoint.accuracyMeters ? parseInt(waypoint.accuracy || waypoint.accuracyMeters) : undefined
             };
             batchWriter.write(record);
           }
