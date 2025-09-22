@@ -1346,8 +1346,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const fileName = `${dataset.id}.json`;
         const persistentPath = path.join(uploadsDir, fileName);
         
-        // Move from temp location to persistent location
-        await fs.rename(req.file.path, persistentPath);
+        // Copy from temp location to persistent location (handles cross-device scenarios)
+        await fs.copyFile(req.file.path, persistentPath);
+        // Clean up temporary file
+        await fs.unlink(req.file.path);
         
         // Store only the file path in database
         await storage.storeRawFile(dataset.id, userId, `FILE:${persistentPath}`);
