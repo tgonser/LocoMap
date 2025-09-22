@@ -184,8 +184,8 @@ export default function AdminPanel() {
             ) : pendingUsers.length === 0 ? (
               <Alert>
                 <CheckCircle className="h-4 w-4" />
-                <AlertTitle>No pending approvals</AlertTitle>
                 <AlertDescription>
+                  <strong>No pending approvals</strong><br />
                   All users have been processed. New registration requests will appear here automatically.
                 </AlertDescription>
               </Alert>
