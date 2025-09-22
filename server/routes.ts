@@ -2755,10 +2755,10 @@ Return your response as a JSON object with this exact structure:
           throw new Error("Invalid response format from AI");
         }
         
-        // Validate the AI response structure
+        // Validate the AI response structure (temporarily making name optional to debug)
         const placesSchema = z.object({
           places: z.array(z.object({
-            name: z.string(),
+            name: z.string().optional(),
             description: z.string(),
             location: z.string()
           })).min(1).max(15)
@@ -2781,11 +2781,13 @@ Return your response as a JSON object with this exact structure:
         
         // Convert names to concise Google search URLs for reliable results
         const placesWithGoogleSearch = validatedPlaces.places.map(place => {
-          const searchQuery = `${place.name} ${place.location}`;
+          const topicName = place.name || place.description.split('.')[0]; // Use first sentence if no name
+          const searchQuery = `${topicName} ${place.location}`;
           const websiteUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
-          console.log(`🔍 [DEBUG] Search query for "${place.name}": "${searchQuery}" -> URL length: ${websiteUrl.length}`);
+          console.log(`🔍 [DEBUG] Search query for "${topicName}": "${searchQuery}" -> URL length: ${websiteUrl.length}`);
           return {
             ...place,
+            name: topicName, // Ensure frontend gets a name field
             websiteUrl
           };
         });
