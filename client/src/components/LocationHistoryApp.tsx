@@ -366,11 +366,10 @@ export default function LocationHistoryApp() {
             </div>
             
             {/* Content */}
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 p-4">
-            {/* Left Sidebar - Timeline & Analytics */}
-            <div className="lg:col-span-1 space-y-4 order-2 lg:order-1">
-              {viewMode === 'map' && (
-                <>
+            {viewMode === 'map' ? (
+              <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 p-4">
+                {/* Left Sidebar - Timeline & Analytics */}
+                <div className="lg:col-span-1 space-y-4 order-2 lg:order-1">
                   <DateNavigator
                     selectedDate={selectedDate}
                     onDateChange={setSelectedDate}
@@ -390,61 +389,63 @@ export default function LocationHistoryApp() {
                     }))}
                     selectedDate={selectedDate}
                   />
-                </>
-              )}
-              
-            </div>
+                </div>
 
-            {/* Main Content Area */}
-            <div className="lg:col-span-3 order-1 lg:order-2">
-              {viewMode === 'map' ? (
-                isLoadingMapData ? (
-                  <Card className="h-full flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-                      <p className="text-muted-foreground">Loading location data...</p>
-                      <p className="text-sm text-muted-foreground mt-1">This may take a moment for large date ranges</p>
-                    </div>
-                  </Card>
-                ) : mapDataLoaded ? (
-                  <MapDisplay
-                    locations={dayLocations}
-                    selectedDate={selectedDate}
-                    onDateChange={setSelectedDate}
-                    availableDates={availableDates}
-                    locationCountByDate={locationCountByDate}
-                    className="h-full"
-                  />
-                ) : (
-                  <Card className="h-full flex items-center justify-center">
-                    <div className="text-center">
-                      <MapPin className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                      <h3 className="text-lg font-semibold mb-2">Select Date Range</h3>
-                      <p className="text-muted-foreground mb-4">Choose a date range to load and view your location data on the map</p>
-                      <Button onClick={() => setShowDateRangePicker(true)} data-testid="button-select-date-range">
-                        <CalendarDays className="w-4 h-4 mr-2" />
-                        Select Date Range
-                      </Button>
-                    </div>
-                  </Card>
-                )
-              ) : viewMode === 'files' ? (
-                <FileManager onFileUpload={handleFileUpload} />
-              ) : viewMode === 'yearly-report' ? (
-                <YearlyStateReport />
-              ) : (
-                <AnalyticsPanel
-                  onBack={() => setViewMode('map')}
-                  defaultStartDate={selectedDateRange?.start}
-                  defaultEndDate={selectedDateRange?.end}
-                  onDateRangeChange={(startDate: Date, endDate: Date) => {
-                    // Update shared date range state when analytics dates change
-                    setSelectedDateRange({ start: startDate, end: endDate });
-                  }}
-                />
-              )}
-            </div>
-            </div>
+                {/* Main Content Area */}
+                <div className="lg:col-span-3 order-1 lg:order-2">
+                  {isLoadingMapData ? (
+                    <Card className="h-full flex items-center justify-center">
+                      <div className="text-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                        <p className="text-muted-foreground">Loading location data...</p>
+                        <p className="text-sm text-muted-foreground mt-1">This may take a moment for large date ranges</p>
+                      </div>
+                    </Card>
+                  ) : mapDataLoaded ? (
+                    <MapDisplay
+                      locations={dayLocations}
+                      selectedDate={selectedDate}
+                      onDateChange={setSelectedDate}
+                      availableDates={availableDates}
+                      locationCountByDate={locationCountByDate}
+                      className="h-full"
+                    />
+                  ) : (
+                    <Card className="h-full flex items-center justify-center">
+                      <div className="text-center">
+                        <MapPin className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                        <h3 className="text-lg font-semibold mb-2">Select Date Range</h3>
+                        <p className="text-muted-foreground mb-4">Choose a date range to load and view your location data on the map</p>
+                        <Button onClick={() => setShowDateRangePicker(true)} data-testid="button-select-date-range">
+                          <CalendarDays className="w-4 h-4 mr-2" />
+                          Select Date Range
+                        </Button>
+                      </div>
+                    </Card>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 flex items-start justify-center p-4">
+                <div className="w-full max-w-6xl">
+                  {viewMode === 'files' ? (
+                    <FileManager onFileUpload={handleFileUpload} />
+                  ) : viewMode === 'yearly-report' ? (
+                    <YearlyStateReport />
+                  ) : (
+                    <AnalyticsPanel
+                      onBack={() => setViewMode('map')}
+                      defaultStartDate={selectedDateRange?.start}
+                      defaultEndDate={selectedDateRange?.end}
+                      onDateRangeChange={(startDate: Date, endDate: Date) => {
+                        // Update shared date range state when analytics dates change
+                        setSelectedDateRange({ start: startDate, end: endDate });
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>
