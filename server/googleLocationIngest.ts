@@ -228,38 +228,9 @@ export class GoogleLocationIngest {
         }
       }
       
-      // Modern Google exports: Additional GPS route data in activitySegment.waypointPath.waypoints
-      if (item.activitySegment?.waypointPath?.waypoints && Array.isArray(item.activitySegment.waypointPath.waypoints)) {
-        const startTime = item.activitySegment?.duration?.startTimestamp ? parseToUTCDate(item.activitySegment.duration.startTimestamp) : new Date();
-        const endTime = item.activitySegment?.duration?.endTimestamp ? parseToUTCDate(item.activitySegment.duration.endTimestamp) : null;
-        
-        const waypoints = item.activitySegment.waypointPath.waypoints;
-        for (let i = 0; i < waypoints.length; i++) {
-          const waypoint = waypoints[i];
-          if (waypoint.latE7 !== undefined && waypoint.lngE7 !== undefined) {
-            let timestamp: Date;
-            
-            // Generate incremental timestamps for waypoints (they typically don't have individual timestampMs)
-            if (startTime && endTime && waypoints.length > 1) {
-              const segmentDuration = endTime.getTime() - startTime.getTime();
-              const pointOffset = (segmentDuration / (waypoints.length - 1)) * i;
-              timestamp = new Date(startTime.getTime() + pointOffset);
-            } 
-            // Fallback to segment start time
-            else {
-              timestamp = startTime || new Date();
-            }
-            
-            const record: ThinRecord = {
-              lat: waypoint.latE7 / 1e7,
-              lng: waypoint.lngE7 / 1e7,
-              timestamp,
-              accuracy: waypoint.accuracy || waypoint.accuracyMeters ? parseInt(waypoint.accuracy || waypoint.accuracyMeters) : undefined
-            };
-            batchWriter.write(record);
-          }
-        }
-      }
+      // NOTE: Removed waypoint coordinate extraction to avoid mixing data sources.
+      // timelinePath = GPS coordinates for mapping
+      // activitySegment = time context only (not coordinates)
     } catch (error) {
       console.error('❌ Timeline object extraction error:', error);
     }
