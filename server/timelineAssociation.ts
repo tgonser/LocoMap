@@ -406,110 +406,10 @@ export function processTimelinePathsForDateRange(
   for (let i = 0; i < elementsToProcess.length; i++) {
     const element = elementsToProcess[i];
     
-    // Process GPS route data from activitySegment (modern format - contains timelinePath-style GPS data)
-    if (element.activitySegment) {
-      const activity = element.activitySegment;
-      const pathStartMs = parseGoogleTimestamp(activity.duration?.startTimestampMs || activity.startTime);
-      const pathEndMs = parseGoogleTimestamp(activity.duration?.endTimestampMs || activity.endTime);
-      
-      if (!pathStartMs || !pathEndMs) continue;
-      
-      // Skip if outside requested date range
-      if (pathEndMs < startDateMs || pathStartMs > endDateMs) continue;
-      
-      // Find the owning parent container
-      const parent = findOwningParent(parentIndex, pathStartMs, pathEndMs);
-      if (!parent) continue;
-      
-      // Process GPS route data (timelinePath-style data stored in activitySegment)
-      let gpsPointsProcessed = false;
-      
-      // 1. simplifiedRawPath (most common timelinePath-style GPS data)
-      if (activity.simplifiedRawPath?.points && activity.simplifiedRawPath.points.length > 0) {
-        processedPaths++;
-        associatedPaths++;
-        gpsPointsProcessed = true;
-        
-        const normalizedPoints = normalizePoints(
-          activity.simplifiedRawPath.points,
-          parent.startMs,
-          parent.endMs
-        );
-        
-        for (const point of normalizedPoints) {
-          // Skip if point is outside date range
-          if (point.timestampMs < startDateMs || point.timestampMs > endDateMs) continue;
-          
-          points.push({
-            latitude: point.lat,
-            longitude: point.lng,
-            timestampMs: point.timestampMs,
-            offsetMinutes: point.offsetMinutes,
-            parentId: parent.id,
-            parentType: parent.type
-          });
-        }
-      }
-      
-      // 2. rawPath (detailed GPS route data)
-      if (!gpsPointsProcessed && activity.rawPath?.points && activity.rawPath.points.length > 0) {
-        processedPaths++;
-        associatedPaths++;
-        gpsPointsProcessed = true;
-        
-        const normalizedPoints = normalizePoints(
-          activity.rawPath.points,
-          parent.startMs,
-          parent.endMs
-        );
-        
-        for (const point of normalizedPoints) {
-          // Skip if point is outside date range
-          if (point.timestampMs < startDateMs || point.timestampMs > endDateMs) continue;
-          
-          points.push({
-            latitude: point.lat,
-            longitude: point.lng,
-            timestampMs: point.timestampMs,
-            offsetMinutes: point.offsetMinutes,
-            parentId: parent.id,
-            parentType: parent.type
-          });
-        }
-      }
-      
-      // 3. waypointPath (route waypoints)
-      if (!gpsPointsProcessed && activity.waypointPath?.waypoints && activity.waypointPath.waypoints.length > 0) {
-        processedPaths++;
-        associatedPaths++;
-        gpsPointsProcessed = true;
-        
-        const normalizedPoints = normalizePoints(
-          activity.waypointPath.waypoints,
-          parent.startMs,
-          parent.endMs
-        );
-        
-        for (const point of normalizedPoints) {
-          // Skip if point is outside date range
-          if (point.timestampMs < startDateMs || point.timestampMs > endDateMs) continue;
-          
-          points.push({
-            latitude: point.lat,
-            longitude: point.lng,
-            timestampMs: point.timestampMs,
-            offsetMinutes: point.offsetMinutes,
-            parentId: parent.id,
-            parentType: parent.type
-          });
-        }
-      }
-      
-      // NOTE: We do NOT process activity.startLocation or activity.endLocation 
-      // Those are inferred activity coordinates, not GPS route data
-    }
+    // NOTE: We do NOT process activitySegment GPS paths for map routes
+    // Those should be used ONLY for analytics, not route visualization
     
-    // Process legacy timelinePath format (explicit timelinePath elements)
+    // ONLY PROCESS timelinePath elements for map route visualization
     if (element.timelinePath && Array.isArray(element.timelinePath) && element.timelinePath.length > 0) {
       processedPaths++;
       
@@ -550,7 +450,7 @@ export function processTimelinePathsForDateRange(
     }
   }
   
-  console.log(`✅ Processed ${processedPaths} GPS path objects, associated ${associatedPaths} with parents`);
+  console.log(`✅ Processed ${processedPaths} timelinePath objects, associated ${associatedPaths} with parents`);
   console.log(`📍 Generated ${points.length} GPS points with proper timestamps`);
   
   return points;
