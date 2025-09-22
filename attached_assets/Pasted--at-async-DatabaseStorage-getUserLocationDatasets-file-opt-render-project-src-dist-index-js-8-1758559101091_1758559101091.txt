@@ -1,0 +1,58 @@
+    at async DatabaseStorage.getUserLocationDatasets (file:///opt/render/project/src/dist/index.js:881:12)
+    at async file:///opt/render/project/src/dist/index.js:3620:24 {
+  length: 117,
+  severity: 'ERROR',
+  code: '42P01',
+  detail: undefined,
+  hint: undefined,
+  position: '146',
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'parse_relation.c',
+  line: '1449',
+  routine: 'parserOpenTable'
+}
+4:32:45 PM [express] GET /api/datasets 500 in 7ms :: {"error":"Failed to fetch datasets"}
+4:32:49 PM [express] GET /api/admin/stats 200 in 20ms :: {"total":2,"pending":1,"approved":1,"reject…
+4:32:49 PM [express] GET /api/admin/pending-users 200 in 73ms :: {"users":[{"id":"external-user","us…
+4:32:54 PM [express] GET /api/admin/stats 304 in 3ms :: {"total":2,"pending":1,"approved":1,"rejecte…
+4:32:54 PM [express] GET /api/admin/pending-users 304 in 4ms :: {"users":[{"id":"external-user","use…
+4:32:59 PM [express] GET /api/admin/stats 304 in 4ms :: {"total":2,"pending":1,"approved":1,"rejecte…
+4:32:59 PM [express] GET /api/admin/pending-users 304 in 3ms :: {"users":[{"id":"external-user","use…
+4:33:04 PM [express] GET /api/admin/stats 304 in 4ms :: {"total":2,"pending":1,"approved":1,"rejecte…
+4:33:04 PM [express] GET /api/admin/pending-users 304 in 4ms :: {"users":[{"id":"external-user","use…
+4:33:09 PM [express] GET /api/admin/stats 304 in 10ms :: {"total":2,"pending":1,"approved":1,"reject…
+4:33:09 PM [express] GET /api/admin/pending-users 304 in 21ms :: {"users":[{"id":"external-user","us…
+4:33:10 PM [express] GET /api/datasets 401 in 1ms :: {"message":"Authentication required. Set AUTH_B…
+Error fetching datasets: error: relation "location_datasets" does not exist
+    at /opt/render/project/src/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///opt/render/project/src/node_modules/drizzle-orm/node-postgres/session.js:83:22
+    at async DatabaseStorage.getUserLocationDatasets (file:///opt/render/project/src/dist/index.js:881:12)
+    at async file:///opt/render/project/src/dist/index.js:3620:24 {
+  length: 117,
+  severity: 'ERROR',
+  code: '42P01',
+  detail: undefined,
+  hint: undefined,
+  position: '146',
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'parse_relation.c',
+  line: '1449',
+  routine: 'parserOpenTable'
+}
+4:33:10 PM [express] GET /api/datasets 500 in 4ms :: {"error":"Failed to fetch datasets"}
+🔍 Has timelineObjects: false
