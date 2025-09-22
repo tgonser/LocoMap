@@ -901,8 +901,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const { username, password } = validation.data;
 
-      // Find user by username
-      const [user] = await db.select().from(users).where(eq(users.username, username)).limit(1);
+      // Find user by username OR email (username field can contain either)
+      const [user] = await db.select().from(users).where(
+        or(eq(users.username, username), eq(users.email, username))
+      ).limit(1);
       if (!user || !user.password) {
         return res.status(401).json({ message: "Invalid credentials" });
       }
