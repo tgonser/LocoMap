@@ -334,21 +334,7 @@ export default function LocationSummary({
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => {
-                        // iOS fix for both Safari and Chrome - prevents Google app hijacking
-                        const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-                        if (isiOS) {
-                          // Force browser opening by copying to clipboard and showing instruction
-                          navigator.clipboard.writeText(place.websiteUrl).then(() => {
-                            alert(`Search copied to clipboard! Paste in your browser to avoid the Google app:\n\n"${place.name} ${place.location}"`);
-                          }).catch(() => {
-                            // Fallback if clipboard fails
-                            alert(`Search term: "${place.name} ${place.location}"\n\nPlease search manually in your browser to avoid the Google app.`);
-                          });
-                        } else {
-                          window.open(place.websiteUrl, '_blank', 'noopener,noreferrer');
-                        }
-                      }}
+                      onClick={() => window.open(place.websiteUrl, '_blank')}
                       className="flex items-center gap-2 w-full"
                       data-testid={`button-view-website-${index}`}
                     >
