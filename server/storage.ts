@@ -185,6 +185,16 @@ export class DatabaseStorage implements IStorage {
       })
       .where(eq(locationDatasets.id, id));
   }
+
+  async resetDatasetProcessed(id: string): Promise<void> {
+    await db
+      .update(locationDatasets)
+      .set({
+        deduplicatedPoints: 0,
+        processedAt: null,
+      })
+      .where(eq(locationDatasets.id, id));
+  }
   
   // Raw file storage for deferred processing  
   async storeRawFile(datasetId: string, userId: string, rawContent: string): Promise<void> {

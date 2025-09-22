@@ -1696,6 +1696,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Reprocess dataset - clear location points and reset processed status
+  app.post("/api/datasets/:datasetId/reprocess", requireApprovedUser, async (req, res) => {
+    try {
+      const { claims } = getAuthenticatedUser(req);
+      const userId = claims.sub;
+      const { datasetId } = req.params;
+
+      // Check if dataset exists and belongs to user
+      const dataset = await storage.getLocationDataset(datasetId, userId);
+      if (!dataset) {
+        return res.status(404).json({ error: "Dataset not found" });
+      }
+
+      console.log(`🔄 Reprocessing dataset ${datasetId} (${dataset.filename}) for user ${userId}`);
+
+      // Clear existing location points for this dataset
+      await storage.deleteLocationPointsByDataset(datasetId, userId);
+
+      // Reset dataset processed status to allow reprocessing
+      await storage.resetDatasetProcessed(datasetId);
+
+      console.log(`✅ Dataset ${datasetId} ready for reprocessing`);
+      res.json({ success: true, message: `Dataset ${dataset.filename} cleared and ready for reprocessing` });
+    } catch (error) {
+      console.error("Error preparing dataset for reprocessing:", error);
+      res.status(500).json({ error: "Failed to prepare dataset for reprocessing" });
+    }
+  });
+
   // Delete a specific dataset
   app.delete("/api/datasets/:datasetId", requireApprovedUser, async (req, res) => {
     console.log(`🚨 DELETE ROUTE HIT: ${req.params.datasetId}`);
