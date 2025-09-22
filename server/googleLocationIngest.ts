@@ -10,6 +10,19 @@ import type { LocationPoint, InsertLocationPoint } from '../shared/schema';
 
 const pipelineAsync = promisify(pipeline);
 
+/**
+ * Parse timestamp ensuring UTC interpretation (matches working parser)
+ */
+function parseToUTCDate(timestamp: string): Date | null {
+  if (!timestamp) return null;
+  
+  // Ensure proper UTC interpretation
+  const hasTimezoneInfo = /(?:Z|[+-]\d{2}:\d{2})$/.test(timestamp);
+  const normalized = hasTimezoneInfo ? timestamp : timestamp + 'Z';
+  const ms = Date.parse(normalized);
+  return Number.isNaN(ms) ? null : new Date(ms);
+}
+
 interface StreamingIngestOptions {
   batchSize?: number;
   onProgress?: (processed: number, total?: number) => void;
@@ -172,13 +185,35 @@ export class GoogleLocationIngest {
    */
   private async extractFromTimelineObject(item: any, batchWriter: Writable): Promise<void> {
     try {
-      // Extract from timelinePath within the timeline object (legacy format)
-      if (item.timelinePath && item.timelinePath.point && Array.isArray(item.timelinePath.point)) {
-        const startTime = new Date(item.startTime || item.duration?.startTimestamp || Date.now());
+      // Modern Google exports: GPS route data in activitySegment.simplifiedRawPath.points
+      if (item.activitySegment?.simplifiedRawPath?.points && Array.isArray(item.activitySegment.simplifiedRawPath.points)) {
+        const startTime = item.activitySegment?.duration?.startTimestamp ? new Date(item.activitySegment.duration.startTimestamp) : new Date();
         
-        for (const point of item.timelinePath.point) {
-          const record = this.parseLocationPoint(point, startTime);
-          if (record) {
+        for (const point of item.activitySegment.simplifiedRawPath.points) {
+          if (point.latE7 !== undefined && point.lngE7 !== undefined) {
+            const record: ThinRecord = {
+              lat: point.latE7 / 1e7,
+              lng: point.lngE7 / 1e7,
+              timestamp: point.timestampMs ? new Date(parseInt(point.timestampMs)) : startTime,
+              accuracy: point.accuracy ? parseInt(point.accuracy) : undefined
+            };
+            batchWriter.write(record);
+          }
+        }
+      }
+      
+      // Modern Google exports: Additional GPS route data in activitySegment.waypointPath.waypoints
+      if (item.activitySegment?.waypointPath?.waypoints && Array.isArray(item.activitySegment.waypointPath.waypoints)) {
+        const startTime = item.activitySegment?.duration?.startTimestamp ? new Date(item.activitySegment.duration.startTimestamp) : new Date();
+        
+        for (const waypoint of item.activitySegment.waypointPath.waypoints) {
+          if (waypoint.latE7 !== undefined && waypoint.lngE7 !== undefined) {
+            const record: ThinRecord = {
+              lat: waypoint.latE7 / 1e7,
+              lng: waypoint.lngE7 / 1e7,
+              timestamp: startTime,
+              accuracy: waypoint.accuracy ? parseInt(waypoint.accuracy) : undefined
+            };
             batchWriter.write(record);
           }
         }
