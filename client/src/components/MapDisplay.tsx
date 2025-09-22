@@ -259,18 +259,7 @@ export default function MapDisplay({
             />
           ))}
           
-          {/* Draw dotted lines for gaps (inferred travel) */}
-          {pathGaps.map((gap, gapIndex) => (
-            <Polyline
-              key={`gap-${gapIndex}`}
-              positions={gap}
-              color="#6b7280"
-              weight={2}
-              opacity={0.6}
-              dashArray="8,12"
-              smoothFactor={1.0}
-            />
-          ))}
+          {/* Gap connections removed to prevent spider web patterns */}
           
           {/* Auto-pan and auto-zoom controller */}
           <MapViewController 
