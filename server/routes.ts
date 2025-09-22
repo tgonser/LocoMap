@@ -1097,16 +1097,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         deduplicatedPoints: 0, // Will be set during processing
       });
 
-      // Store raw file content for later processing (smart upload!)
-      // Skip raw content storage for very large files to avoid database timeouts
+      // SMART UPLOAD: Skip raw content storage for large files to avoid database timeouts
+      console.log(`📊 File analysis complete. Checking if raw content storage is safe...`);
       const jsonString = JSON.stringify(jsonData);
       const fileSizeMB = jsonString.length / (1024 * 1024);
       
-      if (fileSizeMB < 50) { // Store raw content only for files under 50MB
+      console.log(`📏 File size: ${fileSizeMB.toFixed(2)}MB (limit: 50MB)`);
+      
+      if (fileSizeMB < 50) {
+        console.log(`✅ File size OK (${fileSizeMB.toFixed(2)}MB) - storing raw content for dataset ${dataset.id}`);
         await storage.storeRawFile(dataset.id, userId, jsonString);
-        console.log(`📁 Stored raw content (${fileSizeMB.toFixed(2)}MB) for dataset ${dataset.id}`);
+        console.log(`📁 Raw content stored successfully`);
       } else {
-        console.log(`⚠️ Skipping raw content storage for large file (${fileSizeMB.toFixed(2)}MB) to avoid timeouts`);
+        console.log(`⚠️  LARGE FILE DETECTED (${fileSizeMB.toFixed(2)}MB) - SKIPPING raw content storage to prevent database timeout`);
+        console.log(`ℹ️  Dataset metadata saved, file can still be processed for viewing`);
       }
 
       res.json({
