@@ -101,21 +101,18 @@ function parseModernFormat(jsonData: ModernExport): ParsedLocationPoint[] {
           const lat = point.latE7 / 1e7;
           const lng = point.lngE7 / 1e7;
           
-          let timestamp: Date;
-          // Use individual point timestamp if available
+          let timestamp: Date | null = null;
+          // ONLY use real timestamps - no synthetic interpolation
           if (point.timestampMs) {
             timestamp = new Date(parseInt(point.timestampMs));
           } 
-          // Generate incremental timestamps for points without individual times
-          else if (startTime && endTime && points.length > 1) {
-            const segmentDuration = endTime.getTime() - startTime.getTime();
-            const pointOffset = (segmentDuration / (points.length - 1)) * i;
-            timestamp = new Date(startTime.getTime() + pointOffset);
-          } 
-          // Fallback to segment start time
-          else {
-            timestamp = startTime || new Date();
+          // Use segment start time as fallback for points without individual timestamps
+          else if (startTime) {
+            timestamp = startTime;
           }
+          
+          // Skip points without valid timestamps - no more artificial data
+          if (!timestamp) continue;
           
           if (timestamp) {
             results.push({
@@ -140,17 +137,18 @@ function parseModernFormat(jsonData: ModernExport): ParsedLocationPoint[] {
           const lat = waypoint.latE7 / 1e7;
           const lng = waypoint.lngE7 / 1e7;
           
-          let timestamp: Date;
-          // Generate incremental timestamps for waypoints (they typically don't have individual timestampMs)
-          if (startTime && endTime && waypoints.length > 1) {
-            const segmentDuration = endTime.getTime() - startTime.getTime();
-            const pointOffset = (segmentDuration / (waypoints.length - 1)) * i;
-            timestamp = new Date(startTime.getTime() + pointOffset);
-          } 
-          // Fallback to segment start time
-          else {
-            timestamp = startTime || new Date();
+          let timestamp: Date | null = null;
+          // ONLY use real timestamps - no synthetic interpolation for waypoints
+          if (waypoint.timestampMs) {
+            timestamp = new Date(parseInt(waypoint.timestampMs));
           }
+          // Use segment start time as fallback
+          else if (startTime) {
+            timestamp = startTime;
+          }
+          
+          // Skip waypoints without valid timestamps - no more artificial data
+          if (!timestamp) continue;
           
           if (timestamp) {
             results.push({

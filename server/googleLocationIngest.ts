@@ -250,22 +250,19 @@ export class GoogleLocationIngest {
         for (let i = 0; i < points.length; i++) {
           const point = points[i];
           
-          // Generate unique timestamps for each point to avoid collisions
-          let pointTimestamp: Date;
+          // ONLY use real timestamps - no synthetic interpolation
+          let pointTimestamp: Date | null = null;
           if (point.time) {
             // Use individual point timestamp if available
             pointTimestamp = parseToUTCDate(point.time);
           } 
-          // Generate incremental timestamps for points without individual times
-          else if (startTime && endTime && points.length > 1) {
-            const segmentDuration = endTime.getTime() - startTime.getTime();
-            const pointOffset = (segmentDuration / (points.length - 1)) * i;
-            pointTimestamp = new Date(startTime.getTime() + pointOffset);
-          } 
-          // Fallback to segment start time
-          else {
-            pointTimestamp = startTime || new Date();
+          // Use segment start time as fallback
+          else if (startTime) {
+            pointTimestamp = startTime;
           }
+          
+          // Skip points without valid timestamps - no more artificial data
+          if (!pointTimestamp) continue;
           
           const record = this.parseLocationPoint(point, pointTimestamp);
           if (record) {
