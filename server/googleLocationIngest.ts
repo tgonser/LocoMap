@@ -241,15 +241,11 @@ export class GoogleLocationIngest {
         for (let i = 0; i < points.length; i++) {
           const point = points[i];
           
-          // Only process points with real timestamps - no synthetic data
-          if (point.time) {
-            const pointTimestamp = parseToUTCDate(point.time);
-            const record = this.parseLocationPoint(point, pointTimestamp);
-            if (record) {
-              batchWriter.write(record);
-            }
+          // Use parseLocationPoint to handle all timestamp formats properly
+          const record = this.parseLocationPoint(point, startTime);
+          if (record) {
+            batchWriter.write(record);
           }
-          // Skip points without real timestamps to avoid artificial connections
         }
       }
     } catch (error) {
