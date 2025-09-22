@@ -845,7 +845,25 @@ async function extractQuickMetadata(jsonData: any) {
           }
         }
         
-        // Handle legacy timelinePath elements (fallback for older exports)
+        // Handle timelinePath as array (mobile format - what you actually have!)
+        else if (Array.isArray(element?.timelinePath)) {
+          const timelineArray = element.timelinePath;
+          totalTimelinePath += timelineArray.length;
+          estimatedPoints += timelineArray.length;
+          
+          // Extract timestamps from timeline entries for date range
+          timelineArray.slice(0, 10).forEach(entry => { // Sample first 10 entries
+            if (element.startTime && entry.durationMinutesOffsetFromStartTime) {
+              const startTime = new Date(element.startTime);
+              const timestamp = new Date(startTime.getTime() + entry.durationMinutesOffsetFromStartTime * 60000);
+              updateDateRange(timestamp);
+            }
+          });
+          
+          activityCounts['route'] = (activityCounts['route'] || 0) + timelineArray.length;
+        }
+        
+        // Handle legacy timelinePath.point structure (older exports)  
         else if (element?.timelinePath?.point && Array.isArray(element.timelinePath.point)) {
           const points = element.timelinePath.point;
           totalTimelinePath += points.length;
