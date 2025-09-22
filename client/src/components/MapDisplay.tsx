@@ -171,8 +171,9 @@ export default function MapDisplay({
       const lngDiff = current.lng - previous.lng;
       const distanceKm = Math.sqrt(latDiff * latDiff + lngDiff * lngDiff) * 111; // Rough km conversion
       
-      // Detect gaps: >30 minutes OR >5km distance suggests a gap (flight, drive, etc.)
-      const isGap = timeDiffMinutes > 30 || distanceKm > 5;
+      // Detect gaps: >5 minutes OR >1km distance suggests a gap (much more aggressive)
+      // This prevents the "shading" effect from too many connected points
+      const isGap = timeDiffMinutes > 5 || distanceKm > 1;
       
       if (isGap && currentSegment.length > 1) {
         // End current segment and start new one
