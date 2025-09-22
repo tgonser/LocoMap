@@ -92,12 +92,30 @@ function parseModernFormat(jsonData: ModernExport): ParsedLocationPoint[] {
   jsonData.timelineObjects.forEach((obj) => {
     // Modern Google exports: GPS route data in activitySegment.simplifiedRawPath.points
     if (obj.activitySegment?.simplifiedRawPath?.points && Array.isArray(obj.activitySegment.simplifiedRawPath.points)) {
-      obj.activitySegment.simplifiedRawPath.points.forEach((point) => {
+      const startTime = obj.activitySegment?.duration?.startTimestamp ? parseToUTCDate(obj.activitySegment.duration.startTimestamp) : null;
+      const endTime = obj.activitySegment?.duration?.endTimestamp ? parseToUTCDate(obj.activitySegment.duration.endTimestamp) : null;
+      
+      const points = obj.activitySegment.simplifiedRawPath.points;
+      points.forEach((point, i) => {
         if (point.latE7 !== undefined && point.lngE7 !== undefined) {
           const lat = point.latE7 / 1e7;
           const lng = point.lngE7 / 1e7;
-          const timestamp = point.timestampMs ? new Date(parseInt(point.timestampMs)) : 
-                          obj.activitySegment?.duration?.startTimestamp ? parseToUTCDate(obj.activitySegment.duration.startTimestamp) : new Date();
+          
+          let timestamp: Date;
+          // Use individual point timestamp if available
+          if (point.timestampMs) {
+            timestamp = new Date(parseInt(point.timestampMs));
+          } 
+          // Generate incremental timestamps for points without individual times
+          else if (startTime && endTime && points.length > 1) {
+            const segmentDuration = endTime.getTime() - startTime.getTime();
+            const pointOffset = (segmentDuration / (points.length - 1)) * i;
+            timestamp = new Date(startTime.getTime() + pointOffset);
+          } 
+          // Fallback to segment start time
+          else {
+            timestamp = startTime || new Date();
+          }
           
           if (timestamp) {
             results.push({
@@ -113,11 +131,26 @@ function parseModernFormat(jsonData: ModernExport): ParsedLocationPoint[] {
     
     // Modern Google exports: Additional GPS route data in activitySegment.waypointPath.waypoints
     if (obj.activitySegment?.waypointPath?.waypoints && Array.isArray(obj.activitySegment.waypointPath.waypoints)) {
-      obj.activitySegment.waypointPath.waypoints.forEach((waypoint) => {
+      const startTime = obj.activitySegment?.duration?.startTimestamp ? parseToUTCDate(obj.activitySegment.duration.startTimestamp) : null;
+      const endTime = obj.activitySegment?.duration?.endTimestamp ? parseToUTCDate(obj.activitySegment.duration.endTimestamp) : null;
+      
+      const waypoints = obj.activitySegment.waypointPath.waypoints;
+      waypoints.forEach((waypoint, i) => {
         if (waypoint.latE7 !== undefined && waypoint.lngE7 !== undefined) {
           const lat = waypoint.latE7 / 1e7;
           const lng = waypoint.lngE7 / 1e7;
-          const timestamp = obj.activitySegment?.duration?.startTimestamp ? parseToUTCDate(obj.activitySegment.duration.startTimestamp) : new Date();
+          
+          let timestamp: Date;
+          // Generate incremental timestamps for waypoints (they typically don't have individual timestampMs)
+          if (startTime && endTime && waypoints.length > 1) {
+            const segmentDuration = endTime.getTime() - startTime.getTime();
+            const pointOffset = (segmentDuration / (waypoints.length - 1)) * i;
+            timestamp = new Date(startTime.getTime() + pointOffset);
+          } 
+          // Fallback to segment start time
+          else {
+            timestamp = startTime || new Date();
+          }
           
           if (timestamp) {
             results.push({
