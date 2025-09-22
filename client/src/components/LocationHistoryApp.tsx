@@ -139,13 +139,15 @@ export default function LocationHistoryApp() {
         end: endDateStr
       });
       
-      // First try to get processed data from database (fast path)
-      let response = await apiRequest('GET', `/api/locations?${params.toString()}`);
-      let locations = await response.json();
+      // Use time-based association system directly (the working system)
+      console.log('🎯 Using time-based association system to extract GPS data...');
       
-      // If no data found and we have datasets, use time-based association system
-      if (locations.length === 0 && datasets.length > 0) {
-        console.log('📊 No processed data found, using time-based association system...');
+      // Get the uploaded dataset
+      const datasetsResponse = await apiRequest('GET', '/api/datasets');
+      const datasets = await datasetsResponse.json();
+      
+      let locations = [];
+      if (datasets && datasets.length > 0) {
         const dataset = datasets[0]; // Use first available dataset
         
         const processResponse = await apiRequest('POST', '/api/process-date-range', {
@@ -159,8 +161,10 @@ export default function LocationHistoryApp() {
           locations = processResult.data;
           console.log(`🎯 Time-based association found ${locations.length} GPS points`);
         } else {
-          console.warn('Time-based association failed:', processResult.error);
+          console.error('Time-based association failed:', processResult.error);
         }
+      } else {
+        console.warn('No datasets found - please upload a location history file first');
       }
         
       // Convert timestamps to Date objects
