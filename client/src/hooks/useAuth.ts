@@ -28,6 +28,8 @@ export function useAuth() {
   const logout = () => {
     localStorage.removeItem('authToken');
     queryClient.clear();
+    // Force page reload to return to login screen
+    window.location.reload();
   };
 
   return {
