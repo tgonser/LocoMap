@@ -409,9 +409,13 @@ export function processTimelinePathsForDateRange(
     // NOTE: We do NOT process activitySegment GPS paths for map routes
     // Those should be used ONLY for analytics, not route visualization
     
-    // DEBUG: Check for standalone timelinePath objects (no embedded activitySegment/placeVisit)
-    if (element.timelinePath && Array.isArray(element.timelinePath) && element.timelinePath.length > 0 
-        && !element.activitySegment && !element.placeVisit) {
+    // DEBUG: Log what types of elements we're finding
+    if (element.timelinePath && Array.isArray(element.timelinePath) && element.timelinePath.length > 0) {
+      if (element.activitySegment || element.placeVisit) {
+        // This is an embedded timelinePath inside activitySegment/placeVisit - skip it
+        continue;
+      }
+      // This is a standalone timelinePath object - process it
       processedPaths++;
       
       const pathStartMs = parseGoogleTimestamp(element.startTime);
