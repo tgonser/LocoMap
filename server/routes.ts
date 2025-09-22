@@ -1098,7 +1098,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Store raw file content for later processing (smart upload!)
-      await storage.storeRawFile(dataset.id, userId, JSON.stringify(jsonData));
+      // Skip raw content storage for very large files to avoid database timeouts
+      const jsonString = JSON.stringify(jsonData);
+      const fileSizeMB = jsonString.length / (1024 * 1024);
+      
+      if (fileSizeMB < 50) { // Store raw content only for files under 50MB
+        await storage.storeRawFile(dataset.id, userId, jsonString);
+        console.log(`📁 Stored raw content (${fileSizeMB.toFixed(2)}MB) for dataset ${dataset.id}`);
+      } else {
+        console.log(`⚠️ Skipping raw content storage for large file (${fileSizeMB.toFixed(2)}MB) to avoid timeouts`);
+      }
 
       res.json({
         success: true,
