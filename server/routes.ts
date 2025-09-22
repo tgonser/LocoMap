@@ -1698,30 +1698,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Reprocess dataset - clear location points and reset processed status
   app.post("/api/datasets/:datasetId/reprocess", requireApprovedUser, async (req, res) => {
+    const { datasetId } = req.params;
+    console.log(`🔄 REPROCESS START - Dataset ID: ${datasetId}`);
+    
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
-      const { datasetId } = req.params;
+      console.log(`👤 User ID: ${userId}`);
 
       // Check if dataset exists and belongs to user
       const dataset = await storage.getLocationDataset(datasetId, userId);
       if (!dataset) {
+        console.log(`❌ Dataset not found: ${datasetId}`);
         return res.status(404).json({ error: "Dataset not found" });
       }
 
-      console.log(`🔄 Reprocessing dataset ${datasetId} (${dataset.filename}) for user ${userId}`);
+      console.log(`📁 Found dataset: ${dataset.filename}`);
 
       // Clear existing location points for this dataset
+      console.log(`🗑️ Deleting location points for dataset ${datasetId}`);
       await storage.deleteLocationPointsByDataset(datasetId, userId);
+      console.log(`✅ Location points deleted`);
 
       // Reset dataset processed status to allow reprocessing
+      console.log(`🔄 Resetting processed status for dataset ${datasetId}`);
       await storage.resetDatasetProcessed(datasetId);
+      console.log(`✅ Processed status reset`);
 
-      console.log(`✅ Dataset ${datasetId} ready for reprocessing`);
-      res.json({ success: true, message: `Dataset ${dataset.filename} cleared and ready for reprocessing` });
+      const successResponse = { success: true, message: `Dataset ${dataset.filename} cleared and ready for reprocessing` };
+      console.log(`✅ REPROCESS SUCCESS - Sending response:`, successResponse);
+      res.json(successResponse);
     } catch (error) {
-      console.error("Error preparing dataset for reprocessing:", error);
-      res.status(500).json({ error: "Failed to prepare dataset for reprocessing" });
+      console.error("❌ REPROCESS ERROR:", error);
+      const errorResponse = { error: "Failed to prepare dataset for reprocessing" };
+      console.log(`❌ REPROCESS ERROR RESPONSE:`, errorResponse);
+      res.status(500).json(errorResponse);
     }
   });
 
