@@ -334,19 +334,26 @@ export default function LocationSummary({
                     <Button
                       variant="outline"
                       size="sm"
-                      asChild
+                      onClick={() => {
+                        // iOS fix for both Safari and Chrome - prevents Google app hijacking
+                        const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+                        if (isiOS) {
+                          // Force browser opening by copying to clipboard and showing instruction
+                          navigator.clipboard.writeText(place.websiteUrl).then(() => {
+                            alert(`Search copied to clipboard! Paste in your browser to avoid the Google app:\n\n"${place.name} ${place.location}"`);
+                          }).catch(() => {
+                            // Fallback if clipboard fails
+                            alert(`Search term: "${place.name} ${place.location}"\n\nPlease search manually in your browser to avoid the Google app.`);
+                          });
+                        } else {
+                          window.open(place.websiteUrl, '_blank', 'noopener,noreferrer');
+                        }
+                      }}
                       className="flex items-center gap-2 w-full"
                       data-testid={`button-view-website-${index}`}
                     >
-                      <a 
-                        href={place.websiteUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                        Search Google
-                      </a>
+                      <ExternalLink className="h-4 w-4" />
+                      Search Google
                     </Button>
                   </div>
                 </div>
