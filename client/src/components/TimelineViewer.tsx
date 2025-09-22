@@ -119,7 +119,7 @@ export default function TimelineViewer({ events, selectedDate }: TimelineViewerP
                     </div>
                     
                     <div className="space-y-1">
-                      {event.location.address ? (
+                      {event.location?.address ? (
                         <p className="text-sm text-muted-foreground">
                           <MapPin className="w-3 h-3 inline mr-1" />
                           {event.location.address}
@@ -127,7 +127,7 @@ export default function TimelineViewer({ events, selectedDate }: TimelineViewerP
                       ) : (
                         <p className="text-xs font-mono text-muted-foreground">
                           <MapPin className="w-3 h-3 inline mr-1" />
-                          {event.location.lat.toFixed(6)}, {event.location.lng.toFixed(6)}
+                          {event.location?.lat?.toFixed(6) || 'N/A'}, {event.location?.lng?.toFixed(6) || 'N/A'}
                         </p>
                       )}
                       
