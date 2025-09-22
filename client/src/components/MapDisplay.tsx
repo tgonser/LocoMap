@@ -173,11 +173,9 @@ export default function MapDisplay({
       // Calculate implied speed between points
       const speedKmh = timeDiffMinutes > 0 ? (distanceKm / (timeDiffMinutes / 60)) : 0;
       
-      // CONTINUITY GATING: Only connect points that form a logical sequence
-      // Don't connect if any of these conditions are true:
-      const isGap = (distanceMeters > 1500) ||      // > 1.5km apart
-                    (timeDiffMinutes > 15) ||        // > 15 minutes apart  
-                    (speedKmh > 180);                // Impossible speed > 180km/h
+      // NO FILTERING - Just connect all points in chronological order
+      // User wants to see actual travel sequence (driving, flying, walking, etc.)
+      const isGap = false; // Connect everything sequentially
       
       if (isGap && currentSegment.length > 1) {
         // End current segment and start new one
