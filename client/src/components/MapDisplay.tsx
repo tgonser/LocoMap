@@ -171,9 +171,9 @@ export default function MapDisplay({
       const lngDiff = current.lng - previous.lng;
       const distanceKm = Math.sqrt(latDiff * latDiff + lngDiff * lngDiff) * 111; // Rough km conversion
       
-      // Detect gaps: >5 minutes OR >1km distance suggests a gap (much more aggressive)
-      // This prevents the "shading" effect from too many connected points
-      const isGap = timeDiffMinutes > 5 || distanceKm > 1;
+      // SIMPLE APPROACH: Just avoid connecting points that are very far apart
+      // This prevents spider web patterns while allowing normal route gaps
+      const isGap = distanceKm > 2; // Don't connect points more than 2km apart
       
       if (isGap && currentSegment.length > 1) {
         // End current segment and start new one
@@ -195,6 +195,7 @@ export default function MapDisplay({
     
     return { segments, gaps };
   };
+
 
   const { segments: pathSegments, gaps: pathGaps } = createCleanPathSegments(filteredLocations);
 
