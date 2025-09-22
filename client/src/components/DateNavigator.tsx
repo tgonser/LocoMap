@@ -127,32 +127,34 @@ export default function DateNavigator({
   };
 
   return (
-    <Card className="p-4">
-      <div className="flex items-center justify-between gap-4">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={goToPreviousDay}
-          disabled={!canNavigateToPrevious()}
-          title={!canNavigateToPrevious() ? "Cannot navigate before selected date range" : "Previous day"}
-          data-testid="button-previous-day"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </Button>
+    <Card className="p-4 w-full max-w-none">
+      <div className="flex items-center gap-3 w-full">
+        <div className="flex-shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={goToPreviousDay}
+            disabled={!canNavigateToPrevious()}
+            title={!canNavigateToPrevious() ? "Cannot navigate before selected date range" : "Previous day"}
+            data-testid="button-previous-day"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </Button>
+        </div>
 
-        <div className="flex-1 text-center space-y-2">
+        <div className="flex-1 min-w-0 text-center space-y-2">
           <div 
             className="flex items-center justify-center gap-2 cursor-pointer hover-elevate rounded-md p-2"
             onClick={() => setShowDatePicker(!showDatePicker)}
             data-testid="button-date-picker"
           >
             <Calendar className="w-4 h-4" />
-            <span className="font-medium text-sm md:text-base">
+            <span className="font-medium text-sm md:text-base truncate">
               {formatDate(selectedDate)}
             </span>
           </div>
           
-          <div className="flex items-center justify-center gap-2">
+          <div className="flex items-center justify-center gap-2 flex-wrap">
             <Badge 
               variant={locationCount > 0 ? "default" : "secondary"}
               className="text-xs"
@@ -178,16 +180,18 @@ export default function DateNavigator({
           )}
         </div>
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={goToNextDay}
-          disabled={!canNavigateToNext()}
-          title={!canNavigateToNext() ? "Cannot navigate after selected date range" : "Next day"}
-          data-testid="button-next-day"
-        >
-          <ChevronRight className="w-4 h-4" />
-        </Button>
+        <div className="flex-shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={goToNextDay}
+            disabled={!canNavigateToNext()}
+            title={!canNavigateToNext() ? "Cannot navigate after selected date range" : "Next day"}
+            data-testid="button-next-day"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </Button>
+        </div>
       </div>
 
       {showDatePicker && (
