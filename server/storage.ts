@@ -1469,24 +1469,61 @@ export class DatabaseStorage implements IStorage {
   ): Promise<number> {
     console.log(`🔍 Computing travel stops for date range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
     
-    // Get ONLY location points within the date range (DATE-RANGE-FIRST approach)
-    const points = await db
-      .select()
-      .from(locationPoints)
-      .where(and(
-        eq(locationPoints.userId, userId),
-        eq(locationPoints.datasetId, datasetId),
-        gte(locationPoints.timestamp, startDate),
-        lte(locationPoints.timestamp, endDate)
-      ))
-      .orderBy(locationPoints.timestamp);
-
-    if (points.length === 0) {
-      console.log(`❌ No location points found in date range`);
+    // CRITICAL FIX: Use SAME method as maps - process JSON directly instead of empty database
+    const { processTimelinePathsForDateRange, buildParentIndex } = await import("./timelineAssociation.js");
+    
+    // Get dataset for this user to find JSON file
+    const datasets = await this.getUserLocationDatasets(userId);
+    const dataset = datasets.find(d => d.id === datasetId);
+    if (!dataset) {
+      console.log(`❌ Dataset ${datasetId} not found for user ${userId}`);
       return 0;
     }
 
-    console.log(`📍 Processing ${points.length} location points in date range (vs entire dataset)`);
+    // Read JSON file and process timelinePath data (SAME as maps)
+    const fs = await import('fs');
+    const filePath = `./uploads/${datasetId}.json`;
+    
+    if (!fs.existsSync(filePath)) {
+      console.log(`❌ JSON file not found: ${filePath}`);
+      return 0;
+    }
+
+    const jsonContent = fs.readFileSync(filePath, 'utf8');
+    const jsonData = JSON.parse(jsonContent);
+    
+    // Use SAME processing as maps to get GPS points
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0];
+    
+    console.log(`🔗 Using SAME method as maps to process GPS data for analytics...`);
+    
+    // Build parent index (SAME as maps)
+    const parentIndex = buildParentIndex(jsonData);
+    
+    const timelinePoints = await processTimelinePathsForDateRange(
+      jsonData,
+      parentIndex,
+      startDateStr,
+      endDateStr
+    );
+
+    if (timelinePoints.length === 0) {
+      console.log(`❌ No GPS points found in date range using timeline processing`);
+      return 0;
+    }
+
+    console.log(`📍 Processing ${timelinePoints.length} GPS points from JSON (SAME as maps) in date range`);
+    
+    // Convert timeline points to the format expected by analytics
+    const points = timelinePoints.map(tp => ({
+      userId,
+      datasetId,
+      lat: tp.latitude,
+      lng: tp.longitude,
+      timestamp: new Date(tp.timestampMs),
+      accuracy: null, // Not available in timeline format
+    }));
 
     const stops: InsertTravelStop[] = [];
     let currentCluster: typeof points = [];
