@@ -73,7 +73,7 @@ export class GoogleLocationIngest {
             lng: record.lng,
             timestamp: record.timestamp,
             accuracy: record.accuracy || null,
-            activity: 'route', // timelinePath points are route data
+            activity: 'gps', // Pure GPS points with real timestamps
             address: null,
             city: null,
             state: null,
@@ -202,64 +202,26 @@ export class GoogleLocationIngest {
           if (point.latE7 !== undefined && point.lngE7 !== undefined) {
             let timestamp: Date;
             
-            // Use individual point timestamp if available
+            // Only process points with actual timestamps - no synthetic data
             if (point.timestampMs) {
-              timestamp = new Date(parseInt(point.timestampMs));
-            } 
-            // Generate incremental timestamps for points without individual times
-            else if (startTime && endTime && points.length > 1) {
-              const segmentDuration = endTime.getTime() - startTime.getTime();
-              const pointOffset = (segmentDuration / (points.length - 1)) * i;
-              timestamp = new Date(startTime.getTime() + pointOffset);
-            } 
-            // Fallback to segment start time
-            else {
-              timestamp = startTime || new Date();
+              const timestamp = new Date(parseInt(point.timestampMs));
+              
+              const record: ThinRecord = {
+                lat: point.latE7 / 1e7,
+                lng: point.lngE7 / 1e7,
+                timestamp,
+                accuracy: point.accuracy || point.accuracyMeters ? parseInt(point.accuracy || point.accuracyMeters) : undefined
+              };
+              batchWriter.write(record);
             }
-            
-            const record: ThinRecord = {
-              lat: point.latE7 / 1e7,
-              lng: point.lngE7 / 1e7,
-              timestamp,
-              accuracy: point.accuracy || point.accuracyMeters ? parseInt(point.accuracy || point.accuracyMeters) : undefined
-            };
-            batchWriter.write(record);
+            // Skip points without real timestamps to avoid artificial connections
           }
         }
       }
       
-      // Modern Google exports: Additional GPS route data in activitySegment.waypointPath.waypoints
-      if (item.activitySegment?.waypointPath?.waypoints && Array.isArray(item.activitySegment.waypointPath.waypoints)) {
-        const startTime = item.activitySegment?.duration?.startTimestamp ? parseToUTCDate(item.activitySegment.duration.startTimestamp) : new Date();
-        const endTime = item.activitySegment?.duration?.endTimestamp ? parseToUTCDate(item.activitySegment.duration.endTimestamp) : null;
-        
-        const waypoints = item.activitySegment.waypointPath.waypoints;
-        for (let i = 0; i < waypoints.length; i++) {
-          const waypoint = waypoints[i];
-          if (waypoint.latE7 !== undefined && waypoint.lngE7 !== undefined) {
-            let timestamp: Date;
-            
-            // Generate incremental timestamps for waypoints (they typically don't have individual timestampMs)
-            if (startTime && endTime && waypoints.length > 1) {
-              const segmentDuration = endTime.getTime() - startTime.getTime();
-              const pointOffset = (segmentDuration / (waypoints.length - 1)) * i;
-              timestamp = new Date(startTime.getTime() + pointOffset);
-            } 
-            // Fallback to segment start time
-            else {
-              timestamp = startTime || new Date();
-            }
-            
-            const record: ThinRecord = {
-              lat: waypoint.latE7 / 1e7,
-              lng: waypoint.lngE7 / 1e7,
-              timestamp,
-              accuracy: waypoint.accuracy || waypoint.accuracyMeters ? parseInt(waypoint.accuracy || waypoint.accuracyMeters) : undefined
-            };
-            batchWriter.write(record);
-          }
-        }
-      }
+      // NOTE: Removed activitySegment.waypointPath.waypoints processing 
+      // to avoid artificial connections between unrelated locations.
+      // Only process actual GPS points with real timestamps.
     } catch (error) {
       console.error('❌ Timeline object extraction error:', error);
     }
@@ -279,27 +241,15 @@ export class GoogleLocationIngest {
         for (let i = 0; i < points.length; i++) {
           const point = points[i];
           
-          // Generate unique timestamp for each point to avoid collisions
-          let pointTimestamp: Date;
+          // Only process points with real timestamps - no synthetic data
           if (point.time) {
-            // Use individual point timestamp if available
-            pointTimestamp = parseToUTCDate(point.time);
-          } 
-          // Generate incremental timestamps for points without individual times
-          else if (startTime && endTime && points.length > 1) {
-            const segmentDuration = endTime.getTime() - startTime.getTime();
-            const pointOffset = (segmentDuration / (points.length - 1)) * i;
-            pointTimestamp = new Date(startTime.getTime() + pointOffset);
-          } 
-          // Fallback to segment start time
-          else {
-            pointTimestamp = startTime || new Date();
+            const pointTimestamp = parseToUTCDate(point.time);
+            const record = this.parseLocationPoint(point, pointTimestamp);
+            if (record) {
+              batchWriter.write(record);
+            }
           }
-          
-          const record = this.parseLocationPoint(point, pointTimestamp);
-          if (record) {
-            batchWriter.write(record);
-          }
+          // Skip points without real timestamps to avoid artificial connections
         }
       }
     } catch (error) {
