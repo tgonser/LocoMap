@@ -1775,8 +1775,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Read the stored JSON file
       let jsonData: any;
       try {
-        const fileContent = await fs.promises.readFile(dataset.filePath, 'utf8');
-        jsonData = JSON.parse(fileContent);
+        // Get the raw file content - either file path or direct JSON content
+        const rawContent = await storage.getRawFile(datasetId, userId);
+        if (!rawContent) {
+          return res.status(400).json({ error: "No raw content found for dataset" });
+        }
+        
+        // Check if it's a file path (starts with FILE:) or direct JSON content
+        if (rawContent.startsWith('FILE:')) {
+          const filePath = rawContent.substring(5); // Remove 'FILE:' prefix
+          console.log(`📁 Reading file from: ${filePath}`);
+          const fileContent = await fs.promises.readFile(filePath, 'utf8');
+          jsonData = JSON.parse(fileContent);
+        } else {
+          // Direct JSON content
+          console.log('📄 Using direct JSON content');
+          jsonData = JSON.parse(rawContent);
+        }
       } catch (error) {
         console.error('Error reading dataset file:', error);
         return res.status(500).json({ error: 'Failed to read dataset file' });
