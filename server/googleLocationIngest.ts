@@ -202,19 +202,28 @@ export class GoogleLocationIngest {
           if (point.latE7 !== undefined && point.lngE7 !== undefined) {
             let timestamp: Date;
             
-            // Only process points with actual timestamps - no synthetic data
+            // Use individual point timestamp if available
             if (point.timestampMs) {
-              const timestamp = new Date(parseInt(point.timestampMs));
-              
-              const record: ThinRecord = {
-                lat: point.latE7 / 1e7,
-                lng: point.lngE7 / 1e7,
-                timestamp,
-                accuracy: point.accuracy || point.accuracyMeters ? parseInt(point.accuracy || point.accuracyMeters) : undefined
-              };
-              batchWriter.write(record);
+              timestamp = new Date(parseInt(point.timestampMs));
+            } 
+            // Generate incremental timestamps for points without individual times
+            else if (startTime && endTime && points.length > 1) {
+              const segmentDuration = endTime.getTime() - startTime.getTime();
+              const pointOffset = (segmentDuration / (points.length - 1)) * i;
+              timestamp = new Date(startTime.getTime() + pointOffset);
+            } 
+            // Fallback to segment start time
+            else {
+              timestamp = startTime || new Date();
             }
-            // Skip points without real timestamps to avoid artificial connections
+            
+            const record: ThinRecord = {
+              lat: point.latE7 / 1e7,
+              lng: point.lngE7 / 1e7,
+              timestamp,
+              accuracy: point.accuracy || point.accuracyMeters ? parseInt(point.accuracy || point.accuracyMeters) : undefined
+            };
+            batchWriter.write(record);
           }
         }
       }
