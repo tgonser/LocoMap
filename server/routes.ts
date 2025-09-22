@@ -985,7 +985,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Protected route: Upload and parse Google location history (user-specific) 
-  app.post("/api/upload-location-history", combinedAuth, upload.single("file"), async (req: Request & { file?: Express.Multer.File }, res) => {
+  app.post("/api/upload-location-history", requireApprovedUser, upload.single("file"), async (req: Request & { file?: Express.Multer.File }, res) => {
     const { claims } = getAuthenticatedUser(req);
     try {
       if (!req.file) {
@@ -1125,7 +1125,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // 🎯 CRITICAL: Process stored raw JSON files into location points using enhanced parser
-  app.post("/api/datasets/:datasetId/process", combinedAuth, async (req, res) => {
+  app.post("/api/datasets/:datasetId/process", requireApprovedUser, async (req, res) => {
     const { claims } = getAuthenticatedUser(req);
     const userId = claims.sub;
     const { datasetId } = req.params;
@@ -1275,7 +1275,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Protected route: Get user's location points with optional date range filtering
-  app.get("/api/locations", combinedAuth, async (req, res) => {
+  app.get("/api/locations", requireApprovedUser, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -1322,7 +1322,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Protected route: Get user's location datasets
-  app.get("/api/datasets", combinedAuth, async (req, res) => {
+  app.get("/api/datasets", requireApprovedUser, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -1335,7 +1335,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Protected route: Get user's unique locations (for analytics)
-  app.get("/api/locations/unique", combinedAuth, async (req, res) => {
+  app.get("/api/locations/unique", requireApprovedUser, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -1348,7 +1348,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Protected route: Get user's location statistics by date range (analytics pipeline)
-  app.get("/api/locations/stats", combinedAuth, async (req, res) => {
+  app.get("/api/locations/stats", requireApprovedUser, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -1417,7 +1417,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete a specific dataset
-  app.delete("/api/datasets/:datasetId", combinedAuth, async (req, res) => {
+  app.delete("/api/datasets/:datasetId", requireApprovedUser, async (req, res) => {
     console.log(`🚨 DELETE ROUTE HIT: ${req.params.datasetId}`);
     try {
       const { claims } = getAuthenticatedUser(req);
@@ -1447,7 +1447,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Protected route: Clear user's location data
-  app.delete("/api/locations", combinedAuth, async (req, res) => {
+  app.delete("/api/locations", requireApprovedUser, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -1460,7 +1460,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // FIXED: Backfill daily centroids - NO GEOCODING (violates user requirements)
-  app.post("/api/analytics/backfill-centroids", combinedAuth, async (req, res) => {
+  app.post("/api/analytics/backfill-centroids", requireApprovedUser, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -1482,7 +1482,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // FIXED: Manual geocoding queue status - NO PROCESSING (violates user requirements)
-  app.get("/api/analytics/geocoding-queue-status", combinedAuth, async (req, res) => {
+  app.get("/api/analytics/geocoding-queue-status", requireApprovedUser, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -1501,7 +1501,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // CRITICAL FIX: Debug geocoding coverage for specific year
-  app.get("/api/analytics/debug/:year", combinedAuth, async (req, res) => {
+  app.get("/api/analytics/debug/:year", requireApprovedUser, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -1530,7 +1530,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // CRITICAL FIX: Get geocoding queue status
-  app.get("/api/analytics/geocoding-status", combinedAuth, async (req, res) => {
+  app.get("/api/analytics/geocoding-status", requireApprovedUser, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -1553,7 +1553,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get ungeocoded summary grouped by month/year for quick testing
-  app.get("/api/analytics/ungeocoded-summary", combinedAuth, async (req, res) => {
+  app.get("/api/analytics/ungeocoded-summary", requireApprovedUser, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -1575,7 +1575,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Visit/activity-based yearly state/country report endpoint (COMPLETE REPLACEMENT)
-  app.get("/api/yearly-state-report", combinedAuth, async (req, res) => {
+  app.get("/api/yearly-state-report", requireApprovedUser, async (req, res) => {
     try {
       const user = getAuthenticatedUser(req);
       const userId = user.claims.sub;
@@ -1852,7 +1852,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // NEW: Date-range specific geocoding endpoint for better user experience
-  app.post("/api/analytics/geocode-date-range", combinedAuth, async (req, res) => {
+  app.post("/api/analytics/geocode-date-range", requireApprovedUser, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -1965,7 +1965,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // NEW: Waypoint computation pipeline endpoint
   // NEW: Date-range-first waypoint computation API
   // Server-Sent Events endpoint for real-time progress updates
-  app.get('/api/progress/:taskId', combinedAuth, (req, res) => {
+  app.get('/api/progress/:taskId', requireApprovedUser, (req, res) => {
     const { taskId } = req.params;
     
     // Set up SSE headers
@@ -2009,7 +2009,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   };
 
-  app.post('/api/waypoints/compute', combinedAuth, async (req, res) => {
+  app.post('/api/waypoints/compute', requireApprovedUser, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -2092,7 +2092,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Orchestrated analytics endpoint: Automates the entire centroids → geocoding → analytics pipeline
-  app.post('/api/analytics/run', combinedAuth, async (req, res) => {
+  app.post('/api/analytics/run', requireApprovedUser, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
@@ -2490,7 +2490,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Analytics endpoint: Geocoded places analysis with OpenAI curation
-  app.post('/api/analytics/geocoded-places', combinedAuth, async (req, res) => {
+  app.post('/api/analytics/geocoded-places', requireApprovedUser, async (req, res) => {
     try {
       const user = getAuthenticatedUser(req);
       const userId = user.claims.sub;
@@ -2649,7 +2649,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Interesting Places endpoint: AI-powered recommendations
-  app.post('/api/interesting-places', combinedAuth, async (req, res) => {
+  app.post('/api/interesting-places', requireApprovedUser, async (req, res) => {
     try {
       const user = getAuthenticatedUser(req);
       const userId = user.claims.sub;
