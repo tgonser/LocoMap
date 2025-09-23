@@ -45,9 +45,11 @@ export async function sendEmail(params: EmailParams): Promise<boolean> {
 export async function sendContactFormEmail(name: string, email: string, message: string): Promise<boolean> {
   const emailParams: EmailParams = {
     to: 't@gonser.com',
-    from: 'noreply@wherewasiapp.com', // You'll need to verify this domain in SendGrid
+    from: 't@gonser.com', // Use your own email as sender (must be verified in SendGrid)
     subject: `WhereWasI Contact Form: ${name}`,
     text: `
+New contact form submission from your WhereWasI website:
+
 Name: ${name}
 Email: ${email}
 
@@ -55,17 +57,19 @@ Message:
 ${message}
 
 ---
+You can reply directly to: ${email}
 Sent from WhereWasI Contact Form
     `,
     html: `
 <h2>New Contact Form Submission</h2>
 <p><strong>Name:</strong> ${name}</p>
-<p><strong>Email:</strong> ${email}</p>
+<p><strong>Email:</strong> <a href="mailto:${email}">${email}</a></p>
 <br>
 <p><strong>Message:</strong></p>
 <p>${message.replace(/\n/g, '<br>')}</p>
 <br>
 <hr>
+<p><em>You can reply directly to: <a href="mailto:${email}">${email}</a></em></p>
 <p><em>Sent from WhereWasI Contact Form</em></p>
     `
   };
