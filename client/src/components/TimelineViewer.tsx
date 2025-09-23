@@ -18,9 +18,10 @@ interface TimelineEvent {
 interface TimelineViewerProps {
   events: TimelineEvent[];
   selectedDate: Date;
+  onEventClick?: (lat: number, lng: number) => void;
 }
 
-export default function TimelineViewer({ events, selectedDate }: TimelineViewerProps) {
+export default function TimelineViewer({ events, selectedDate, onEventClick }: TimelineViewerProps) {
   // Filter events for selected date and sort by time
   const dayEvents = events
     .filter(event => 
@@ -89,8 +90,10 @@ export default function TimelineViewer({ events, selectedDate }: TimelineViewerP
               {dayEvents.map((event, index) => (
                 <div 
                   key={index}
-                  className="flex gap-3 p-3 rounded-lg bg-muted/30 hover-elevate"
+                  className="flex gap-3 p-3 rounded-lg bg-muted/30 hover-elevate cursor-pointer transition-all"
                   data-testid={`timeline-event-${index}`}
+                  onClick={() => onEventClick?.(event.location.lat, event.location.lng)}
+                  title="Click to view on map"
                 >
                   <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
                     <span className="text-xs">
