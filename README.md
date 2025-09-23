@@ -7,7 +7,7 @@ A comprehensive web application that analyzes and visualizes your Google locatio
 ✨ **Interactive Map Visualization** - Day-by-day location viewing with route tracking  
 📊 **Yearly State & Country Reports** - Detailed presence analytics with 95%+ geocoding accuracy  
 🛣️ **Travel Analytics** - Waypoint detection, travel chains, and route analysis  
-🤖 **AI-Curated Insights** - Intelligent location pattern analysis (optional)  
+🤖 **AI-Powered Recommendations** - Personalized travel insights and interesting places discovery (optional)  
 📱 **Responsive Design** - Dark/light theme with mobile-optimized interface  
 🔒 **Privacy-Focused** - All data processing happens locally on your machine  
 
@@ -25,8 +25,9 @@ A comprehensive web application that analyzes and visualizes your Google locatio
   - Free tier: 3,000 requests/day (sufficient for most use cases)
 
 #### Optional (For AI Features)
-- **OpenAI API Key** - For AI-powered location insights
+- **OpenAI API Key** - For AI-powered travel recommendations and insights
   - Get your key at [platform.openai.com](https://platform.openai.com/api-keys)
+  - Uses GPT-4o-mini for cost-efficient analysis (~$0.01-0.05 per analysis)
 
 ## Setup Instructions
 
@@ -113,6 +114,13 @@ Open your browser to `http://localhost:5000`
 - **Presence analysis** - State/country time calculations
 - **Travel chains** - City-to-city route mapping
 - **Yearly caching** - Fast report generation
+- **AI recommendations** - Personalized interesting places discovery
+
+#### AI-Powered Features (Optional)
+- **Smart pattern analysis** - AI analyzes your travel history to understand preferences
+- **Personalized recommendations** - Discover businesses, landmarks, and experiences you missed
+- **Location-aware suggestions** - Tailored to specific cities and regions you've visited
+- **Cost-optimized AI** - Uses GPT-4o-mini for efficient token usage
 
 ## Troubleshooting
 
@@ -238,6 +246,104 @@ WHERE username IN ('admin1', 'admin2');
 - View user management dashboard
 - Access admin-only API endpoints
 - Promote other users to admin status
+
+## AI-Powered Travel Recommendations
+
+🤖 **Discover hidden gems and interesting places you might have missed**
+
+When you provide an OpenAI API key, the application analyzes your travel patterns to generate personalized recommendations for businesses, landmarks, and unique experiences in the cities you've visited.
+
+### How It Works
+
+1. **Pattern Analysis** - AI examines your visited cities and travel frequency
+2. **Intelligent Prompting** - Generates context-aware queries based on your travel history
+3. **Personalized Results** - Returns curated recommendations tailored to your specific locations
+4. **Smart Scaling** - Provides 2-15 recommendations based on your date range and activity
+
+### Types of Recommendations
+
+**🏢 Local Businesses**
+- Hidden restaurants and cafes
+- Unique shops and boutiques  
+- Local services and experiences
+
+**🏛️ Cultural & Historical Sites**
+- Museums and galleries
+- Historical landmarks
+- Architectural highlights
+
+**🎯 Unique Experiences**
+- Local events and festivals
+- Scenic viewpoints
+- Cultural activities
+
+### Using AI Recommendations
+
+**API Endpoint:**
+```http
+POST /api/interesting-places
+Content-Type: application/json
+Authorization: Bearer {jwt_token}
+
+{
+  "cities": {
+    "San Francisco": 5,
+    "Portland": 3,
+    "Seattle": 2
+  },
+  "dateRange": {
+    "start": "2024-01-01",
+    "end": "2024-03-31"
+  }
+}
+```
+
+**Response Example:**
+```json
+{
+  "places": [
+    {
+      "name": "Mission Dolores Park",
+      "description": "Historic park with stunning city views and vibrant local culture.",
+      "location": "San Francisco"
+    },
+    {
+      "name": "Powell's City of Books",
+      "description": "World's largest independent bookstore spanning multiple floors.",
+      "location": "Portland"
+    }
+  ],
+  "tokenUsage": {
+    "promptTokens": 245,
+    "completionTokens": 180,
+    "totalTokens": 425
+  },
+  "model": "gpt-4o-mini"
+}
+```
+
+### Cost & Performance
+
+- **Model**: GPT-4o-mini for cost efficiency
+- **Typical cost**: $0.01-0.05 per analysis
+- **Token usage**: ~200-600 tokens per request
+- **Response time**: 2-5 seconds
+- **Smart caching**: Results can be saved to avoid repeated API calls
+
+### AI Feature Benefits
+
+✅ **Discover missed opportunities** - Find interesting places in cities you've already visited  
+✅ **Personalized to your travel patterns** - Recommendations based on your actual location history  
+✅ **Cost-effective** - Uses efficient GPT-4o-mini model  
+✅ **Location-aware** - Suggestions specific to your visited cities  
+✅ **Scalable recommendations** - More suggestions for longer trips, focused lists for short visits  
+
+### Privacy & Data Usage
+
+- Only city names and visit counts are sent to OpenAI
+- No personal information, addresses, or detailed location data shared
+- AI analysis happens on-demand when you request recommendations
+- You control when and how often to use AI features
 
 ## Data Privacy
 
