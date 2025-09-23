@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { FileText, Upload, Trash2, Calendar, BarChart3, AlertCircle, CheckCircle, Play, RefreshCw } from 'lucide-react';
+import { FileText, Upload, Trash2, Calendar, BarChart3 } from 'lucide-react';
 import FileUploader from './FileUploader';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
@@ -44,8 +44,6 @@ interface FileManagerProps {
 export default function FileManager({ onFileUpload }: FileManagerProps) {
   const [showUploader, setShowUploader] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [isReprocessing, setIsReprocessing] = useState(false);
   const [lastUploadResult, setLastUploadResult] = useState<any>(null);
 
   // Query to get user's datasets
@@ -103,85 +101,7 @@ export default function FileManager({ onFileUpload }: FileManagerProps) {
     }
   };
 
-  const handleProcessFile = async () => {
-    if (!currentDataset || currentDataset.processedAt) return;
-    
-    setIsProcessing(true);
-    try {
-      console.log(`🚀 Starting processing for dataset ${currentDataset.id}`);
-      
-      const token = localStorage.getItem('authToken');
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
-      }
-      
-      const response = await fetch(`/api/datasets/${currentDataset.id}/process`, {
-        method: 'POST',
-        headers,
-      });
 
-      const result = await response.json();
-
-      if (response.ok && result.success) {
-        console.log(`✅ Processing completed: ${result.pointsProcessed} points processed`);
-        await refetchDatasets(); // Refresh the dataset list to show updated status
-        await queryClient.invalidateQueries({ queryKey: ['/api/locations'] }); // Refresh location data
-      } else {
-        const errorMsg = result.error || result.message || 'Unknown error';
-        console.error('Processing failed:', errorMsg);
-        alert(`Processing failed: ${errorMsg}\n\nCheck the console for details.`);
-        await refetchDatasets(); // Refresh to show current status
-      }
-    } catch (error) {
-      console.error('Error processing dataset:', error);
-      alert(`Processing error: ${error.message || 'Network error'}`);
-      await refetchDatasets(); // Refresh to show current status
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleReprocessFile = async () => {
-    if (!currentDataset || !currentDataset.processedAt) return;
-    
-    const fileName = currentDataset.filename;
-    setIsReprocessing(true);
-    try {
-      console.log(`🔄 Starting reprocessing for dataset ${currentDataset.id}`);
-      
-      const token = localStorage.getItem('authToken');
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
-      }
-      
-      const response = await fetch(`/api/datasets/${currentDataset.id}/reprocess`, {
-        method: 'POST',
-        headers,
-      });
-
-      const result = await response.json();
-
-      if (response.ok && result.success) {
-        console.log(`✅ Dataset cleared and ready for reprocessing`);
-        await refetchDatasets(); // Refresh the dataset list to show updated status
-        await queryClient.invalidateQueries({ queryKey: ['/api/locations'] }); // Refresh location data
-        alert(`✅ "${fileName}" cleared successfully.\n\nYou can now click "Process" to reprocess with fixed timestamps.`);
-      } else {
-        const errorMsg = result.error || result.message || 'Unknown error';
-        console.error('Reprocessing preparation failed:', errorMsg);
-        alert(`Reprocessing preparation failed: ${errorMsg}\n\nCheck the console for details.`);
-        await refetchDatasets(); // Refresh to show current status
-      }
-    } catch (error) {
-      console.error('Error preparing dataset for reprocessing:', error);
-      alert(`Reprocessing error: ${error.message || 'Network error'}`);
-      await refetchDatasets(); // Refresh to show current status
-    } finally {
-      setIsReprocessing(false);
-    }
-  };
 
   const formatFileSize = (bytes: number) => {
     const mb = bytes / (1024 * 1024);
@@ -293,57 +213,15 @@ export default function FileManager({ onFileUpload }: FileManagerProps) {
                       {formatFileSize(currentDataset.fileSize)} • Uploaded {formatDate(currentDataset.uploadedAt)}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {currentDataset.totalPoints.toLocaleString()} total points
-                      {currentDataset.processedAt && ` • ${currentDataset.deduplicatedPoints.toLocaleString()} processed`}
+                      JSON file ready for analysis
                     </p>
                   </div>
                   
                   <div>
-                    <p className="font-medium text-sm text-muted-foreground">Status</p>
+                    <p className="font-medium text-sm text-muted-foreground">Next Steps</p>
                     <div className="flex items-center gap-2 mt-1">
-                      {currentDataset.processedAt ? (
-                        <div className="flex items-center gap-3">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle className="w-4 h-4 text-green-500" />
-                            <span className="text-sm font-medium text-green-600">Processed</span>
-                          </div>
-                          <Button
-                            onClick={handleReprocessFile}
-                            disabled={isReprocessing}
-                            size="sm"
-                            variant="outline"
-                            data-testid="button-reprocess-dataset"
-                          >
-                            {isReprocessing ? (
-                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2" />
-                            ) : (
-                              <RefreshCw className="w-4 h-4 mr-2" />
-                            )}
-                            {isReprocessing ? 'Reprocessing...' : 'Reprocess'}
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-3">
-                          <div className="flex items-center gap-2">
-                            <AlertCircle className="w-4 h-4 text-orange-500" />
-                            <span className="text-sm font-medium text-orange-600">Ready to Process</span>
-                          </div>
-                          <Button
-                            onClick={handleProcessFile}
-                            disabled={isProcessing}
-                            size="sm"
-                            variant="default"
-                            data-testid="button-process-dataset"
-                          >
-                            {isProcessing ? (
-                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2" />
-                            ) : (
-                              <Play className="w-4 h-4 mr-2" />
-                            )}
-                            {isProcessing ? 'Processing...' : 'Process'}
-                          </Button>
-                        </div>
-                      )}
+                      <BarChart3 className="w-4 h-4 text-blue-500" />
+                      <span className="text-sm font-medium text-blue-600">Use Maps or Analytics to explore your data</span>
                     </div>
                   </div>
                 </div>
