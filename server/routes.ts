@@ -19,6 +19,7 @@ import OpenAI from "openai";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { registerSchema, loginSchema } from "@shared/schema";
+import { sendContactFormEmail } from "./emailService";
 
 // JWT verification middleware  
 function verifyJWT(req: any, res: any, next: any) {
@@ -3722,6 +3723,54 @@ Return your response as a JSON object with this exact structure:
     } catch (error) {
       console.error("Error fetching admin stats:", error);
       res.status(500).json({ message: "Failed to fetch admin stats" });
+    }
+  });
+
+  // ========== PUBLIC ROUTES (No Authentication Required) ==========
+  
+  // Contact form submission - public endpoint
+  app.post('/api/contact', async (req, res) => {
+    try {
+      // Validate request body
+      const contactSchema = z.object({
+        name: z.string().min(2, 'Name must be at least 2 characters'),
+        email: z.string().email('Please enter a valid email address'),
+        message: z.string().min(10, 'Message must be at least 10 characters'),
+      });
+
+      const { name, email, message } = contactSchema.parse(req.body);
+
+      // Send email using SendGrid
+      const emailSent = await sendContactFormEmail(name, email, message);
+
+      if (emailSent) {
+        res.json({ 
+          success: true, 
+          message: 'Message sent successfully!' 
+        });
+      } else {
+        console.error('Failed to send contact form email');
+        res.status(500).json({ 
+          success: false, 
+          message: 'Failed to send message. Please try again later.' 
+        });
+      }
+
+    } catch (error) {
+      console.error('Contact form submission error:', error);
+      
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          success: false,
+          message: 'Invalid form data',
+          errors: error.errors.map(e => e.message)
+        });
+      }
+
+      res.status(500).json({ 
+        success: false,
+        message: 'Server error. Please try again later.' 
+      });
     }
   });
 
