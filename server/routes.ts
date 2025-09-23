@@ -132,6 +132,88 @@ function getOpenAIClient() {
   });
 }
 
+// Google Places API helper for verified business information
+async function searchGooglePlace(placeName: string, location: string): Promise<{
+  website?: string;
+  address?: string;
+  rating?: number;
+  userRatingsTotal?: number;
+  placeId?: string;
+  googleMapsUrl?: string;
+} | null> {
+  if (!process.env.GOOGLE_PLACES_API_KEY) {
+    console.warn("Google Places API key not configured - skipping place verification");
+    return null;
+  }
+
+  try {
+    const searchQuery = `${placeName} ${location}`;
+    
+    // Step 1: Find Place From Text to get place_id
+    const findPlaceUrl = `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${encodeURIComponent(searchQuery)}&inputtype=textquery&fields=place_id,name&key=${process.env.GOOGLE_PLACES_API_KEY}`;
+    
+    console.log(`🔍 Google Places Find Place query: "${searchQuery}"`);
+    
+    const findResponse = await fetch(findPlaceUrl);
+    
+    if (!findResponse.ok) {
+      throw new Error(`Google Places Find Place API returned ${findResponse.status}: ${findResponse.statusText}`);
+    }
+    
+    const findData = await findResponse.json();
+    
+    if (findData.status === 'OVER_QUERY_LIMIT') {
+      console.warn(`Google Places API quota exceeded for "${searchQuery}"`);
+      return null;
+    }
+    
+    if (findData.status !== 'OK') {
+      console.warn(`Google Places Find Place status: ${findData.status} for query "${searchQuery}"`);
+      return null;
+    }
+    
+    if (!findData.candidates || findData.candidates.length === 0) {
+      console.log(`No Google Places results for "${searchQuery}"`);
+      return null;
+    }
+    
+    const placeId = findData.candidates[0].place_id;
+    
+    // Step 2: Get Place Details to retrieve website and other information
+    const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=website,formatted_address,rating,user_ratings_total,url,international_phone_number&key=${process.env.GOOGLE_PLACES_API_KEY}`;
+    
+    console.log(`🔍 Getting place details for place_id: ${placeId}`);
+    
+    const detailsResponse = await fetch(detailsUrl);
+    
+    if (!detailsResponse.ok) {
+      throw new Error(`Google Places Details API returned ${detailsResponse.status}: ${detailsResponse.statusText}`);
+    }
+    
+    const detailsData = await detailsResponse.json();
+    
+    if (detailsData.status !== 'OK') {
+      console.warn(`Google Places Details status: ${detailsData.status} for place_id: ${placeId}`);
+      return null;
+    }
+    
+    const place = detailsData.result;
+    
+    return {
+      website: place.website,
+      address: place.formatted_address,
+      rating: place.rating,
+      userRatingsTotal: place.user_ratings_total,
+      placeId: placeId,
+      googleMapsUrl: place.url // Google Maps URL as fallback when no website
+    };
+    
+  } catch (error) {
+    console.error(`Error searching Google Places for "${placeName}":`, error);
+    return null;
+  }
+}
+
 // URL validation helper to filter out dead links and parking pages
 async function validateBusinessUrls(places: Array<{description: string, location: string, websiteUrl: string}>): Promise<Array<{description: string, location: string, websiteUrl: string}>> {
   const validPlaces = [];
@@ -3324,8 +3406,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log(`🚀 Generating ${targetResults} AI recommendations for ${topCities.length} cities (${daysAnalyzed} days analyzed - target: ${targetResults} results)`);
       
-      // Construct AI prompt for interesting places
+      // STEP 1: Get place names only from OpenAI (no URLs to avoid hallucination)
       const prompt = `You are a knowledgeable local guide who specializes in diverse recommendations spanning businesses, history, culture, and unique experiences. Focus on actionable recommendations across different geographic areas.
+
+CRITICAL: Return ONLY place names and descriptions. Do NOT include any URLs, websites, phone numbers, or links in your response.
 
 AVOID: Generic or overly broad recommendations. Be specific and actionable.
 PRIORITIZE: Independent businesses, historical sites with visitor facilities, cultural landmarks, famous people connections, local events.
@@ -3357,15 +3441,15 @@ EXAMPLE for Sun Valley/Ketchum area:
 - Name: "Sun Valley Film Festival", Description: "Showcases independent films annually each fall with screenings and celebrity appearances"
 
 For each place, provide:
-- A concise name/topic (business name, landmark name, or event name)
-- One sentence about what makes it special and what you can do there (be specific and actionable)
-- The specific location/city from the visited areas
+- **name**: The exact business name, landmark name, or event name (no generic descriptions)
+- **description**: One sentence about what makes it special and what you can do there (be specific and actionable)
+- **location**: The specific city or general area from the visited locations
 
 Return your response as a JSON object with this exact structure:
 {
   "places": [
     {
-      "name": "Concise topic or business name",
+      "name": "Exact Place Name or Business Name",
       "description": "One sentence about what makes this place special and what you can do there",
       "location": "City/Location Name"
     }
@@ -3417,10 +3501,10 @@ Return your response as a JSON object with this exact structure:
           throw new Error("Invalid response format from AI");
         }
         
-        // Validate the AI response structure (temporarily making name optional to debug)
+        // Validate the AI response structure
         const placesSchema = z.object({
           places: z.array(z.object({
-            name: z.string().optional(),
+            name: z.string(),
             description: z.string(),
             location: z.string()
           })).min(1).max(15)
@@ -3436,31 +3520,76 @@ Return your response as a JSON object with this exact structure:
         
         console.log(`🎉 Successfully generated ${validatedPlaces.places.length} interesting places for user ${userId}`);
         
-        // Debug: Check what fields are actually in the response
-        validatedPlaces.places.forEach((place, index) => {
-          console.log(`🔍 [DEBUG] Place ${index + 1}: name="${place.name || 'MISSING'}", description="${place.description?.substring(0, 50) || 'MISSING'}..."`);
-        });
+        // STEP 2: Get real business information from Google Places API
+        const placesWithVerifiedInfo = await Promise.all(
+          validatedPlaces.places.map(async (place, index) => {
+            try {
+              console.log(`🔍 Looking up "${place.name}" in ${place.location} via Google Places API`);
+              
+              const placeDetails = await searchGooglePlace(place.name, place.location);
+              
+              if (placeDetails) {
+                // Use business website if available, otherwise use Google Maps URL
+                const finalWebsite = placeDetails.website || placeDetails.googleMapsUrl;
+                const hasBusinessWebsite = !!placeDetails.website;
+                
+                console.log(`✅ Found verified info for "${place.name}": ${hasBusinessWebsite ? 'Business website' : 'Google Maps URL'} - ${finalWebsite || 'No URL'}`);
+                
+                return {
+                  ...place,
+                  website: finalWebsite,
+                  address: placeDetails.address,
+                  rating: placeDetails.rating,
+                  userRatingsTotal: placeDetails.userRatingsTotal,
+                  placeId: placeDetails.placeId,
+                  googleMapsUrl: placeDetails.googleMapsUrl,
+                  verified: true,
+                  hasBusinessWebsite
+                };
+              } else {
+                console.log(`⚠️ No Google Places results for "${place.name}" - using search fallback`);
+                const searchQuery = `${place.name} ${place.location}`;
+                const websiteUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
+                return {
+                  ...place,
+                  website: websiteUrl,
+                  verified: false,
+                  hasBusinessWebsite: false
+                };
+              }
+            } catch (error) {
+              console.error(`❌ Error looking up "${place.name}":`, error);
+              // Fallback to Google search
+              const searchQuery = `${place.name} ${place.location}`;
+              const websiteUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
+              return {
+                ...place,
+                website: websiteUrl,
+                verified: false
+              };
+            }
+          })
+        );
         
-        // Convert names to concise Google search URLs for reliable results
-        const placesWithGoogleSearch = validatedPlaces.places.map(place => {
-          const topicName = place.name || place.description.split('.')[0]; // Use first sentence if no name
-          const searchQuery = `${topicName} ${place.location}`;
-          const websiteUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
-          console.log(`🔍 [DEBUG] Search query for "${topicName}": "${searchQuery}" -> URL length: ${websiteUrl.length}`);
-          return {
-            ...place,
-            name: topicName, // Ensure frontend gets a name field
-            websiteUrl
-          };
-        });
+        const verifiedCount = placesWithVerifiedInfo.filter(p => p.verified).length;
+        const businessWebsiteCount = placesWithVerifiedInfo.filter(p => p.hasBusinessWebsite).length;
+        const googleMapsCount = placesWithVerifiedInfo.filter(p => p.verified && !p.hasBusinessWebsite).length;
+        const searchFallbackCount = placesWithVerifiedInfo.length - verifiedCount;
         
-        console.log(`✅ Generated ${placesWithGoogleSearch.length} Google search URLs for interesting places`);
+        console.log(`✅ Enhanced ${placesWithVerifiedInfo.length} places: ${businessWebsiteCount} with business websites, ${googleMapsCount} with Google Maps URLs, ${searchFallbackCount} using search fallback`);
         
-        // Return successful response
+        // Return successful response with verified information
         res.json({
-          places: placesWithGoogleSearch,
+          places: placesWithVerifiedInfo,
           tokenUsage,
-          model: "gpt-4o-mini"
+          model: "gpt-4o-mini",
+          verificationStats: {
+            total: placesWithVerifiedInfo.length,
+            verified: verifiedCount,
+            businessWebsites: businessWebsiteCount,
+            googleMapsUrls: googleMapsCount,
+            searchFallback: searchFallbackCount
+          }
         });
         
       } catch (aiError) {
