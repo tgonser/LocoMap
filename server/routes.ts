@@ -3003,8 +3003,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return `${city}|${state}|${country}`;
         };
         
-        // Helper function to calculate distance between two points
-        const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+        // Helper function to calculate straight-line distance between two points (fallback only)
+        const calculateStraightLineDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
           const R = 3959; // Earth's radius in miles
           const dLat = (lat2 - lat1) * Math.PI / 180;
           const dLng = (lng2 - lng1) * Math.PI / 180;
@@ -3035,11 +3035,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
             
             // Check if we've moved to a different city
             if (normalizeCityKey(currentStop) !== normalizeCityKey(previousStop)) {
-              // Calculate distance between stops
-              const distance = calculateDistance(
-                previousStop.lat, previousStop.lng, 
-                currentStop.lat, currentStop.lng
-              );
+              // Calculate actual route distance using GPS coordinates from the primary dataset
+              let distance = 0;
+              try {
+                // Get the dataset ID from the current stops (they should all be from the same dataset)
+                const datasetId = currentStop.datasetId || previousStop.datasetId;
+                
+                if (datasetId) {
+                  // Create temporary stop objects for the route distance calculation
+                  const fromStopObj = {
+                    id: previousStop.id,
+                    lat: previousStop.lat,
+                    lng: previousStop.lng,
+                    end: new Date(previousStop.end),
+                    city: previousStop.city
+                  };
+                  const toStopObj = {
+                    id: currentStop.id,
+                    lat: currentStop.lat,
+                    lng: currentStop.lng,
+                    start: new Date(currentStop.start),
+                    city: currentStop.city
+                  };
+                  
+                  // Use the new route distance calculation
+                  distance = await (storage as any).calculateActualRouteDistanceFromJSON(
+                    fromStopObj, toStopObj, userId, datasetId
+                  );
+                  
+                  console.log(`🛤️ Route ${previousStop.city || 'Unknown'} → ${currentStop.city || 'Unknown'}: ${distance.toFixed(1)} miles (actual route)`);
+                } else {
+                  console.log(`⚠️ No dataset ID found, using straight-line distance`);
+                  distance = calculateStraightLineDistance(
+                    previousStop.lat, previousStop.lng, 
+                    currentStop.lat, currentStop.lng
+                  );
+                }
+              } catch (error) {
+                console.error(`❌ Error calculating route distance, falling back to straight-line: ${error}`);
+                distance = calculateStraightLineDistance(
+                  previousStop.lat, previousStop.lng, 
+                  currentStop.lat, currentStop.lng
+                );
+              }
               
               // Create jump entry
               const jump = {

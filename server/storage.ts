@@ -1139,6 +1139,115 @@ export class DatabaseStorage implements IStorage {
     return this.calculateDistanceMeters(lat1, lng1, lat2, lng2) * 0.000621371; // Convert meters to miles
   }
 
+  // GPS error filtering to remove anomalous coordinates
+  private isValidGPSCoordinate(lat: number, lng: number): boolean {
+    // Filter out obvious GPS errors
+    if (lat === 0 && lng === 0) return false; // Common GPS error
+    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return false; // Invalid coordinate range
+    if (lat === null || lng === null || isNaN(lat) || isNaN(lng)) return false; // Invalid data
+    return true;
+  }
+
+  // Calculate actual route distance by summing GPS coordinate movements from JSON data
+  private async calculateActualRouteDistanceFromJSON(
+    fromStop: TravelStop, 
+    toStop: TravelStop, 
+    userId: string, 
+    datasetId: string
+  ): Promise<number> {
+    try {
+      // Use existing getRawFile method to handle both database and file-based storage
+      const rawContent = await this.getRawFile(datasetId, userId);
+      if (!rawContent) {
+        console.log(`⚠️ No raw JSON content for dataset ${datasetId}, using straight-line distance`);
+        return this.calculateDistanceMiles(fromStop.lat, fromStop.lng, toStop.lat, toStop.lng);
+      }
+
+      // Process JSON to get GPS points between stops
+      const { processTimelinePathsForDateRange, buildParentIndex } = await import("./timelineAssociation.js");
+      
+      const jsonData = JSON.parse(rawContent);
+      const parentIndex = buildParentIndex(jsonData);
+
+      // Calculate precise time range for GPS filtering
+      const fromStopEndMs = fromStop.end.getTime();
+      const toStopStartMs = toStop.start.getTime();
+      
+      // Get GPS points for a wider date range (to catch points spanning day boundaries)
+      const startDate = new Date(fromStopEndMs - 86400000); // 1 day before
+      const endDate = new Date(toStopStartMs + 86400000);   // 1 day after
+      
+      const routePoints = processTimelinePathsForDateRange(
+        jsonData,
+        parentIndex,
+        startDate.toISOString().split('T')[0],
+        endDate.toISOString().split('T')[0]
+      );
+
+      // Filter points to exact time range using precise timestamps
+      const filteredPoints = routePoints.filter(point => {
+        return point.timestampMs >= fromStopEndMs && point.timestampMs <= toStopStartMs;
+      }).sort((a, b) => a.timestampMs - b.timestampMs);
+
+      if (filteredPoints.length === 0) {
+        console.log(`⚠️ No GPS points found between stops, using straight-line distance`);
+        return this.calculateDistanceMiles(fromStop.lat, fromStop.lng, toStop.lat, toStop.lng);
+      }
+
+      // Calculate actual route distance by summing GPS movements
+      let totalDistanceMiles = 0;
+      let previousPoint = { lat: fromStop.lat, lng: fromStop.lng }; // Start from departure stop
+      let previousTimestamp = fromStopEndMs;
+
+      for (const point of filteredPoints) {
+        // Skip invalid GPS coordinates
+        if (!this.isValidGPSCoordinate(point.latitude, point.longitude)) {
+          continue;
+        }
+
+        // Calculate distance from previous valid point
+        const segmentDistance = this.calculateDistanceMiles(
+          previousPoint.lat, previousPoint.lng,
+          point.latitude, point.longitude
+        );
+
+        // Time-aware filtering: reject impossibly fast movement (over 600 mph between points)
+        const timeDeltaHours = (point.timestampMs - previousTimestamp) / (1000 * 60 * 60);
+        const maxReasonableSpeed = 600; // mph (covers even aircraft)
+        
+        if (timeDeltaHours > 0 && segmentDistance / timeDeltaHours > maxReasonableSpeed) {
+          console.log(`⚠️ Filtering GPS jump: ${segmentDistance.toFixed(1)} miles in ${timeDeltaHours.toFixed(2)}h = ${(segmentDistance/timeDeltaHours).toFixed(0)} mph`);
+          continue;
+        }
+
+        totalDistanceMiles += segmentDistance;
+        previousPoint = { lat: point.latitude, lng: point.longitude };
+        previousTimestamp = point.timestampMs;
+      }
+
+      // Add final segment to arrival stop if reasonable
+      if (this.isValidGPSCoordinate(toStop.lat, toStop.lng)) {
+        const finalSegment = this.calculateDistanceMiles(
+          previousPoint.lat, previousPoint.lng,
+          toStop.lat, toStop.lng
+        );
+        
+        const finalTimeDelta = (toStopStartMs - previousTimestamp) / (1000 * 60 * 60);
+        if (finalTimeDelta <= 0 || finalSegment / Math.max(finalTimeDelta, 0.01) <= 600) {
+          totalDistanceMiles += finalSegment;
+        }
+      }
+
+      console.log(`📏 Route distance: ${totalDistanceMiles.toFixed(1)} miles from ${filteredPoints.length} GPS points`);
+      return totalDistanceMiles;
+
+    } catch (error) {
+      console.error(`❌ Error calculating route distance: ${error}`);
+      // Fallback to straight-line distance
+      return this.calculateDistanceMiles(fromStop.lat, fromStop.lng, toStop.lat, toStop.lng);
+    }
+  }
+
   // **STOP DETECTION ALGORITHM**
   // Identifies places where user stayed ≥minDwellMinutes within maxDistanceMeters radius
   async computeTravelStopsFromPoints(
@@ -1284,11 +1393,12 @@ export class DatabaseStorage implements IStorage {
       const fromStop = stops[i];
       const toStop = stops[i + 1];
 
-      // Calculate distance between stops
-      const distanceMiles = this.calculateDistanceMiles(
-        fromStop.lat, fromStop.lng,
-        toStop.lat, toStop.lng
+      // Calculate actual route distance using GPS coordinates from JSON
+      const distanceMiles = await this.calculateActualRouteDistanceFromJSON(
+        fromStop, toStop, userId, datasetId
       );
+
+      console.log(`🛤️ Route ${fromStop.city || 'Unknown'} → ${toStop.city || 'Unknown'}: ${distanceMiles.toFixed(1)} miles (actual route)`);
 
       // Get intermediate cities along the route
       const intermediateCities = await this.getIntermediateCities(
