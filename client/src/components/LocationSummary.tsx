@@ -21,7 +21,12 @@ interface InterestingPlace {
   name: string;
   description: string;
   location: string;
-  websiteUrl: string;
+  website: string;
+  address?: string;
+  rating?: number;
+  verified?: boolean;
+  hasBusinessWebsite?: boolean;
+  googleMapsUrl?: string;
 }
 
 interface TokenUsage {
@@ -328,18 +333,35 @@ export default function LocationSummary({
                     <p className="text-xs text-muted-foreground">
                       Near: {place.location}
                     </p>
+                    {place.address && (
+                      <p className="text-xs text-muted-foreground">
+                        📍 {place.address}
+                      </p>
+                    )}
                     <p className="text-sm text-muted-foreground">
                       {place.description}
                     </p>
+                    {place.rating && (
+                      <div className="flex items-center gap-1">
+                        <Badge variant="secondary" className="text-xs">
+                          ⭐ {place.rating}/5
+                        </Badge>
+                        {place.verified && (
+                          <Badge variant="outline" className="text-xs">
+                            {place.hasBusinessWebsite ? '✅ Verified Business' : '🗺️ Google Maps'}
+                          </Badge>
+                        )}
+                      </div>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => window.open(place.websiteUrl, '_blank')}
+                      onClick={() => window.open(place.website, '_blank')}
                       className="flex items-center gap-2 w-full"
                       data-testid={`button-view-website-${index}`}
                     >
                       <ExternalLink className="h-4 w-4" />
-                      Search Google
+                      {place.hasBusinessWebsite ? 'Visit Website' : 'View on Google Maps'}
                     </Button>
                   </div>
                 </div>
