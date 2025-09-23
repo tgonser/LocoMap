@@ -123,3 +123,103 @@ A breakthrough performance optimization implementing a shared geocoding cache th
 - **Optimized Parameters**: Reduced minimum dwell time to 8 minutes and increased clustering radius to 300 meters for better highway travel detection
 - **Improved Accuracy**: Travel analytics now show realistic city-to-city chains instead of impossible distance jumps
 - **Enhanced Coverage**: Increased stop detection rate from 147 to 174+ stops for typical monthly datasets with proper geocoding integration
+
+## Planned Features
+
+### JSON File Appending and Merging Strategy (Future Implementation)
+
+**Problem Statement:**
+Users need to update their Google Location History data with new exports while preserving existing data. Two common scenarios:
+1. **Incremental Updates**: New JSON contains same historical data plus recent additions (6/2009-9/2025 → 6/2009-10/2025)
+2. **Partial Appends**: User wants to add limited date-range data to existing full dataset (add 9/2025-10/2025 to existing 6/2009-9/2025)
+
+**Architecture Principle: JSON as Source of Truth**
+- Current system stores raw JSON files and processes them on-demand via `processTimelinePathsForDateRange()`
+- No database storage of individual location points - JSON files are the authoritative data source
+- Maps and Analytics process JSON directly in real-time (362 days in 48 seconds)
+
+**Planned Implementation Approach:**
+
+**1. Upload Flow Enhancement:**
+```
+Upload UI Options:
+○ Replace existing data (current behavior)  
+○ Append to existing data (new feature)
+```
+
+**2. Smart JSON Merging Process:**
+```javascript
+// Planned merge workflow
+async function appendJsonData(existingDatasetId, newJsonFile, userId) {
+  // 1. Load existing JSON (from database rawContent or file path)
+  const existingJson = await storage.getRawFile(existingDatasetId, userId);
+  
+  // 2. Parse both JSON files
+  const existing = JSON.parse(existingJson);
+  const newData = JSON.parse(newJsonFile);
+  
+  // 3. Analyze date ranges and detect overlaps/gaps
+  const analysis = analyzeTimeRanges(existing, newData);
+  
+  // 4. Smart merge with deduplication
+  const mergedJson = mergeWithDeduplication(existing, newData, analysis);
+  
+  // 5. Store merged result as new source of truth
+  await storage.storeRawFile(datasetId, userId, JSON.stringify(mergedJson));
+  
+  // 6. Update dataset metadata (date range, point counts)
+  await storage.updateDatasetMetadata(datasetId, mergedJson);
+}
+```
+
+**3. Overlap and Gap Handling:**
+
+**Time Gaps (No Problem):**
+- Natural behavior - location history often has gaps (phone off, no GPS signal)
+- Simply concatenate `timelineObjects` arrays chronologically
+- Current processing handles discontinuous data gracefully
+
+**Overlapping Dates (Smart Deduplication):**
+- **Detection**: Compare existing `endDate` with new `startDate` 
+- **Strategy**: "Latest Wins" - remove existing data from overlap period onward, add all new data
+- **Deduplication**: Remove duplicate `timelinePath` objects with identical time ranges
+- **User Feedback**: Show overlap analysis in UI with clear merge summary
+
+**4. Technical Implementation Details:**
+
+**JSON Structure Merging:**
+```javascript
+function mergeTimelineObjects(existing, newData, overlapStartDate) {
+  // Remove existing data from overlap period onward
+  const filtered = existing.timelineObjects.filter(obj => {
+    const objTime = parseGoogleTimestamp(obj.startTime || obj.endTime);
+    return objTime < overlapStartDate;
+  });
+  
+  // Add all new data and sort chronologically  
+  const merged = [...filtered, ...newData.timelineObjects]
+    .sort((a, b) => parseGoogleTimestamp(a.startTime) - parseGoogleTimestamp(b.startTime));
+    
+  return { timelineObjects: merged };
+}
+```
+
+**User Experience:**
+- Pre-upload analysis shows date ranges and overlap detection
+- Clear feedback: "Adding 6 weeks of new data, removing 2 weeks of duplicate data"
+- Progress indicator for merge operation
+- Validation that merged data maintains chronological integrity
+
+**Performance Considerations:**
+- Large JSON file merging happens server-side to avoid client memory issues
+- Streaming approach for very large files (>100MB)
+- Atomic operation - either merge succeeds completely or existing data remains unchanged
+- No impact on query performance - merged file processes at same speed as original
+
+**Data Integrity:**
+- Maintains Google Location History JSON structure exactly
+- Preserves all `timelinePath`, `placeVisit`, and `activitySegment` data
+- Ensures chronological ordering of `timelineObjects`
+- Validates merged result before replacing existing data
+
+This approach leverages the existing JSON-as-source-of-truth architecture while adding sophisticated data management capabilities for evolving location datasets.
