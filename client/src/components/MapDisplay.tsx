@@ -89,7 +89,7 @@ function MapViewController({ locations, selectedDate, selectedPoint }: MapViewCo
   // Handle individual point selection with smooth animation
   useEffect(() => {
     if (selectedPoint) {
-      map.flyTo([selectedPoint.lat, selectedPoint.lng], 18, {
+      map.panTo([selectedPoint.lat, selectedPoint.lng], {
         animate: true,
         duration: 1.0
       });
