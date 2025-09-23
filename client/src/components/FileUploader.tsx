@@ -1,18 +1,22 @@
 import { useDropzone } from 'react-dropzone';
-import { Upload, FileText, CheckCircle, AlertCircle } from 'lucide-react';
+import { Upload, FileText, CheckCircle, AlertCircle, Plus, RotateCcw } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
 import { useState } from 'react';
 
 interface FileUploaderProps {
   onFileUpload: (data: any) => void;
   isProcessing?: boolean;
+  hasExistingData?: boolean; // Whether user already has data to potentially merge with
 }
 
-export default function FileUploader({ onFileUpload, isProcessing = false }: FileUploaderProps) {
+export default function FileUploader({ onFileUpload, isProcessing = false, hasExistingData = false }: FileUploaderProps) {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle');
   const [fileName, setFileName] = useState<string>('');
   const [uploadResult, setUploadResult] = useState<any>(null);
+  const [uploadMode, setUploadMode] = useState<'replace' | 'merge'>('replace');
 
   const onDrop = async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
@@ -24,6 +28,7 @@ export default function FileUploader({ onFileUpload, isProcessing = false }: Fil
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('mode', uploadMode); // Include merge/replace mode
 
       const token = localStorage.getItem('authToken');
       const headers: Record<string, string> = {};
@@ -64,6 +69,39 @@ export default function FileUploader({ onFileUpload, isProcessing = false }: Fil
 
   return (
     <Card className="p-6">
+      {/* Upload Mode Selection - only show if user has existing data */}
+      {hasExistingData && uploadStatus === 'idle' && (
+        <div className="mb-6 p-4 bg-muted/50 rounded-lg">
+          <h3 className="font-medium text-sm mb-3">Upload Options</h3>
+          <RadioGroup
+            value={uploadMode}
+            onValueChange={(value: 'replace' | 'merge') => setUploadMode(value)}
+            className="space-y-3"
+          >
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="replace" id="replace" />
+              <Label htmlFor="replace" className="flex items-center gap-2 cursor-pointer">
+                <RotateCcw className="w-4 h-4" />
+                <div>
+                  <div className="font-medium">Replace existing data</div>
+                  <div className="text-xs text-muted-foreground">Remove all current data and upload new file</div>
+                </div>
+              </Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="merge" id="merge" />
+              <Label htmlFor="merge" className="flex items-center gap-2 cursor-pointer">
+                <Plus className="w-4 h-4" />
+                <div>
+                  <div className="font-medium">Merge with existing data</div>
+                  <div className="text-xs text-muted-foreground">Combine new location data with your current history</div>
+                </div>
+              </Label>
+            </div>
+          </RadioGroup>
+        </div>
+      )}
+
       <div
         {...getRootProps()}
         className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${

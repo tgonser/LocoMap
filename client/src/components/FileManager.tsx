@@ -149,7 +149,7 @@ export default function FileManager({ onFileUpload }: FileManagerProps) {
               Cancel
             </Button>
           </div>
-          <FileUploader onFileUpload={handleFileUpload} />
+          <FileUploader onFileUpload={handleFileUpload} hasExistingData={hasDatasets} />
         </div>
       </div>
     );
