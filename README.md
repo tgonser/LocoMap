@@ -8,6 +8,7 @@ A comprehensive web application that analyzes and visualizes your Google locatio
 📊 **Yearly State & Country Reports** - Detailed presence analytics with 95%+ geocoding accuracy  
 🛣️ **Travel Analytics** - Waypoint detection, travel chains, and route analysis  
 🤖 **AI-Powered Recommendations** - Personalized travel insights and interesting places discovery (optional)  
+📧 **Contact Form Integration** - SendGrid-powered email notifications for inquiries  
 📱 **Responsive Design** - Dark/light theme with mobile-optimized interface  
 🔒 **Privacy-Focused** - All data processing happens locally on your machine  
 
@@ -24,10 +25,19 @@ A comprehensive web application that analyzes and visualizes your Google locatio
   - Get your free key at [geoapify.com](https://www.geoapify.com/)
   - Free tier: 3,000 requests/day (sufficient for most use cases)
 
-#### Optional (For AI Features)
+#### Optional (For Enhanced Features)
 - **OpenAI API Key** - For AI-powered travel recommendations and insights
   - Get your key at [platform.openai.com](https://platform.openai.com/api-keys)
   - Uses GPT-4o-mini for cost-efficient analysis (~$0.01-0.05 per analysis)
+
+- **SendGrid API Key** - For contact form email notifications
+  - Get your free key at [sendgrid.com](https://sendgrid.com) (free tier: 100 emails/day)
+  - Used to send contact form submissions to your email address
+
+- **Google Places API Key** - For enhanced business information and website verification
+  - Get your key at [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+  - Used to verify business websites and enhance place recommendations
+  - Alternative fallback systems available if not provided
 
 ## Setup Instructions
 
@@ -46,8 +56,10 @@ DATABASE_URL=postgresql://username:password@localhost:5432/location_analyzer
 GEOAPIFY_API_KEY=your_geoapify_api_key_here
 SESSION_SECRET=your_random_session_secret_here
 
-# Optional (for AI features)
+# Optional (for enhanced features)
 OPENAI_API_KEY=your_openai_api_key_here
+SENDGRID_API_KEY=your_sendgrid_api_key_here
+GOOGLE_PLACES_API_KEY=your_google_places_api_key_here
 ```
 
 ### 3. Database Setup
@@ -344,6 +356,99 @@ Authorization: Bearer {jwt_token}
 - No personal information, addresses, or detailed location data shared
 - AI analysis happens on-demand when you request recommendations
 - You control when and how often to use AI features
+
+## Contact Form Integration
+
+📧 **Professional contact form with email notifications powered by SendGrid**
+
+The application includes a public contact form that allows visitors to send inquiries directly to the administrator's email address. This feature requires no authentication and is perfect for production deployments.
+
+### Contact Form Features
+
+**📝 Contact Form Fields**
+- **Name** - Visitor's full name (required, minimum 2 characters)
+- **Email** - Visitor's email address for replies (required, validated format)
+- **Message** - Detailed inquiry or feedback (required, minimum 10 characters)
+
+**✉️ Email Delivery**
+- **Powered by SendGrid** - Reliable email delivery service
+- **Direct to Gmail** - Messages sent directly to your configured email address
+- **Rich formatting** - HTML emails with professional styling
+- **Reply-ready** - Clickable email links for easy responses
+
+### Contact Form Setup
+
+**1. Configure SendGrid API Key**
+```bash
+# Add to your environment variables
+SENDGRID_API_KEY=SG.your_sendgrid_api_key_here
+```
+
+**2. Verify Sender Email**
+- Log in to your SendGrid dashboard
+- Go to Settings → Sender Authentication
+- Click "Verify a Single Sender"
+- Add and verify your email address (the one that will receive contact form submissions)
+
+**3. Test the Contact Form**
+- Visit `/contact` on your application
+- Submit a test message
+- Check your email inbox for the notification
+
+### Contact Form API
+
+**Public Endpoint (No Authentication Required):**
+```http
+POST /api/contact
+Content-Type: application/json
+
+{
+  "name": "John Doe",
+  "email": "john@example.com",
+  "message": "Hello, I have a question about your application..."
+}
+```
+
+**Success Response:**
+```json
+{
+  "success": true,
+  "message": "Message sent successfully!"
+}
+```
+
+**Error Response:**
+```json
+{
+  "success": false,
+  "message": "Invalid form data",
+  "errors": ["Email is required", "Message must be at least 10 characters"]
+}
+```
+
+### Email Format
+
+**Subject Line:** `WhereWasI Contact Form: [Visitor Name]`
+
+**Email Content:**
+- Visitor's name and email address
+- Full message content
+- Professional HTML formatting
+- Clickable "reply-to" links for easy response
+
+### Troubleshooting Contact Form
+
+**"Failed to send message" errors:**
+- Verify SendGrid API key starts with "SG." and has Mail Send permissions
+- Ensure your sender email address is verified in SendGrid
+- Check SendGrid dashboard for delivery status and error logs
+- Verify you haven't exceeded SendGrid's daily sending limits
+
+**No emails received:**
+- Check your spam/junk folder
+- Verify the destination email address is correct in your environment configuration
+- Test with SendGrid's email activity dashboard
+- Ensure your email provider isn't blocking SendGrid emails
 
 ## Data Privacy
 
