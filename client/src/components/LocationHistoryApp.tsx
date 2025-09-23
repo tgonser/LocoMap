@@ -92,6 +92,11 @@ export default function LocationHistoryApp() {
     }
   }, [selectedDateRange]);
 
+  // Clear selected point when date or date range changes to prevent stale highlights
+  useEffect(() => {
+    setSelectedPoint(null);
+  }, [selectedDate, selectedDateRange]);
+
   // Check for existing data on component mount
   useEffect(() => {
     const checkExistingData = async () => {
