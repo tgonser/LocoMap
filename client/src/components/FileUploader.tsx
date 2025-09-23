@@ -1,5 +1,5 @@
 import { useDropzone } from 'react-dropzone';
-import { Upload, FileText, CheckCircle, AlertCircle, Plus, RotateCcw } from 'lucide-react';
+import { Upload, FileText, CheckCircle, AlertCircle, Plus, RotateCcw, Download } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -17,6 +17,49 @@ export default function FileUploader({ onFileUpload, isProcessing = false, hasEx
   const [fileName, setFileName] = useState<string>('');
   const [uploadResult, setUploadResult] = useState<any>(null);
   const [uploadMode, setUploadMode] = useState<'replace' | 'merge'>('replace');
+
+  const handleDownloadBackup = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
+      // Get current dataset info
+      const datasetsResponse = await fetch('/api/datasets', { headers });
+      const datasets = await datasetsResponse.json();
+      
+      if (datasets.length === 0) {
+        alert('No data found to backup');
+        return;
+      }
+
+      // Pick the most recent dataset (by upload date)
+      const currentDataset = datasets.sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime())[0];
+      
+      // Download the current dataset as backup
+      const downloadResponse = await fetch(`/api/datasets/${currentDataset.id}/download`, { headers });
+      if (!downloadResponse.ok) {
+        throw new Error('Failed to download backup');
+      }
+
+      const blob = await downloadResponse.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `backup-${currentDataset.filename}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      console.log('Backup downloaded successfully');
+    } catch (error) {
+      console.error('Error downloading backup:', error);
+      alert('Failed to download backup. Please try again.');
+    }
+  };
 
   const onDrop = async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
@@ -98,6 +141,33 @@ export default function FileUploader({ onFileUpload, isProcessing = false, hasEx
                 </div>
               </Label>
             </div>
+            
+            {/* Backup warning for merge mode */}
+            {uploadMode === 'merge' && (
+              <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                  <div className="text-xs">
+                    <p className="font-medium text-amber-800 dark:text-amber-200 mb-1">
+                      Backup Recommended
+                    </p>
+                    <p className="text-amber-700 dark:text-amber-300 mb-2">
+                      This will modify your existing data. Consider downloading a backup first.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleDownloadBackup}
+                      className="bg-white dark:bg-gray-950 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                      data-testid="button-download-backup"
+                    >
+                      <Download className="w-3 h-3 mr-2" />
+                      Download Current Data
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </RadioGroup>
         </div>
       )}

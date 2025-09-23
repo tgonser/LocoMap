@@ -171,19 +171,33 @@ function mergeLocationHistoryFiles(existingData: any, newData: any): any {
     return existingData;
   }
   
-  // Helper function to extract timestamp from timeline objects
+  // Helper function to extract timestamp from timeline objects (comprehensive)
   const getTimeFromObject = (obj: any): number => {
     try {
-      // Check activitySegment format
+      // Check activitySegment format (duration fields)
       if (obj.activitySegment) {
+        if (obj.activitySegment.duration?.startTimestampMs) {
+          return parseInt(obj.activitySegment.duration.startTimestampMs);
+        }
+        if (obj.activitySegment.duration?.endTimestampMs) {
+          return parseInt(obj.activitySegment.duration.endTimestampMs);
+        }
         const startTime = obj.activitySegment.startTime || obj.activitySegment.endTime;
         if (startTime) return new Date(startTime).getTime();
       }
       
-      // Check placeVisit format
-      if (obj.placeVisit && obj.placeVisit.duration) {
-        const startTime = obj.placeVisit.duration.startTimestamp || obj.placeVisit.duration.endTimestamp;
-        if (startTime) return new Date(startTime).getTime();
+      // Check placeVisit format (duration fields)
+      if (obj.placeVisit) {
+        if (obj.placeVisit.duration?.startTimestampMs) {
+          return parseInt(obj.placeVisit.duration.startTimestampMs);
+        }
+        if (obj.placeVisit.duration?.endTimestampMs) {
+          return parseInt(obj.placeVisit.duration.endTimestampMs);
+        }
+        if (obj.placeVisit.duration) {
+          const startTime = obj.placeVisit.duration.startTimestamp || obj.placeVisit.duration.endTimestamp;
+          if (startTime) return new Date(startTime).getTime();
+        }
       }
       
       // Check timelinePath format
@@ -219,39 +233,28 @@ function mergeLocationHistoryFiles(existingData: any, newData: any): any {
   console.log(`📅 Last existing date: ${new Date(lastExistingTime).toISOString()}`);
   console.log(`📅 First new date: ${new Date(firstNewTime).toISOString()}`);
   
-  // Categorize existing objects by type (keep in original order)
-  const existingVisits = existingObjects.filter(obj => obj.placeVisit);
-  const existingActivities = existingObjects.filter(obj => obj.activitySegment);  
-  const existingTimelinePaths = existingObjects.filter(obj => obj.timelinePath);
+  // Step 3: Filter new objects to only those that come AFTER the last existing time (all types together)
+  const newObjectsToAdd = newObjects.filter(obj => {
+    const objTime = getTimeFromObject(obj);
+    return objTime > lastExistingTime; // Only add objects after last existing timestamp
+  });
   
-  // Filter new objects to only those that come AFTER the last existing time
-  const newVisits = newObjects.filter(obj => 
-    obj.placeVisit && getTimeFromObject(obj) > lastExistingTime
-  );
-  const newActivities = newObjects.filter(obj => 
-    obj.activitySegment && getTimeFromObject(obj) > lastExistingTime
-  );
-  const newTimelinePaths = newObjects.filter(obj => 
-    obj.timelinePath && getTimeFromObject(obj) > lastExistingTime
-  );
+  console.log(`📊 Existing objects: ${existingObjects.length} total`);
+  console.log(`📊 New objects to add: ${newObjectsToAdd.length} (after ${new Date(lastExistingTime).toISOString()})`);
   
-  console.log(`📊 Existing: ${existingVisits.length} visits, ${existingActivities.length} activities, ${existingTimelinePaths.length} timelinePaths`);
-  console.log(`📊 New (after last existing): ${newVisits.length} visits, ${newActivities.length} activities, ${newTimelinePaths.length} timelinePaths`);
+  // Step 4: If no new objects to add, return existing data unchanged
+  if (newObjectsToAdd.length === 0) {
+    console.log('⚠️ No new data after last existing timestamp - keeping existing data unchanged');
+    return existingData;
+  }
   
-  // Step 3: Attach the visits and activities segments where they go in timesequence after the last one in the old file
-  // Step 4: Attach the timelinepath objects after the ones in the old file
+  // Step 5: Sort new objects chronologically and append to existing (preserves existing order, adds new in chronological order)
+  const sortedNewObjects = newObjectsToAdd.sort((a, b) => getTimeFromObject(a) - getTimeFromObject(b));
   
-  // Sort new objects by time before appending
-  const sortedNewVisits = newVisits.sort((a, b) => getTimeFromObject(a) - getTimeFromObject(b));
-  const sortedNewActivities = newActivities.sort((a, b) => getTimeFromObject(a) - getTimeFromObject(b));
-  const sortedNewTimelinePaths = newTimelinePaths.sort((a, b) => getTimeFromObject(a) - getTimeFromObject(b));
-  
-  // Append new objects AFTER existing ones (preserve existing order, append new in chronological order)
+  // Maintain chronological order: existing objects (in original order) + new objects (sorted chronologically)
   const allObjects = [
-    ...existingObjects, // Keep all existing objects in original order
-    ...sortedNewVisits,     // Append new visits after existing
-    ...sortedNewActivities,  // Append new activities after existing  
-    ...sortedNewTimelinePaths // Append new timelinePaths after existing
+    ...existingObjects,     // Keep all existing objects in original order
+    ...sortedNewObjects     // Append new objects in chronological order
   ];
   
   // Step 5: Create a new json file we can parse
@@ -2210,6 +2213,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching datasets:", error);
       res.status(500).json({ error: "Failed to fetch datasets" });
+    }
+  });
+
+  // Protected route: Download user's dataset as JSON backup
+  app.get("/api/datasets/:id/download", requireApprovedUser, async (req, res) => {
+    try {
+      const { claims } = getAuthenticatedUser(req);
+      const userId = claims.sub;
+      const datasetId = parseInt(req.params.id);
+      
+      if (isNaN(datasetId)) {
+        return res.status(400).json({ error: "Invalid dataset ID" });
+      }
+
+      // Verify dataset belongs to user
+      const datasets = await storage.getUserLocationDatasets(userId);
+      const dataset = datasets.find(d => d.id === datasetId);
+      
+      if (!dataset) {
+        return res.status(404).json({ error: "Dataset not found" });
+      }
+
+      // Get the raw JSON content
+      const rawContent = await storage.getRawFile(datasetId.toString(), userId);
+      
+      if (!rawContent) {
+        return res.status(404).json({ error: "Dataset file not found" });
+      }
+
+      // Set headers for file download
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="${dataset.filename}"`);
+      
+      // Send the raw JSON content
+      res.send(rawContent);
+    } catch (error) {
+      console.error("Error downloading dataset:", error);
+      res.status(500).json({ error: "Failed to download dataset" });
     }
   });
 
