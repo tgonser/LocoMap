@@ -83,21 +83,29 @@ Open your browser to `http://localhost:5000`
 
 ## Getting Your Google Location Data
 
-### Step 1: Export from Google Takeout
-1. Visit [Google Takeout](https://takeout.google.com/)
-2. Click "Deselect all"
-3. Find and select "Location History (Timeline)"
-4. Choose "JSON" format (not KML)
-5. Click "Next step" → "Create export"
-6. Download when ready (can take hours for large datasets)
+### Step 1: Export from Mobile Device (REQUIRED)
+**Important:** Google Location History export is now only available through mobile devices.
 
-### Step 2: Extract and Upload
-1. Extract the downloaded ZIP file
-2. Look for files like:
-   - `Records.json` (newer format)
-   - `2024_JANUARY.json`, `2024_FEBRUARY.json` (monthly files)
-   - Files in `Semantic Location History/` folder
-3. Upload these JSON files to the application
+**For iOS:**
+1. Open Google Maps app
+2. Click on your profile picture
+3. Click on "Your Timeline"
+4. Click the "..." button
+5. Click on "Location and privacy settings"
+6. Scroll down to "Export Timeline Data"
+7. Select a place to download - you can save to Files, Google Drive, whatever you have access to
+
+**For Android:**
+1. Open your phone's Settings app
+2. Scroll down and tap Location
+3. Tap Location services, then select Timeline
+4. Under "Timeline," tap Export Timeline data
+5. Follow the on-screen prompts to save the Timeline.json file to your preferred storage location on your device
+
+### Step 2: Upload to WhereWasI
+1. Transfer the Timeline.json file to your computer if needed
+2. Upload the JSON file to the application using the file uploader
+3. Processing typically takes 30-60 seconds
 
 ## Architecture Overview
 

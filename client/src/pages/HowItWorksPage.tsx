@@ -10,13 +10,13 @@ export default function HowItWorksPage() {
     {
       number: '1',
       icon: <Smartphone className="h-8 w-8 text-primary" />,
-      title: 'Export Your Google Location History',
-      description: 'Download your location data from Google Takeout - we\'ll show you exactly how to do this safely and securely.',
+      title: 'Export Your Google Location History (Mobile Only)',
+      description: 'Export your location data directly from your mobile device using the Google Maps app. This must be done on iOS or Android - desktop export is no longer available.',
       details: [
-        'Visit Google Takeout in your browser',
-        'Select "Location History (Timeline)" data',
-        'Choose JSON format for maximum compatibility',
-        'Download the archive to your device'
+        'iOS: Open Google Maps app → Profile picture → "Your Timeline" → "..." → "Location and privacy settings" → "Export Timeline Data"',
+        'Android: Settings app → Location → Location services → Timeline → "Export Timeline data"',
+        'Save the Timeline.json file to your preferred storage location (Files, Google Drive, etc.)',
+        'Transfer the file to your computer if needed for upload'
       ]
     },
     {
