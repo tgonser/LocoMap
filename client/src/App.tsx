@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LogIn, MapPin, UserPlus, User, Eye, EyeOff, AlertCircle, Shield } from "lucide-react";
+import { LogIn, MapPin, UserPlus, User, Eye, EyeOff, AlertCircle, Shield, Home } from "lucide-react";
 import LocationHistoryApp from "@/components/LocationHistoryApp";
 import AdminPanel from "@/pages/AdminPanel";
 import LandingPage from "@/pages/LandingPage";
@@ -18,7 +18,7 @@ import NotFound from "@/pages/not-found";
 import ThemeToggle from "@/components/ThemeToggle";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { Switch, Route, useLocation } from "wouter";
+import { Switch, Route, useLocation, Link } from "wouter";
 
 function PendingApprovalScreen({ user, logout }: { user: any, logout: () => void }) {
   return (
@@ -202,6 +202,13 @@ function LoginScreen() {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="absolute top-4 left-4">
+        <Button variant="ghost" size="icon" asChild data-testid="button-home">
+          <Link href="/">
+            <Home className="h-4 w-4" />
+          </Link>
+        </Button>
+      </div>
       <div className="absolute top-4 right-4">
         <ThemeToggle />
       </div>
