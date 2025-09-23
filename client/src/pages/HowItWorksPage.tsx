@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Download, Upload, Eye, BarChart3, Smartphone, MapPin, FileText, Sparkles } from 'lucide-react';
 import { Link } from 'wouter';
 import PublicLayout from '@/components/PublicLayout';
+import SEOHead from '@/components/SEOHead';
 
 export default function HowItWorksPage() {
   const steps = [
@@ -81,6 +82,13 @@ export default function HowItWorksPage() {
 
   return (
     <PublicLayout>
+      <SEOHead 
+        title="How It Works - WhereWasI? Location History Analysis"
+        description="Learn how to export your Google location history and analyze it with WhereWasI. Step-by-step guide to visualizing your travels with interactive maps and analytics."
+        ogTitle="How WhereWasI Works - Location History Analysis Guide"
+        ogDescription="Step-by-step guide: Export Google location data, upload to WhereWasI, and explore your travels with interactive maps and detailed analytics."
+      />
+      
       {/* Header */}
       <section className="py-16">
         <div className="container mx-auto px-4 text-center">

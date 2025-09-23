@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { MapPin, Calendar, BarChart3, Users, Shield, Sparkles } from 'lucide-react';
 import { Link } from 'wouter';
 import PublicLayout from '@/components/PublicLayout';
+import SEOHead from '@/components/SEOHead';
 
 export default function LandingPage() {
   const features = [
@@ -40,6 +41,13 @@ export default function LandingPage() {
 
   return (
     <PublicLayout>
+      <SEOHead 
+        title="WhereWasI? - Visualize Your Google Location History"
+        description="Analyze and visualize your Google location history with interactive maps, travel analytics, and AI recommendations. Discover patterns in your travels and answer questions about your past journeys."
+        ogTitle="WhereWasI - Location History Analysis App"
+        ogDescription="Turn your Google location history into meaningful insights with beautiful maps, detailed analytics, and AI-powered recommendations."
+      />
+      
       {/* Hero Section */}
       <section className="py-16 md:py-24">
         <div className="container mx-auto px-4 text-center">

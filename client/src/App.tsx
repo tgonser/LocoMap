@@ -11,9 +11,14 @@ import { Label } from "@/components/ui/label";
 import { LogIn, MapPin, UserPlus, User, Eye, EyeOff, AlertCircle, Shield } from "lucide-react";
 import LocationHistoryApp from "@/components/LocationHistoryApp";
 import AdminPanel from "@/pages/AdminPanel";
+import LandingPage from "@/pages/LandingPage";
+import HowItWorksPage from "@/pages/HowItWorksPage";
+import ContactPage from "@/pages/ContactPage";
+import NotFound from "@/pages/not-found";
 import ThemeToggle from "@/components/ThemeToggle";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { Switch, Route, useLocation } from "wouter";
 
 function PendingApprovalScreen({ user, logout }: { user: any, logout: () => void }) {
   return (
@@ -403,7 +408,33 @@ function AppContent() {
     );
   }
 
-  return user ? <AuthenticatedApp /> : <LoginScreen />;
+  return (
+    <Switch>
+      {/* Public routes - handle both with and without trailing slashes */}
+      <Route path="/" component={LandingPage} />
+      <Route path="/how-it-works" component={HowItWorksPage} />
+      <Route path="/how-it-works/" component={HowItWorksPage} />
+      <Route path="/contact" component={ContactPage} />
+      <Route path="/contact/" component={ContactPage} />
+      
+      {/* Login route */}
+      <Route path="/login" component={LoginScreen} />
+      <Route path="/login/" component={LoginScreen} />
+      
+      {/* 404 page for unknown public routes */}
+      <Route path="/404" component={NotFound} />
+      
+      {/* Authenticated routes - check if user is logged in for app routes */}
+      <Route path="/app/:rest*">
+        {user ? <AuthenticatedApp /> : <LoginScreen />}
+      </Route>
+      
+      {/* Catch all unknown routes - redirect to 404 for public, login for app */}
+      <Route>
+        <NotFound />
+      </Route>
+    </Switch>
+  );
 }
 
 function App() {
