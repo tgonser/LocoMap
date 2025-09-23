@@ -417,9 +417,13 @@ function AppContent() {
       <Route path="/contact" component={ContactPage} />
       <Route path="/contact/" component={ContactPage} />
       
-      {/* Login route */}
-      <Route path="/login" component={LoginScreen} />
-      <Route path="/login/" component={LoginScreen} />
+      {/* Login route - redirect to app if already authenticated */}
+      <Route path="/login">
+        {user ? <AuthenticatedApp /> : <LoginScreen />}
+      </Route>
+      <Route path="/login/">
+        {user ? <AuthenticatedApp /> : <LoginScreen />}
+      </Route>
       
       {/* 404 page for unknown public routes */}
       <Route path="/404" component={NotFound} />
