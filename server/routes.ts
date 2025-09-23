@@ -146,96 +146,123 @@ function parseGoogleTimestamp(timestamp: string | any): Date {
 }
 
 function mergeLocationHistoryFiles(existingData: any, newData: any): any {
-  console.log('🔀 Starting simplified JSON merge process...');
+  console.log('🔀 Starting JSON merge following specific merge algorithm...');
   
-  // Safety check - preserve original data structure
-  if (!existingData || !newData) {
-    console.error('⚠️ Invalid input data for merge');
-    return existingData || newData || {};
-  }
-  
-  // Start with existing data to preserve all fields
-  const result = { ...existingData };
-  
-  // Handle timelineObjects (modern format)
+  // Step 1: Read the new file to make sure it is the right format
   const existingObjects = existingData.timelineObjects || [];
   const newObjects = newData.timelineObjects || [];
   
-  // Handle legacy locations array
-  const existingLocations = existingData.locations || [];
-  const newLocations = newData.locations || [];
+  console.log(`📊 Existing file: ${existingObjects.length} timeline objects`);
+  console.log(`📊 New file: ${newObjects.length} timeline objects`);
   
-  console.log(`📊 Existing: ${existingObjects.length} timeline objects, ${existingLocations.length} locations`);
-  console.log(`📊 New: ${newObjects.length} timeline objects, ${newLocations.length} locations`);
-  
-  // If no existing data, use new data but preserve structure
-  if (existingObjects.length === 0 && existingLocations.length === 0) {
-    console.log('📁 No existing location data - using new data');
-    if (newObjects.length > 0) result.timelineObjects = newObjects;
-    if (newLocations.length > 0) result.locations = newLocations;
-    return result;
+  // Validate format - must have timelineObjects
+  if (!Array.isArray(existingObjects) || !Array.isArray(newObjects)) {
+    console.error('❌ Invalid format - both files must have timelineObjects array');
+    return existingData; // Keep existing if new file is invalid
   }
   
-  // If no new data, keep existing
-  if (newObjects.length === 0 && newLocations.length === 0) {
-    console.log('⚠️ New data is empty - keeping existing data');
-    return result;
+  if (existingObjects.length === 0) {
+    console.log('📁 No existing timeline objects - using new file as-is');
+    return newData;
   }
   
-  // Simple date extraction for basic overlap detection
-  const getBasicDate = (obj: any): Date | null => {
+  if (newObjects.length === 0) {
+    console.log('⚠️ New file has no timeline objects - keeping existing data');
+    return existingData;
+  }
+  
+  // Helper function to extract timestamp from timeline objects
+  const getTimeFromObject = (obj: any): number => {
     try {
-      if (obj.startTime) return new Date(obj.startTime);
-      if (obj.endTime) return new Date(obj.endTime);
-      if (obj.timestampMs) return new Date(parseInt(obj.timestampMs));
-      if (obj.activitySegment?.startTime) return new Date(obj.activitySegment.startTime);
-      if (obj.placeVisit?.duration?.startTimestamp) return new Date(obj.placeVisit.duration.startTimestamp);
-      return null;
-    } catch {
-      return null;
+      // Check activitySegment format
+      if (obj.activitySegment) {
+        const startTime = obj.activitySegment.startTime || obj.activitySegment.endTime;
+        if (startTime) return new Date(startTime).getTime();
+      }
+      
+      // Check placeVisit format
+      if (obj.placeVisit && obj.placeVisit.duration) {
+        const startTime = obj.placeVisit.duration.startTimestamp || obj.placeVisit.duration.endTimestamp;
+        if (startTime) return new Date(startTime).getTime();
+      }
+      
+      // Check timelinePath format
+      if (obj.timelinePath && obj.startTime) {
+        return new Date(obj.startTime).getTime();
+      }
+      
+      // Check top-level timestamps
+      if (obj.startTime) return new Date(obj.startTime).getTime();
+      if (obj.endTime) return new Date(obj.endTime).getTime();
+      if (obj.timestampMs) return parseInt(obj.timestampMs);
+      
+      return 0;
+    } catch (error) {
+      return 0;
     }
   };
   
-  // Merge timelineObjects if present
-  if (newObjects.length > 0) {
-    const allTimelineObjects = [...existingObjects, ...newObjects];
-    
-    // Simple sort by date where possible
-    allTimelineObjects.sort((a, b) => {
-      const dateA = getBasicDate(a);
-      const dateB = getBasicDate(b);
-      if (!dateA || !dateB) return 0;
-      return dateA.getTime() - dateB.getTime();
-    });
-    
-    result.timelineObjects = allTimelineObjects;
-    console.log(`✅ Merged timelineObjects: ${allTimelineObjects.length} total objects`);
+  // Step 2: Find the last date in the existing file, and compare to the first date in the new file
+  const existingTimes = existingObjects.map(getTimeFromObject).filter(t => t > 0);
+  const newTimes = newObjects.map(getTimeFromObject).filter(t => t > 0);
+  
+  if (existingTimes.length === 0 || newTimes.length === 0) {
+    console.log('⚠️ Could not extract dates for comparison - using simple concatenation');
+    return {
+      timelineObjects: [...existingObjects, ...newObjects]
+    };
   }
   
-  // Merge locations if present
-  if (newLocations.length > 0) {
-    const allLocations = [...existingLocations, ...newLocations];
-    
-    // Sort by timestamp if available
-    allLocations.sort((a, b) => {
-      const timestampA = a.timestampMs ? parseInt(a.timestampMs) : 0;
-      const timestampB = b.timestampMs ? parseInt(b.timestampMs) : 0;
-      return timestampA - timestampB;
-    });
-    
-    result.locations = allLocations;
-    console.log(`✅ Merged locations: ${allLocations.length} total locations`);
-  }
+  const lastExistingTime = Math.max(...existingTimes);
+  const firstNewTime = Math.min(...newTimes);
   
-  // Preserve any other fields from newData that don't conflict
-  Object.keys(newData).forEach(key => {
-    if (key !== 'timelineObjects' && key !== 'locations' && !result.hasOwnProperty(key)) {
-      result[key] = newData[key];
-    }
-  });
+  console.log(`📅 Last existing date: ${new Date(lastExistingTime).toISOString()}`);
+  console.log(`📅 First new date: ${new Date(firstNewTime).toISOString()}`);
   
-  console.log(`✅ Safe merge complete - preserved data structure and all fields`);
-  return result;
+  // Categorize existing objects by type (keep in original order)
+  const existingVisits = existingObjects.filter(obj => obj.placeVisit);
+  const existingActivities = existingObjects.filter(obj => obj.activitySegment);  
+  const existingTimelinePaths = existingObjects.filter(obj => obj.timelinePath);
+  
+  // Filter new objects to only those that come AFTER the last existing time
+  const newVisits = newObjects.filter(obj => 
+    obj.placeVisit && getTimeFromObject(obj) > lastExistingTime
+  );
+  const newActivities = newObjects.filter(obj => 
+    obj.activitySegment && getTimeFromObject(obj) > lastExistingTime
+  );
+  const newTimelinePaths = newObjects.filter(obj => 
+    obj.timelinePath && getTimeFromObject(obj) > lastExistingTime
+  );
+  
+  console.log(`📊 Existing: ${existingVisits.length} visits, ${existingActivities.length} activities, ${existingTimelinePaths.length} timelinePaths`);
+  console.log(`📊 New (after last existing): ${newVisits.length} visits, ${newActivities.length} activities, ${newTimelinePaths.length} timelinePaths`);
+  
+  // Step 3: Attach the visits and activities segments where they go in timesequence after the last one in the old file
+  // Step 4: Attach the timelinepath objects after the ones in the old file
+  
+  // Sort new objects by time before appending
+  const sortedNewVisits = newVisits.sort((a, b) => getTimeFromObject(a) - getTimeFromObject(b));
+  const sortedNewActivities = newActivities.sort((a, b) => getTimeFromObject(a) - getTimeFromObject(b));
+  const sortedNewTimelinePaths = newTimelinePaths.sort((a, b) => getTimeFromObject(a) - getTimeFromObject(b));
+  
+  // Append new objects AFTER existing ones (preserve existing order, append new in chronological order)
+  const allObjects = [
+    ...existingObjects, // Keep all existing objects in original order
+    ...sortedNewVisits,     // Append new visits after existing
+    ...sortedNewActivities,  // Append new activities after existing  
+    ...sortedNewTimelinePaths // Append new timelinePaths after existing
+  ];
+  
+  // Step 5: Create a new json file we can parse
+  const mergedFile = {
+    timelineObjects: allObjects
+  };
+  
+  console.log(`✅ Merge complete: ${allObjects.length} total timeline objects in chronological order`);
+  console.log(`📈 Date range: ${new Date(Math.min(...allObjects.map(getTimeFromObject).filter(t => t > 0))).toISOString()} to ${new Date(Math.max(...allObjects.map(getTimeFromObject).filter(t => t > 0))).toISOString()}`);
+  
+  return mergedFile;
 }
 
 // Google Places API helper for verified business information
