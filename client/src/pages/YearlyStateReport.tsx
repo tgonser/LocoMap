@@ -12,6 +12,10 @@ import { apiRequest } from "@/lib/queryClient";
 interface YearlyReportData {
   year: number;
   totalDays: number;
+  dateRange?: {
+    start: string;
+    end: string;
+  };
   stateCountryData: Array<{
     location: string;
     days: number;
@@ -60,6 +64,25 @@ export default function YearlyStateReport() {
     setSelectedYear(year);
   };
 
+  // Helper function to format date range
+  const formatDateRange = (reportData: YearlyReportData) => {
+    if (reportData.dateRange) {
+      const startDate = new Date(reportData.dateRange.start).toLocaleDateString('en-US', {
+        month: 'numeric',
+        day: 'numeric', 
+        year: 'numeric'
+      });
+      const endDate = new Date(reportData.dateRange.end).toLocaleDateString('en-US', {
+        month: 'numeric',
+        day: 'numeric',
+        year: 'numeric'
+      });
+      return `${startDate} - ${endDate}`;
+    }
+    // Fallback to full year if no specific date range
+    return `1/1/${reportData.year} - 12/31/${reportData.year}`;
+  };
+
   const downloadPDF = () => {
     if (!reportData) return;
 
@@ -78,7 +101,13 @@ export default function YearlyStateReport() {
     doc.setFontSize(12);
     doc.setFont("helvetica", 'normal');
     doc.text('Yearly State & Country Breakdown', margin, yPosition);
-    yPosition += 20;
+    yPosition += 10;
+    
+    // Date Range
+    doc.setFontSize(11);
+    doc.setFont("helvetica", 'normal');
+    doc.text(`Dates: ${formatDateRange(reportData)}`, margin, yPosition);
+    yPosition += 15;
 
     // Summary Statistics
     doc.setFontSize(14);
@@ -287,7 +316,8 @@ export default function YearlyStateReport() {
                 Time Spent by Location ({reportData.year})
               </CardTitle>
               <CardDescription>
-                Days spent in each state/country with percentage breakdown
+                Days spent in each state/country with percentage breakdown<br/>
+                <span className="text-sm font-medium">Dates: {formatDateRange(reportData)}</span>
               </CardDescription>
             </CardHeader>
             <CardContent>
