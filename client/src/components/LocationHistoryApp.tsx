@@ -25,6 +25,8 @@ type ViewMode = 'files' | 'map' | 'analytics' | 'yearly-report';
 export default function LocationHistoryApp() {
   const [locationData, setLocationData] = useState<LocationData[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
+  // State for timeline click-to-map navigation
+  const [selectedPoint, setSelectedPoint] = useState<{ lat: number; lng: number } | null>(null);
   // View mode state with localStorage persistence
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     try {
@@ -413,6 +415,7 @@ export default function LocationHistoryApp() {
                       accuracy: loc.accuracy
                     }))}
                     selectedDate={selectedDate}
+                    onEventClick={(lat, lng) => setSelectedPoint({ lat, lng })}
                   />
                 </div>
 
@@ -434,6 +437,7 @@ export default function LocationHistoryApp() {
                       availableDates={availableDates}
                       locationCountByDate={locationCountByDate}
                       className="h-full"
+                      selectedPoint={selectedPoint}
                     />
                   ) : (
                     <Card className="h-full flex items-center justify-center">
