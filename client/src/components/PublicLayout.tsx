@@ -14,6 +14,7 @@ export default function PublicLayout({ children }: PublicLayoutProps) {
 
   const navigation = [
     { name: 'How it works', href: '/how-it-works' },
+    { name: 'Technology', href: '/technology' },
     { name: 'Contact Us', href: '/contact' },
   ];
 

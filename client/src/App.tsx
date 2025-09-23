@@ -14,6 +14,7 @@ import AdminPanel from "@/pages/AdminPanel";
 import LandingPage from "@/pages/LandingPage";
 import HowItWorksPage from "@/pages/HowItWorksPage";
 import ContactPage from "@/pages/ContactPage";
+import TechnologyPage from "@/pages/TechnologyPage";
 import NotFound from "@/pages/not-found";
 import ThemeToggle from "@/components/ThemeToggle";
 import { useState } from "react";
@@ -423,6 +424,8 @@ function AppContent() {
       <Route path="/how-it-works/" component={HowItWorksPage} />
       <Route path="/contact" component={ContactPage} />
       <Route path="/contact/" component={ContactPage} />
+      <Route path="/technology" component={TechnologyPage} />
+      <Route path="/technology/" component={TechnologyPage} />
       
       {/* Login route - redirect to app if already authenticated */}
       <Route path="/login">
