@@ -5,6 +5,13 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { MapPin, Building, Globe2, Download, Sparkles, Loader2, ChevronDown, ChevronUp, Eye, ExternalLink } from 'lucide-react';
+
+// Import category icons
+import artHistoricalIcon from '@assets/art_historical_1758648026601.png';
+import famousPeopleIcon from '@assets/famous_people_1758648026601.png';
+import otherIcon from '@assets/other_1758648026602.png';
+import outdoorIcon from '@assets/outdoor_1758648026603.png';
+import restaurantIcon from '@assets/restaurant_1758648026603.png';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 
@@ -57,6 +64,27 @@ export default function LocationSummary({
   const [error, setError] = useState<string | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   const { toast } = useToast();
+
+  // Function to get category icon
+  const getCategoryIcon = (category?: string): string => {
+    switch (category?.toLowerCase()) {
+      case 'restaurant':
+        return restaurantIcon;
+      case 'historical':
+        return artHistoricalIcon;
+      case 'cultural':
+      case 'famous_people':
+        return famousPeopleIcon;
+      case 'outdoor':
+        return outdoorIcon;
+      case 'accommodation':
+      case 'event':
+      case 'shopping':
+      case 'entertainment':
+      default:
+        return otherIcon;
+    }
+  };
 
   // Helper functions for localStorage persistence
   const loadInterestingPlacesFromStorage = (): { places: InterestingPlace[]; tokenUsage: TokenUsage | null } => {
@@ -328,9 +356,16 @@ export default function LocationSummary({
                   data-testid={`card-interesting-place-${index}`}
                 >
                   <div className="space-y-2">
-                    <h3 className="font-medium text-sm" data-testid={`text-place-name-${index}`}>
-                      {index + 1}. {place.name}
-                    </h3>
+                    <div className="flex items-center gap-2">
+                      <img 
+                        src={getCategoryIcon(place.category)} 
+                        alt={`${place.category || 'general'} icon`}
+                        className="w-6 h-6 flex-shrink-0"
+                      />
+                      <h3 className="font-medium text-sm" data-testid={`text-place-name-${index}`}>
+                        {index + 1}. {place.name}
+                      </h3>
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       Near: {place.location}
                     </p>
