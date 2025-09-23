@@ -133,6 +133,111 @@ function getOpenAIClient() {
   });
 }
 
+// JSON Location History merging utility functions
+function parseGoogleTimestamp(timestamp: string | any): Date {
+  if (typeof timestamp === 'string') {
+    return new Date(timestamp);
+  }
+  // Handle GoogleTimestamp format with timestampMs
+  if (timestamp && timestamp.timestampMs) {
+    return new Date(parseInt(timestamp.timestampMs));
+  }
+  return new Date(timestamp);
+}
+
+function mergeLocationHistoryFiles(existingData: any, newData: any): any {
+  console.log('🔀 Starting simplified JSON merge process...');
+  
+  // Safety check - preserve original data structure
+  if (!existingData || !newData) {
+    console.error('⚠️ Invalid input data for merge');
+    return existingData || newData || {};
+  }
+  
+  // Start with existing data to preserve all fields
+  const result = { ...existingData };
+  
+  // Handle timelineObjects (modern format)
+  const existingObjects = existingData.timelineObjects || [];
+  const newObjects = newData.timelineObjects || [];
+  
+  // Handle legacy locations array
+  const existingLocations = existingData.locations || [];
+  const newLocations = newData.locations || [];
+  
+  console.log(`📊 Existing: ${existingObjects.length} timeline objects, ${existingLocations.length} locations`);
+  console.log(`📊 New: ${newObjects.length} timeline objects, ${newLocations.length} locations`);
+  
+  // If no existing data, use new data but preserve structure
+  if (existingObjects.length === 0 && existingLocations.length === 0) {
+    console.log('📁 No existing location data - using new data');
+    if (newObjects.length > 0) result.timelineObjects = newObjects;
+    if (newLocations.length > 0) result.locations = newLocations;
+    return result;
+  }
+  
+  // If no new data, keep existing
+  if (newObjects.length === 0 && newLocations.length === 0) {
+    console.log('⚠️ New data is empty - keeping existing data');
+    return result;
+  }
+  
+  // Simple date extraction for basic overlap detection
+  const getBasicDate = (obj: any): Date | null => {
+    try {
+      if (obj.startTime) return new Date(obj.startTime);
+      if (obj.endTime) return new Date(obj.endTime);
+      if (obj.timestampMs) return new Date(parseInt(obj.timestampMs));
+      if (obj.activitySegment?.startTime) return new Date(obj.activitySegment.startTime);
+      if (obj.placeVisit?.duration?.startTimestamp) return new Date(obj.placeVisit.duration.startTimestamp);
+      return null;
+    } catch {
+      return null;
+    }
+  };
+  
+  // Merge timelineObjects if present
+  if (newObjects.length > 0) {
+    const allTimelineObjects = [...existingObjects, ...newObjects];
+    
+    // Simple sort by date where possible
+    allTimelineObjects.sort((a, b) => {
+      const dateA = getBasicDate(a);
+      const dateB = getBasicDate(b);
+      if (!dateA || !dateB) return 0;
+      return dateA.getTime() - dateB.getTime();
+    });
+    
+    result.timelineObjects = allTimelineObjects;
+    console.log(`✅ Merged timelineObjects: ${allTimelineObjects.length} total objects`);
+  }
+  
+  // Merge locations if present
+  if (newLocations.length > 0) {
+    const allLocations = [...existingLocations, ...newLocations];
+    
+    // Sort by timestamp if available
+    allLocations.sort((a, b) => {
+      const timestampA = a.timestampMs ? parseInt(a.timestampMs) : 0;
+      const timestampB = b.timestampMs ? parseInt(b.timestampMs) : 0;
+      return timestampA - timestampB;
+    });
+    
+    result.locations = allLocations;
+    console.log(`✅ Merged locations: ${allLocations.length} total locations`);
+  }
+  
+  // Preserve any other fields from newData that don't conflict
+  Object.keys(newData).forEach(key => {
+    if (key !== 'timelineObjects' && key !== 'locations' && !result.hasOwnProperty(key)) {
+      result[key] = newData[key];
+    }
+  });
+  
+  console.log(`✅ Safe merge complete - preserved data structure and all fields`);
+  return result;
+}
+
 // Google Places API helper for verified business information
 async function searchGooglePlace(placeName: string, location: string): Promise<{
   website?: string;
@@ -1494,6 +1599,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const userId = claims.sub;
       const filePath = req.file.path; // Now using disk storage, we have a file path
+      const uploadMode = req.body.mode || 'replace'; // Get merge/replace mode from form data
       
       // Read a small portion of the file for validation and metadata extraction
       let fileContent: string;
@@ -1615,22 +1721,117 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Create dataset record - UNPROCESSED with metadata
-      const dataset = await storage.createLocationDataset({
-        userId,
-        filename: req.file.originalname || 'location-history.json',
-        fileSize: req.file.size || Buffer.byteLength(JSON.stringify(jsonData)),
-        totalPoints: metadata.estimatedPoints,
-        deduplicatedPoints: 0, // Will be set during processing
-      });
-
-      // Store file path instead of raw JSON to avoid database timeouts
+      // Handle merge vs replace logic
+      let dataset: any;
+      let finalJsonData = jsonData;
       
-      if (fileSizeMB > 10) {
-        // For large files, keep the uploaded file and store its path
-        console.log(`📁 Large file (${fileSizeMB.toFixed(2)}MB) - storing file path instead of raw content`);
+      if (uploadMode === 'merge') {
+        console.log('🔀 Merge mode selected - looking for existing dataset to merge with...');
         
-        // Move the uploaded file to persistent location  
+        // Get user's existing datasets to merge with (use the most recent one)
+        const existingDatasets = await storage.getUserLocationDatasets(userId);
+        
+        if (existingDatasets.length === 0) {
+          return res.status(400).json({ 
+            error: "No existing dataset found to merge with. Please upload your first file using 'Replace' mode." 
+          });
+        }
+        
+        const targetDataset = existingDatasets[0]; // Use most recent dataset
+        dataset = targetDataset;
+        
+        console.log(`🎯 Target dataset for merge: ${targetDataset.id} (${targetDataset.filename})`);
+        
+        // Load existing raw data
+        const existingRawContent = await storage.getRawFile(targetDataset.id, userId);
+        if (!existingRawContent) {
+          return res.status(400).json({ 
+            error: "Could not load existing dataset content for merging" 
+          });
+        }
+        
+        // Parse existing data (handle FILE: prefix for large files)
+        let existingJsonData: any;
+        if (existingRawContent.startsWith('FILE:')) {
+          const existingFilePath = existingRawContent.substring(5);
+          try {
+            const existingFileContent = await fs.promises.readFile(existingFilePath, 'utf8');
+            existingJsonData = JSON.parse(existingFileContent);
+          } catch (error) {
+            return res.status(500).json({ 
+              error: "Failed to read existing dataset file for merging" 
+            });
+          }
+        } else {
+          try {
+            existingJsonData = JSON.parse(existingRawContent);
+          } catch (error) {
+            return res.status(500).json({ 
+              error: "Failed to parse existing dataset content for merging" 
+            });
+          }
+        }
+        
+        // Perform the merge
+        finalJsonData = mergeLocationHistoryFiles(existingJsonData, jsonData);
+        
+        // Recalculate metadata for the merged result
+        if (fileSizeMB > 10) {
+          // For large merged files, create temporary file to scan
+          const tempMergedPath = filePath + '_merged';
+          await fs.promises.writeFile(tempMergedPath, JSON.stringify(finalJsonData));
+          try {
+            const scanResult = await scanDateRangeFromFile(tempMergedPath);
+            metadata = {
+              totalElements: finalJsonData.timelineObjects?.length || 0,
+              estimatedPoints: metadata.estimatedPoints * 2, // Rough estimate for merged data
+              hasTimelinePath: true,
+              dateRange: {
+                startDate: scanResult.startDate,
+                endDate: scanResult.endDate
+              },
+              dataQuality: { goodProbability: metadata.estimatedPoints * 2 },
+              activityBreakdown: {}
+            };
+          } catch (error) {
+            console.error('Failed to scan merged file:', error);
+            // Fallback to basic metadata
+            metadata = {
+              totalElements: finalJsonData.timelineObjects?.length || 0,
+              estimatedPoints: metadata.estimatedPoints * 2,
+              hasTimelinePath: true,
+              dateRange: metadata.dateRange,
+              dataQuality: metadata.dataQuality,
+              activityBreakdown: metadata.activityBreakdown
+            };
+          }
+          await fs.promises.unlink(tempMergedPath).catch(() => {}); // Clean up temp file
+        } else {
+          // Re-extract metadata from merged small file
+          metadata = await extractQuickMetadata(finalJsonData);
+        }
+        
+        console.log(`✅ Merge complete: ${finalJsonData.timelineObjects?.length || 0} total timeline objects`);
+        
+      } else {
+        // Replace mode - create new dataset as before
+        console.log('🔄 Replace mode selected - creating new dataset...');
+        dataset = await storage.createLocationDataset({
+          userId,
+          filename: req.file.originalname || 'location-history.json',
+          fileSize: req.file.size || Buffer.byteLength(JSON.stringify(jsonData)),
+          totalPoints: metadata.estimatedPoints,
+          deduplicatedPoints: 0, // Will be set during processing
+        });
+      }
+
+      // Store final data (original or merged) to file system or database
+      const finalFileSizeMB = Buffer.byteLength(JSON.stringify(finalJsonData)) / (1024 * 1024);
+      
+      if (finalFileSizeMB > 10) {
+        // For large files, store to disk with file path reference
+        console.log(`📁 Large file (${finalFileSizeMB.toFixed(2)}MB) - storing file path instead of raw content`);
+        
         const fs = await import('fs/promises');
         const path = await import('path');
         
@@ -1638,46 +1839,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const uploadsDir = path.join(process.cwd(), 'uploads');
         await fs.mkdir(uploadsDir, { recursive: true });
         
-        // Ensure multer temp directory exists too
-        const tempDir = path.dirname(req.file.path);
-        await fs.mkdir(tempDir, { recursive: true });
-        
         const fileName = `${dataset.id}.json`;
         const persistentPath = path.join(uploadsDir, fileName);
         
-        // Copy from temp location to persistent location (handles cross-device scenarios)
-        await fs.copyFile(req.file.path, persistentPath);
-        // Clean up temporary file
-        await fs.unlink(req.file.path);
+        // Write final data (merged or original) to persistent location
+        await fs.writeFile(persistentPath, JSON.stringify(finalJsonData));
         
-        // Store only the file path in database
+        // Clean up temporary uploaded file
+        await fs.unlink(req.file.path).catch(() => {});
+        
+        // Store file path reference in database
         await storage.storeRawFile(dataset.id, userId, `FILE:${persistentPath}`);
         
-        console.log(`✅ File stored at: ${persistentPath}`);
+        console.log(`✅ Final data stored at: ${persistentPath}`);
       } else {
-        // For smaller files, store in database as before
-        const jsonString = JSON.stringify(jsonData);
-        console.log(`💾 Small file (${fileSizeMB.toFixed(2)}MB) - storing in database`);
+        // For smaller files, store JSON directly in database
+        const jsonString = JSON.stringify(finalJsonData);
+        console.log(`💾 Small file (${finalFileSizeMB.toFixed(2)}MB) - storing in database`);
         await storage.storeRawFile(dataset.id, userId, jsonString);
+        
+        // Clean up temporary uploaded file
+        await fs.promises.unlink(req.file.path).catch(() => {});
       }
 
       res.json({
         success: true,
-        message: `File uploaded successfully: ${req.file.originalname}`,
+        message: uploadMode === 'merge' 
+          ? `File merged successfully with existing data: ${req.file.originalname}` 
+          : `File uploaded successfully: ${req.file.originalname}`,
         datasetId: dataset.id,
         status: 'uploaded_not_processed',
+        mode: uploadMode,
         metadata: {
           filename: req.file.originalname,
-          fileSize: Math.round((req.file.size || Buffer.byteLength(JSON.stringify(jsonData))) / (1024 * 1024)) + 'MB',
-          totalElements: metadata.totalElements,
-          estimatedPoints: metadata.estimatedPoints,
-          dateRange: metadata.dateRange,
-          dataQuality: metadata.dataQuality || { goodProbability: 0 },
-          activityBreakdown: metadata.activityBreakdown || {}
+          fileSize: Math.round(finalFileSizeMB) + 'MB',
+          totalElements: metadata?.totalElements || 0,
+          estimatedPoints: metadata?.estimatedPoints || 0,
+          dateRange: metadata?.dateRange || { startDate: '', endDate: '' },
+          dataQuality: metadata?.dataQuality || { goodProbability: 0 },
+          activityBreakdown: metadata?.activityBreakdown || {}
         }
       });
 
-      console.log(`📁 File uploaded (metadata extracted): ${req.file.originalname} - ${metadata.estimatedPoints} estimated points, quality: ${metadata.dataQuality?.goodProbability || 'unknown'}/${metadata.totalElements} good probability`);
+      console.log(`📁 File uploaded (metadata extracted): ${req.file.originalname} - ${metadata?.estimatedPoints || 0} estimated points, quality: ${metadata?.dataQuality?.goodProbability || 'unknown'}/${metadata?.totalElements || 0} good probability`);
 
     } catch (error) {
       console.error("Error processing location history:", error);
