@@ -1,0 +1,45 @@
+Main landing page for the app called WhereWasI?
+
+WhereWasI?
+
+"Where did we go last November?"
+
+"How many days was I in Oregon in 2024?"
+
+If you ever ask yourself these questions, this is your app!
+
+WhereWasI helps you visualize your Google location history. If you are curious about where you've been or what you were doing yesterday, last month, or last year, this application will help you! 
+
+You can setup an account for free, but until we officially launch only approved users will have access.
+
+Page links:
+Login     |     How it works     |       Contact Us         |
+
+
+
+------------------------------------------------------
+
+How it works
+
+On this page, describe how the application works. How the user obtains their google location history file from their phone, and how they upload it into the service. Then provide a brief overview of all the ways the data can be visualized.
+
+
+
+Page links:
+Login     |     How it works     |       Contact Us         |
+
+------------------------------------------------------
+
+Contact Us
+
+For more information, please contact us
+
+Name: ___________________
+Email:  ___________________
+Comment:  _________________
+
+
+Page links:
+Login     |     How it works     |       Contact Us         |
+
+------------------------------------------------------
