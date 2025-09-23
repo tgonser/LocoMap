@@ -21,6 +21,7 @@ interface InterestingPlace {
   name: string;
   description: string;
   location: string;
+  category?: string;
   website: string;
   address?: string;
   rating?: number;

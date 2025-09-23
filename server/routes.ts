@@ -3444,6 +3444,7 @@ For each place, provide:
 - **name**: The exact business name, landmark name, or event name (no generic descriptions)
 - **description**: One sentence about what makes it special and what you can do there (be specific and actionable)
 - **location**: The specific city or general area from the visited locations
+- **category**: Choose ONE from: "restaurant", "accommodation", "historical", "cultural", "outdoor", "event", "shopping", "entertainment"
 
 Return your response as a JSON object with this exact structure:
 {
@@ -3451,7 +3452,8 @@ Return your response as a JSON object with this exact structure:
     {
       "name": "Exact Place Name or Business Name",
       "description": "One sentence about what makes this place special and what you can do there",
-      "location": "City/Location Name"
+      "location": "City/Location Name",
+      "category": "restaurant"
     }
   ]
 }`;
