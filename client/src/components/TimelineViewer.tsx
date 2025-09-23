@@ -76,6 +76,9 @@ export default function TimelineViewer({ events, selectedDate, onEventClick }: T
             year: 'numeric'
           })}
         </p>
+        <p className="text-xs text-muted-foreground/70 mt-1">
+          Click items to locate on map
+        </p>
       </CardHeader>
       
       <CardContent>
