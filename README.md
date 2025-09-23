@@ -145,6 +145,100 @@ Open your browser to `http://localhost:5000`
 - **Database optimization**: Spatial indexing enabled for fast queries
 - **Caching system**: Yearly reports are cached for instant loading
 
+## Admin Approval System
+
+🔐 **Enterprise-ready user management with admin approval workflow**
+
+The application includes a comprehensive admin approval system for multi-user deployments. New users register but cannot access the application until approved by an administrator.
+
+### User Registration Flow
+
+1. **User registers** - Creates account with username/password
+2. **Pending approval** - Account status set to "pending"
+3. **Admin reviews** - Administrator approves or rejects the request
+4. **Access granted/denied** - User can access app only after approval
+
+### Setting Up the First Admin
+
+**Option 1: Direct Database Setup**
+```sql
+-- Connect to your PostgreSQL database
+UPDATE users 
+SET role = 'admin', is_approved = true, approval_status = 'approved' 
+WHERE username = 'your_username';
+```
+
+**Option 2: Environment Variable (Development)**
+```bash
+# Add to your .env file for development/testing
+AUTH_BYPASS=true
+```
+
+### Admin Dashboard Features
+
+#### User Management
+- **View pending users** - See all accounts awaiting approval
+- **Approve/reject accounts** - Grant or deny access with optional reason
+- **User statistics** - Monitor total/pending/approved/rejected counts
+- **Role management** - Assign admin privileges to trusted users
+
+#### Admin API Endpoints
+
+**Get Pending Users:**
+```http
+GET /api/admin/pending-users
+Authorization: Bearer {admin_jwt_token}
+```
+
+**Approve/Reject User:**
+```http
+PATCH /api/admin/users/{userId}/approval
+Content-Type: application/json
+Authorization: Bearer {admin_jwt_token}
+
+{
+  "action": "approve", // or "reject"
+  "reason": "Optional rejection reason"
+}
+```
+
+**Admin Statistics:**
+```http
+GET /api/admin/stats
+Authorization: Bearer {admin_jwt_token}
+```
+
+### Admin Workflow Example
+
+1. **New user registers**: `john_doe` creates account
+2. **Admin notification**: Check `/api/admin/pending-users`
+3. **Review request**: Verify user legitimacy
+4. **Take action**: Approve with reason "Verified employee" or reject
+5. **User notification**: John receives approval/rejection status
+
+### Security Features
+
+- **Role-based access control** - Only admins can approve users
+- **JWT token validation** - Secure API authentication
+- **Approval middleware** - Blocks unapproved users from app features
+- **Audit trail** - Track who approved/rejected users and when
+- **Rejection reasons** - Document why access was denied
+
+### Multi-Admin Setup
+
+**Promote existing users to admin:**
+```sql
+UPDATE users 
+SET role = 'admin' 
+WHERE username IN ('admin1', 'admin2');
+```
+
+**Admin privileges include:**
+- Approve/reject user registrations
+- View user management dashboard
+- Access admin-only API endpoints
+- Promote other users to admin status
+
 ## Data Privacy
 
 🔒 **Your location data never leaves your machine**
