@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { CalendarDays, MapPin, Globe, Users, BarChart3, Calendar, Play, Clock, RotateCcw } from "lucide-react";
+import { CalendarDays, MapPin, Globe, Users, BarChart3, Calendar, Play, Clock, RotateCcw, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
@@ -349,6 +349,48 @@ export default function AnalyticsPanel({
     URL.revokeObjectURL(url);
   };
 
+  const exportCityJumpsCSV = (cityJumpsData: any) => {
+    if (!cityJumpsData || cityJumpsData.totalJumps === 0) return;
+    
+    // Create CSV header
+    const headers = ['From City', 'From State/Country', 'To City', 'To State/Country', 'Date', 'Mode', 'Distance (miles)'];
+    
+    // Create CSV rows
+    const rows = cityJumpsData.cityJumps
+      .filter((jump: any) => jump.fromCity !== jump.toCity)
+      .map((jump: any) => [
+        jump.fromCity,
+        jump.fromState || jump.fromCountry,
+        jump.toCity, 
+        jump.toState || jump.toCountry,
+        new Date(jump.date).toLocaleDateString(),
+        jump.mode,
+        jump.distance.toLocaleString()
+      ]);
+    
+    // Add total row
+    rows.push(['', '', '', '', '', 'TOTAL DISTANCE:', cityJumpsData.totalTravelDistance.toLocaleString()]);
+    
+    // Convert to CSV format
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(field => `"${field}"`).join(','))
+      .join('\n');
+    
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `city-jumps-${startDate}-to-${endDate}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    
+    toast({
+      title: "CSV Exported!",
+      description: `City jumps data exported to ${a.download}`,
+    });
+  };
+
   // Compute content based on current state
   let content;
 
@@ -693,10 +735,23 @@ export default function AnalyticsPanel({
         {/* City Jumps */}
         <Card data-testid="card-city-jumps">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              City Jumps
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                City Jumps
+              </CardTitle>
+              {analytics.cityJumps.totalJumps > 0 && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => exportCityJumpsCSV(analytics.cityJumps)}
+                  data-testid="button-export-city-jumps"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Export CSV
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="max-h-96 overflow-y-auto">
             {analytics.cityJumps.totalJumps > 0 ? (
@@ -768,7 +823,6 @@ export default function AnalyticsPanel({
           }}
           analyticsComplete={true}
           citiesData={analytics.cities} // Restore cities data for interesting places functionality
-          onExport={exportData}
         />
       </div>
     );

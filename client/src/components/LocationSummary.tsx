@@ -46,7 +46,6 @@ interface TokenUsage {
 interface LocationSummaryProps {
   locations: LocationData[];
   dateRange: { start: Date; end: Date };
-  onExport?: () => void;
   analyticsComplete?: boolean;
   citiesData?: Record<string, number>; // Cities from analytics data
 }
@@ -54,7 +53,6 @@ interface LocationSummaryProps {
 export default function LocationSummary({ 
   locations, 
   dateRange, 
-  onExport, 
   analyticsComplete = false, 
   citiesData = {} 
 }: LocationSummaryProps) {
@@ -244,12 +242,6 @@ export default function LocationSummary({
                     Show Me
                   </>
                 )}
-              </Button>
-            )}
-            {onExport && (
-              <Button variant="outline" size="sm" onClick={onExport} data-testid="button-export">
-                <Download className="w-4 h-4 mr-2" />
-                Export
               </Button>
             )}
           </div>
