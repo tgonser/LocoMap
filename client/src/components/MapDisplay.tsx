@@ -13,6 +13,23 @@ Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
+// Create a special highlight marker icon
+const highlightIcon = new Icon({
+  iconUrl: 'data:image/svg+xml;base64,' + btoa(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 25 41" fill="none">
+      <path d="M12.5 0C5.6 0 0 5.6 0 12.5c0 7.8 12.5 28.5 12.5 28.5s12.5-20.7 12.5-28.5C25 5.6 19.4 0 12.5 0z" fill="#ff4444" stroke="#fff" stroke-width="2"/>
+      <circle cx="12.5" cy="12.5" r="6" fill="#fff"/>
+      <circle cx="12.5" cy="12.5" r="3" fill="#ff4444"/>
+    </svg>
+  `),
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  shadowSize: [41, 41],
+  shadowAnchor: [12, 41]
+});
+
 interface LocationPoint {
   lat: number;
   lng: number;
@@ -25,9 +42,10 @@ interface LocationPoint {
 interface MapViewControllerProps {
   locations: LocationPoint[];
   selectedDate?: Date;
+  selectedPoint?: { lat: number; lng: number } | null;
 }
 
-function MapViewController({ locations, selectedDate }: MapViewControllerProps) {
+function MapViewController({ locations, selectedDate, selectedPoint }: MapViewControllerProps) {
   const map = useMap();
 
   useEffect(() => {
@@ -68,6 +86,16 @@ function MapViewController({ locations, selectedDate }: MapViewControllerProps) 
 
   }, [map, locations, selectedDate]);
 
+  // Handle individual point selection with smooth animation
+  useEffect(() => {
+    if (selectedPoint) {
+      map.flyTo([selectedPoint.lat, selectedPoint.lng], 18, {
+        animate: true,
+        duration: 1.0
+      });
+    }
+  }, [selectedPoint, map]);
+
   return null; // This component doesn't render anything
 }
 
@@ -80,6 +108,7 @@ interface MapDisplayProps {
   center?: [number, number];
   zoom?: number;
   className?: string;
+  selectedPoint?: { lat: number; lng: number } | null;
 }
 
 export default function MapDisplay({ 
@@ -90,7 +119,8 @@ export default function MapDisplay({
   locationCountByDate = {},
   center = [37.7749, -122.4194], // San Francisco default
   zoom = 13,
-  className 
+  className,
+  selectedPoint 
 }: MapDisplayProps) {
   // Filter locations by selected date if provided
   const filteredLocations = selectedDate 
@@ -290,7 +320,25 @@ export default function MapDisplay({
           <MapViewController 
             locations={locations} 
             selectedDate={selectedDate}
+            selectedPoint={selectedPoint}
           />
+          
+          {/* Highlight marker for clicked timeline points */}
+          {selectedPoint && (
+            <Marker 
+              position={[selectedPoint.lat, selectedPoint.lng]}
+              icon={highlightIcon}
+              data-testid="highlight-marker"
+            >
+              <Popup>
+                <div className="text-sm">
+                  <strong>Selected Point</strong><br/>
+                  Lat: {selectedPoint.lat.toFixed(6)}<br/>
+                  Lng: {selectedPoint.lng.toFixed(6)}
+                </div>
+              </Popup>
+            </Marker>
+          )}
           
           {/* No markers - just clean lines as requested */}
         </MapContainer>
