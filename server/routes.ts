@@ -2494,10 +2494,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         'Expires': '0'
       });
 
+      // Calculate actual date range from the data
+      let dateRange;
+      if (dailyPresence.length > 0) {
+        const dates = dailyPresence.map(day => day.date).sort();
+        dateRange = {
+          start: dates[0],
+          end: dates[dates.length - 1]
+        };
+      } else {
+        // Fallback to full year if no data
+        dateRange = {
+          start: `${year}-01-01`,
+          end: `${year}-12-31`
+        };
+      }
+
       // Prepare report data for response and caching
       const reportData = {
         year,
         totalDays: dailyPresence.length,
+        dateRange,
         stateCountryData: stateCountryStats,
         processingStats: {
           totalPoints: allSamples.length,
