@@ -123,6 +123,7 @@ function generateTravelStopsFromTimelinePoints(
   return stops;
 }
 import { batchReverseGeocode, deduplicateCoordinates, getAllCachedLocations } from "./geocodingService";
+import { mergeTimelineDatasets, generateMergePreview, mergePointsForDateRange, calculateContentHash, type MergePreview } from "./jsonMerger";
 import { parseVisitsActivitiesModern, selectDailySamples, resolveSamples, buildDailyPresence } from "./presenceDetection";
 import { GoogleLocationIngest } from "./googleLocationIngest";
 import { z } from "zod";
@@ -2514,6 +2515,119 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting dataset:", error);
       res.status(500).json({ error: "Failed to delete dataset" });
+    }
+  });
+
+  // Dataset merging endpoints
+  
+  // Generate merge preview for multiple datasets
+  app.post("/api/datasets/merge-preview", requireApprovedUser, async (req, res) => {
+    try {
+      const { claims } = getAuthenticatedUser(req);
+      const userId = claims.sub;
+      const { datasetIds } = req.body;
+
+      if (!datasetIds || !Array.isArray(datasetIds) || datasetIds.length < 2) {
+        return res.status(400).json({ error: "At least 2 dataset IDs required for merging" });
+      }
+
+      // Get datasets and their raw content
+      const datasets = [];
+      for (const datasetId of datasetIds) {
+        const dataset = await storage.getLocationDataset(datasetId, userId);
+        if (!dataset) {
+          return res.status(404).json({ error: `Dataset ${datasetId} not found` });
+        }
+
+        const rawContent = await storage.getRawFile(datasetId, userId);
+        if (!rawContent) {
+          return res.status(404).json({ error: `Raw content for dataset ${datasetId} not found` });
+        }
+
+        datasets.push({
+          id: datasetId,
+          filename: dataset.filename,
+          rawContent
+        });
+      }
+
+      // Generate merge preview
+      const preview = generateMergePreview(datasets);
+
+      res.json({ success: true, preview });
+    } catch (error) {
+      console.error("Error generating merge preview:", error);
+      res.status(500).json({ error: "Failed to generate merge preview" });
+    }
+  });
+
+  // Get timeline points from multiple datasets (combined)
+  app.get("/api/timeline/points", requireApprovedUser, async (req, res) => {
+    try {
+      const { claims } = getAuthenticatedUser(req);
+      const userId = claims.sub;
+      const { start, end, datasetIds, combine } = req.query;
+
+      if (!start || !end) {
+        return res.status(400).json({ error: "Start and end dates are required" });
+      }
+
+      let datasets = [];
+
+      if (combine === 'all') {
+        // Get all user datasets
+        const allDatasets = await storage.getUserLocationDatasets(userId);
+        for (const dataset of allDatasets) {
+          const rawContent = await storage.getRawFile(dataset.id, userId);
+          if (rawContent) {
+            datasets.push({
+              id: dataset.id,
+              rawContent
+            });
+          }
+        }
+      } else if (datasetIds) {
+        // Get specific datasets
+        const ids = Array.isArray(datasetIds) ? datasetIds : [datasetIds];
+        for (const datasetId of ids) {
+          const dataset = await storage.getLocationDataset(datasetId, userId);
+          if (!dataset) {
+            return res.status(404).json({ error: `Dataset ${datasetId} not found` });
+          }
+
+          const rawContent = await storage.getRawFile(datasetId, userId);
+          if (rawContent) {
+            datasets.push({
+              id: datasetId,
+              rawContent
+            });
+          }
+        }
+      } else {
+        return res.status(400).json({ error: "Either combine=all or datasetIds parameter required" });
+      }
+
+      if (datasets.length === 0) {
+        return res.json({ success: true, data: [] });
+      }
+
+      // Merge and deduplicate points for date range
+      const points = mergePointsForDateRange(datasets, start as string, end as string);
+
+      // Convert to the format expected by the frontend
+      const formattedPoints = points.map(point => ({
+        id: `${point.parentId}_${point.timestampMs}`,
+        lat: point.latitude,
+        lng: point.longitude,
+        timestamp: new Date(point.timestampMs).toISOString(),
+        activity: 'route',
+        datasetId: point.parentId.split('_')[0] // Extract dataset ID from prefixed parent ID
+      }));
+
+      res.json({ success: true, data: formattedPoints });
+    } catch (error) {
+      console.error("Error getting merged timeline points:", error);
+      res.status(500).json({ error: "Failed to get timeline points" });
     }
   });
 
