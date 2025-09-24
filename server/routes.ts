@@ -2884,6 +2884,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`🏠 Generating fresh visit/activity-based yearly report for ${year}`);
 
+      // Calculate date range for the requested year
+      const startDate = new Date(year, 0, 1); // January 1st
+      const endDate = new Date(year + 1, 0, 1); // January 1st of next year
+
       // Get user's location datasets and raw files (contains semantic data)
       const datasets = await storage.getUserLocationDatasets(userId);
       
