@@ -35,6 +35,15 @@ interface Dataset {
   deduplicatedPoints: number;
   uploadedAt: string;
   processedAt?: string | null;
+  
+  // Merge tracking fields
+  mergeCount?: number;
+  lastMergeAt?: string | null;
+  firstDataAt?: string | null;
+  lastDataAt?: string | null;
+  totalSources?: number;
+  lastMergeAdded?: number;
+  lastMergeDuplicates?: number;
 }
 
 interface FileManagerProps {
@@ -177,6 +186,11 @@ export default function FileManager({ onFileUpload }: FileManagerProps) {
                   <div className="flex items-center gap-2">
                     <FileText className="w-5 h-5 text-muted-foreground" />
                     <CardTitle className="text-lg">Current File</CardTitle>
+                    {currentDataset.mergeCount && currentDataset.mergeCount > 0 && (
+                      <Badge variant="secondary" data-testid="badge-merged">
+                        Merged ×{currentDataset.mergeCount}
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <Button
@@ -212,9 +226,29 @@ export default function FileManager({ onFileUpload }: FileManagerProps) {
                     <p className="text-sm text-muted-foreground">
                       {formatFileSize(currentDataset.fileSize)} • Uploaded {formatDate(currentDataset.uploadedAt)}
                     </p>
-                    <p className="text-sm text-muted-foreground">
-                      JSON file ready for analysis
-                    </p>
+                    {currentDataset.mergeCount && currentDataset.mergeCount > 0 ? (
+                      <>
+                        <p className="text-sm text-muted-foreground" data-testid="text-merge-sources">
+                          Contains merged data from {currentDataset.totalSources || 1} sources
+                        </p>
+                        {currentDataset.lastMergeAt && (
+                          <p className="text-sm text-blue-600" data-testid="text-last-merge">
+                            Last merge: {formatDate(currentDataset.lastMergeAt)} • 
+                            +{Math.max(currentDataset.lastMergeAdded || 0, 0)} objects 
+                            ({Math.max(currentDataset.lastMergeDuplicates || 0, 0)} duplicates removed)
+                          </p>
+                        )}
+                        {currentDataset.firstDataAt && currentDataset.lastDataAt && (
+                          <p className="text-sm text-muted-foreground" data-testid="text-data-range">
+                            Data range: {formatDate(currentDataset.firstDataAt)} → {formatDate(currentDataset.lastDataAt)}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        JSON file ready for analysis
+                      </p>
+                    )}
                   </div>
                   
                   <div>
