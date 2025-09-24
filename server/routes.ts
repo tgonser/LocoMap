@@ -2067,7 +2067,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const path = await import('path');
         
         // Ensure uploads directory exists
-        const uploadsDir = path.join(process.cwd(), 'uploads');
+        const uploadsDir = UPLOADS_DIR;
         await fs.mkdir(uploadsDir, { recursive: true });
         
         const fileName = `${dataset.id}.json`;
