@@ -1867,6 +1867,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let dataset: any;
       let finalJsonData = jsonData;
       
+      // Extract date ranges for feedback (used in both merge and replace modes)
+      const newDataDateRange = extractDateRange(jsonData.timelineObjects || []);
+      
       if (uploadMode === 'merge') {
         console.log('🔀 Merge mode selected - looking for existing dataset to merge with...');
         
@@ -1914,8 +1917,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
         
-        // Extract date ranges before merging for better feedback
-        const newDataDateRange = extractDateRange(jsonData.timelineObjects || []);
+        // Extract existing data date range for merge feedback
         const existingDataDateRange = extractDateRange(existingJsonData.timelineObjects || []);
         
         console.log(`📅 New data date range: ${newDataDateRange?.start || 'unknown'} to ${newDataDateRange?.end || 'unknown'}`);
