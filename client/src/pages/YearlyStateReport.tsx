@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { CalendarDays, MapPin, Globe, TrendingUp, Download } from "lucide-react";
+import { CalendarDays, MapPin, Globe, TrendingUp, Download, RefreshCw } from "lucide-react";
 import jsPDF from "jspdf";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -34,13 +34,14 @@ export default function YearlyStateReport() {
   const [selectedYear, setSelectedYear] = useState<string>("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState<string>("");
+  const [forceRefresh, setForceRefresh] = useState<boolean>(false);
   
   // Generate year options (current year back to 2015)
   const currentYear = new Date().getFullYear();
   const yearOptions = Array.from({ length: currentYear - 2014 }, (_, i) => currentYear - i);
 
   const { data: reportData, isLoading, error } = useQuery<YearlyReportData>({
-    queryKey: ["/api/yearly-state-report", selectedYear],
+    queryKey: ["/api/yearly-state-report", selectedYear, forceRefresh],
     enabled: !!selectedYear && !isProcessing,
     queryFn: async () => {
       setIsProcessing(true);
@@ -51,8 +52,8 @@ export default function YearlyStateReport() {
         const timestamp = Date.now();
         const currentYear = new Date().getFullYear();
         
-        // Only refresh for current year - use cache for completed years
-        const shouldRefresh = parseInt(selectedYear) === currentYear;
+        // Refresh for current year OR if manually requested
+        const shouldRefresh = parseInt(selectedYear) === currentYear || forceRefresh;
         const refreshParam = shouldRefresh ? "&refresh=true" : "";
         
         const response = await apiRequest('GET', `/api/yearly-state-report?year=${selectedYear}${refreshParam}&t=${timestamp}`);
@@ -62,12 +63,19 @@ export default function YearlyStateReport() {
       } finally {
         setIsProcessing(false);
         setProcessingProgress("");
+        setForceRefresh(false); // Reset force refresh after query
       }
     },
   });
 
   const handleYearChange = (year: string) => {
     setSelectedYear(year);
+  };
+
+  const handleRefresh = () => {
+    if (selectedYear) {
+      setForceRefresh(true);
+    }
   };
 
   // Helper function to format date range
@@ -222,6 +230,19 @@ export default function YearlyStateReport() {
                 <TrendingUp className="h-3 w-3" />
                 Analyzing {selectedYear}
               </Badge>
+            )}
+            {selectedYear && (
+              <Button
+                onClick={handleRefresh}
+                disabled={isLoading || isProcessing}
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2"
+                data-testid="button-refresh-report"
+              >
+                <RefreshCw className={`h-4 w-4 ${(isLoading || isProcessing) ? 'animate-spin' : ''}`} />
+                Refresh Report
+              </Button>
             )}
           </div>
         </CardContent>
