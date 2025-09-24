@@ -184,14 +184,14 @@ export default function LocationHistoryApp() {
         setSelectedDateRange({ start: startDate, end: endDate });
         setMapDataLoaded(true);
         
-        // Set selected date to the most recent date with data in the range
+        // Set selected date to the earliest date with data in the range (first day)
         if (locationData.length > 0) {
           const dates = locationData.map((loc: LocationData) => loc.timestamp.getTime());
-          const mostRecentDate = new Date(Math.max(...dates));
-          setSelectedDate(mostRecentDate);
+          const earliestDate = new Date(Math.min(...dates));
+          setSelectedDate(earliestDate);
         } else {
-          // No data in selected range - set to end date
-          setSelectedDate(endDate);
+          // No data in selected range - set to start date
+          setSelectedDate(startDate);
         }
         
         const dataSource = locations.length > 0 && locations[0].id?.includes('_') ? 'time-based association' : 'database cache';
