@@ -11,6 +11,117 @@ import { setupAuth, isAuthenticated } from "./replitAuth";
 import { parseGoogleLocationHistory, validateGoogleLocationHistory } from "./googleLocationParser";
 import { indexGoogleLocationFile, type LocationFileIndex } from "./googleLocationIndexer";
 import { buildParentIndex, processTimelinePathsForDateRange, type TimelinePathPoint } from "./timelineAssociation";
+
+// New function to generate travel stops directly from timeline GPS data
+function generateTravelStopsFromTimelinePoints(
+  timelinePoints: TimelinePathPoint[], 
+  datasetId: string,
+  minDwellMinutes: number = 8,
+  maxDistanceMeters: number = 300
+): any[] {
+  if (timelinePoints.length === 0) return [];
+  
+  console.log(`🔍 Clustering ${timelinePoints.length} timeline GPS points into travel stops (min dwell: ${minDwellMinutes}min, max distance: ${maxDistanceMeters}m)`);
+  
+  // Sort points by timestamp
+  const sortedPoints = timelinePoints.sort((a, b) => a.timestampMs - b.timestampMs);
+  
+  const stops: any[] = [];
+  let currentCluster: TimelinePathPoint[] = [];
+  
+  // Helper function to calculate distance in meters
+  const calculateDistanceMeters = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371000; // Earth's radius in meters
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLng/2) * Math.sin(dLng/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+  
+  for (let i = 0; i < sortedPoints.length; i++) {
+    const point = sortedPoints[i];
+    
+    if (currentCluster.length === 0) {
+      currentCluster = [point];
+      continue;
+    }
+    
+    // Use first point in cluster as stable reference (not moving centroid)
+    const clusterOrigin = currentCluster[0];
+    const distanceToCluster = calculateDistanceMeters(
+      point.latitude, point.longitude,
+      clusterOrigin.latitude, clusterOrigin.longitude
+    );
+    
+    if (distanceToCluster <= maxDistanceMeters) {
+      currentCluster.push(point);
+    } else {
+      // Process current cluster if it meets dwell time requirement
+      const dwellMs = currentCluster[currentCluster.length - 1].timestampMs - currentCluster[0].timestampMs;
+      const dwellMinutes = dwellMs / (1000 * 60);
+      
+      if (dwellMinutes >= minDwellMinutes && currentCluster.length >= 2) {
+        // Calculate cluster center
+        const avgLat = currentCluster.reduce((sum, p) => sum + p.latitude, 0) / currentCluster.length;
+        const avgLng = currentCluster.reduce((sum, p) => sum + p.longitude, 0) / currentCluster.length;
+        
+        const stop = {
+          id: `timeline_stop_${stops.length}`,
+          lat: avgLat,
+          lng: avgLng,
+          start: new Date(currentCluster[0].timestampMs).toISOString(),
+          end: new Date(currentCluster[currentCluster.length - 1].timestampMs).toISOString(),
+          city: null, // Will be geocoded later if needed
+          state: null,
+          country: null,
+          geocoded: false,
+          datasetId: datasetId,
+          dwellMinutes: Math.round(dwellMinutes),
+          pointCount: currentCluster.length
+        };
+        
+        stops.push(stop);
+      }
+      
+      // Start new cluster
+      currentCluster = [point];
+    }
+  }
+  
+  // Process final cluster
+  if (currentCluster.length >= 2) {
+    const dwellMs = currentCluster[currentCluster.length - 1].timestampMs - currentCluster[0].timestampMs;
+    const dwellMinutes = dwellMs / (1000 * 60);
+    
+    if (dwellMinutes >= minDwellMinutes) {
+      const avgLat = currentCluster.reduce((sum, p) => sum + p.latitude, 0) / currentCluster.length;
+      const avgLng = currentCluster.reduce((sum, p) => sum + p.longitude, 0) / currentCluster.length;
+      
+      const stop = {
+        id: `timeline_stop_${stops.length}`,
+        lat: avgLat,
+        lng: avgLng,
+        start: new Date(currentCluster[0].timestampMs).toISOString(),
+        end: new Date(currentCluster[currentCluster.length - 1].timestampMs).toISOString(),
+        city: null,
+        state: null,
+        country: null,
+        geocoded: false,
+        datasetId: datasetId,
+        dwellMinutes: Math.round(dwellMinutes),
+        pointCount: currentCluster.length
+      };
+      
+      stops.push(stop);
+    }
+  }
+  
+  console.log(`✅ Generated ${stops.length} travel stops from timeline data`);
+  return stops;
+}
 import { batchReverseGeocode, deduplicateCoordinates, getAllCachedLocations } from "./geocodingService";
 import { parseVisitsActivitiesModern, selectDailySamples, resolveSamples, buildDailyPresence } from "./presenceDetection";
 import { GoogleLocationIngest } from "./googleLocationIngest";
@@ -3221,49 +3332,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
 
         // ========== CONTINUOUS CITY JUMPS CHAIN (FIXES BROKEN TRAVEL SEQUENCES) ==========
-        // Get travel stops in chronological order to build connected travel chain
-        let travelStops = await storage.getUserTravelStopsByDateRange(userId, startDate, endDate);
+        // FIXED: Generate travel stops directly from timeline JSON data instead of database
+        console.log(`🔄 Generating travel stops from timeline JSON data for date range...`);
         
-        // Auto-compute travel stops if none exist for this date range
-        if (travelStops.length === 0) {
-          console.log(`🔄 No travel stops found for date range - computing waypoints to generate travel stops...`);
-          
-          // Use task ID from frontend request (or generate fallback)
-          const progressTaskId = taskId || `analytics_${userId}_${Date.now()}`;
-          
-          // Get user's datasets and compute waypoints for the selected date range
-          const datasets = await storage.getUserLocationDatasets(userId);
-          if (datasets.length > 0) {
-            const primaryDataset = datasets[0]; // Use first dataset
-            try {
-              // Compute waypoints which generates travel stops WITH progress tracking  
-              const waypointResult = await storage.computeWaypointAnalyticsByDateRange(
-                userId, 
-                primaryDataset.id, 
-                startDate, 
-                endDate,
-                8, // minDwellMinutes
-                300, // maxDistanceMeters
-                progressTaskId, // taskId for progress tracking from frontend
-                emitProgress // progress callback for SSE updates
-              );
-              console.log(`✅ Auto-computed waypoints for date range: ${waypointResult.stopsCreated} stops, ${waypointResult.segmentsCreated} segments`);
-              
-              // Re-fetch travel stops after computation
-              travelStops = await storage.getUserTravelStopsByDateRange(userId, startDate, endDate);
-              console.log(`🎯 Found ${travelStops.length} travel stops after waypoint computation`);
-              
-              // Emit completion event
-              emitProgress(progressTaskId, {
-                type: 'completed',
-                message: 'Analytics computation complete'
-              });
-            } catch (waypointError) {
-              console.error(`❌ Failed to compute waypoints for date range:`, waypointError);
-              // Continue with empty travel stops
-            }
-          }
+        // Get user's datasets
+        const datasets = await storage.getUserLocationDatasets(userId);
+        if (datasets.length === 0) {
+          console.log(`❌ No datasets found for user ${userId}`);
+          return res.status(400).json({ error: "No location data found" });
         }
+        
+        const primaryDataset = datasets[0]; // Use first dataset
+        
+        // Read and parse the raw JSON file
+        console.log(`📁 Reading large file from disk: ${storage.getUploadPath(primaryDataset.id)}`);
+        const rawContent = await storage.getRawFileContent(primaryDataset.id, userId);
+        const jsonData = JSON.parse(rawContent);
+        console.log(`✅ File read successfully: ${(rawContent.length / 1024 / 1024).toFixed(2)}MB`);
+
+        // Build parent index for timeline association
+        console.log('🔍 Building parent time index from activitySegment/placeVisit objects...');
+        const parentIndex = buildParentIndex(jsonData);
+        
+        // Get timeline GPS points for the date range
+        const timelinePoints = processTimelinePathsForDateRange(
+          jsonData, 
+          parentIndex, 
+          startDate.toISOString().split('T')[0], 
+          endDate.toISOString().split('T')[0]
+        );
+        
+        console.log(`📍 Generated ${timelinePoints.length} timeline GPS points for travel stop detection`);
+        
+        // Generate travel stops from timeline GPS points using clustering algorithm
+        let travelStops = generateTravelStopsFromTimelinePoints(timelinePoints, primaryDataset.id);
+        console.log(`🎯 Generated ${travelStops.length} travel stops from timeline data`);
         
         console.log(`🔄 Building continuous city jumps from ${travelStops.length} travel stops...`);
         
