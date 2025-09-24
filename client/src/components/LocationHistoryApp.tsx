@@ -57,10 +57,6 @@ export default function LocationHistoryApp() {
   const [mapDataLoaded, setMapDataLoaded] = useState(false);
   const [previousViewMode, setPreviousViewMode] = useState<ViewMode>('analytics');
   
-  // Dataset selection state - default to combined view if multiple datasets
-  const [selectedDatasetMode, setSelectedDatasetMode] = useState<'single' | 'combined'>('single');
-  const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null);
-  
   // Shared date range state between analytics and map views with localStorage persistence
   const [selectedDateRange, setSelectedDateRange] = useState<{start: Date, end: Date} | null>(() => {
     try {
@@ -153,52 +149,26 @@ export default function LocationHistoryApp() {
       // Use time-based association system directly (the working system)
       console.log('🎯 Using time-based association system to extract GPS data...');
       
-      // Get available datasets
+      // Get the uploaded dataset
       const datasetsResponse = await apiRequest('GET', '/api/datasets');
       const datasets = await datasetsResponse.json();
       
       let locations = [];
       if (datasets && datasets.length > 0) {
-        // Automatically use combined mode if multiple datasets and none explicitly selected
-        const useComboMode = datasets.length > 1 && (selectedDatasetMode === 'combined' || !selectedDatasetId);
+        const dataset = datasets[0]; // Use first available dataset
         
-        if (useComboMode) {
-          console.log(`🔀 Using combined data from ${datasets.length} datasets`);
-          
-          // Use the new combined timeline API endpoint
-          const response = await fetch(`/api/timeline/points?start=${startDateStr}&end=${endDateStr}&combine=all`, {
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-            }
-          });
-          
-          if (response.ok) {
-            const result = await response.json();
-            if (result.success && result.data) {
-              locations = result.data;
-              console.log(`🎯 Combined timeline data: ${locations.length} GPS points from ${datasets.length} datasets`);
-            }
-          }
+        const processResponse = await apiRequest('POST', '/api/process-date-range', {
+          datasetId: dataset.id,
+          startDate: startDateStr,
+          endDate: endDateStr
+        });
+        
+        const processResult = await processResponse.json();
+        if (processResult.success && processResult.data) {
+          locations = processResult.data;
+          console.log(`🎯 Time-based association found ${locations.length} GPS points`);
         } else {
-          // Single dataset mode
-          const targetDatasetId = selectedDatasetId || datasets[0].id;
-          const dataset = datasets.find(d => d.id === targetDatasetId) || datasets[0];
-          
-          console.log(`📁 Using single dataset: ${dataset.filename}`);
-          
-          const processResponse = await apiRequest('POST', '/api/process-date-range', {
-            datasetId: dataset.id,
-            startDate: startDateStr,
-            endDate: endDateStr
-          });
-          
-          const processResult = await processResponse.json();
-          if (processResult.success && processResult.data) {
-            locations = processResult.data;
-            console.log(`🎯 Single dataset: ${locations.length} GPS points`);
-          } else {
-            console.error('Single dataset processing failed:', processResult.error);
-          }
+          console.error('Time-based association failed:', processResult.error);
         }
       } else {
         console.warn('No datasets found - please upload a location history file first');
