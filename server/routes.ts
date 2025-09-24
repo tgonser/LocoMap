@@ -123,7 +123,7 @@ function generateTravelStopsFromTimelinePoints(
   return stops;
 }
 import { batchReverseGeocode, deduplicateCoordinates, getAllCachedLocations } from "./geocodingService";
-import { mergeTimelineDatasets, generateMergePreview, mergePointsForDateRange, calculateContentHash, type MergePreview } from "./jsonMerger";
+import { mergeTimelineDatasets, generateMergePreview, mergePointsForDateRange, calculateContentHash, extractDateRange, type MergePreview } from "./jsonMerger";
 import { parseVisitsActivitiesModern, selectDailySamples, resolveSamples, buildDailyPresence } from "./presenceDetection";
 import { GoogleLocationIngest } from "./googleLocationIngest";
 import { z } from "zod";
@@ -1914,8 +1914,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
         
-        // Perform the merge
-        finalJsonData = mergeLocationHistoryFiles(existingJsonData, jsonData);
+        // Extract date ranges before merging for better feedback
+        const newDataDateRange = extractDateRange(jsonData.timelineObjects || []);
+        const existingDataDateRange = extractDateRange(existingJsonData.timelineObjects || []);
+        
+        console.log(`📅 New data date range: ${newDataDateRange?.start || 'unknown'} to ${newDataDateRange?.end || 'unknown'}`);
+        console.log(`📅 Existing data date range: ${existingDataDateRange?.start || 'unknown'} to ${existingDataDateRange?.end || 'unknown'}`);
+        
+        // Create a backup before merging
+        const backupRawContent = existingRawContent;
+        
+        // Perform the merge using the proper merge function
+        console.log('🔄 Using safe merge with deduplication...');
+        const mergeResult = mergeTimelineDatasets([
+          { id: targetDataset.id, filename: targetDataset.filename, rawContent: existingRawContent },
+          { id: 'new_upload', filename: req.file.originalname, rawContent: JSON.stringify(jsonData) }
+        ]);
+        
+        finalJsonData = {
+          timelineObjects: mergeResult.timelineObjects
+        };
+        
+        // Sanity check: merged data should have at least as much as existing
+        const existingCount = existingJsonData.timelineObjects?.length || 0;
+        const mergedCount = finalJsonData.timelineObjects?.length || 0;
+        
+        if (mergedCount < existingCount) {
+          console.error(`🚨 MERGE SANITY CHECK FAILED: Merged count (${mergedCount}) < Existing count (${existingCount})`);
+          return res.status(400).json({ 
+            error: `Merge would lose data! Existing: ${existingCount} objects, Merged: ${mergedCount} objects. Aborting to prevent data loss.` 
+          });
+        }
+        
+        // Calculate merge statistics for user feedback
+        const originalCount = existingJsonData.timelineObjects?.length || 0;
+        const newCount = jsonData.timelineObjects?.length || 0;
+        const finalCount = finalJsonData.timelineObjects?.length || 0;
+        const addedObjects = finalCount - originalCount;
+        const duplicatesRemoved = newCount - addedObjects;
+        
+        console.log(`📊 Merge stats: ${originalCount} existing + ${newCount} new = ${finalCount} total (${addedObjects} added, ${duplicatesRemoved} duplicates removed)`);
         
         // Recalculate metadata for the merged result
         if (fileSizeMB > 10) {
@@ -2007,11 +2045,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({
         success: true,
         message: uploadMode === 'merge' 
-          ? `File merged successfully with existing data: ${req.file.originalname}` 
+          ? `Added location data for ${newDataDateRange?.start || 'unknown date'} to ${newDataDateRange?.end || 'unknown date'}. Added ${addedObjects} new timeline objects (${duplicatesRemoved} duplicates removed).` 
           : `File uploaded successfully: ${req.file.originalname}`,
         datasetId: dataset.id,
         status: 'uploaded_not_processed',
         mode: uploadMode,
+        mergeStats: uploadMode === 'merge' ? {
+          newDataDateRange,
+          existingDataDateRange,
+          originalCount,
+          newCount,
+          finalCount,
+          addedObjects,
+          duplicatesRemoved
+        } : undefined,
         metadata: {
           filename: req.file.originalname,
           fileSize: Math.round(finalFileSizeMB) + 'MB',
@@ -2333,11 +2380,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { claims } = getAuthenticatedUser(req);
       const userId = claims.sub;
-      const datasetId = parseInt(req.params.id);
-      
-      if (isNaN(datasetId)) {
-        return res.status(400).json({ error: "Invalid dataset ID" });
-      }
+      const datasetId = req.params.id;
 
       // Verify dataset belongs to user
       const datasets = await storage.getUserLocationDatasets(userId);
@@ -2348,7 +2391,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Get the raw JSON content
-      const rawContent = await storage.getRawFile(datasetId.toString(), userId);
+      const rawContent = await storage.getRawFile(datasetId, userId);
       
       if (!rawContent) {
         return res.status(404).json({ error: "Dataset file not found" });

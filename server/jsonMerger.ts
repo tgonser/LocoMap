@@ -74,7 +74,7 @@ function createTimelineObjectHash(obj: any): string {
 /**
  * Extract date range from timeline objects
  */
-function extractDateRange(timelineObjects: any[]): { start: string; end: string } {
+export function extractDateRange(timelineObjects: any[]): { start: string; end: string } {
   if (timelineObjects.length === 0) {
     return { start: '', end: '' };
   }
