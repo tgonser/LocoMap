@@ -330,3 +330,46 @@ export const dailyPresenceSchema = z.object({
 });
 
 export type DailyPresence = z.infer<typeof dailyPresenceSchema>;
+
+// Simple visitor tracking table for basic analytics
+export const pageVisits = pgTable('page_visits', {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  path: varchar('path', { length: 500 }).notNull(), // URL path visited
+  timestamp: timestamp('timestamp').defaultNow(),
+  ipHash: varchar('ip_hash', { length: 64 }), // Hashed IP for privacy
+  userAgent: text('user_agent'), // Browser info
+  referrer: text('referrer'), // Where they came from
+}, (table) => [
+  index('idx_page_visits_timestamp').on(table.timestamp),
+  index('idx_page_visits_path').on(table.path),
+]);
+
+// Simple visitor counter aggregation table
+export const visitorStats = pgTable('visitor_stats', {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  date: timestamp('date').notNull(), // Date for the stats (YYYY-MM-DD)
+  totalVisits: integer('total_visits').default(0),
+  uniqueVisitors: integer('unique_visitors').default(0), // Based on IP hash
+  topPaths: jsonb('top_paths'), // Top visited paths for the day
+  updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => [
+  index('idx_visitor_stats_date').on(table.date),
+  unique('unique_visitor_stats_date').on(table.date)
+]);
+
+// Zod schemas for visitor tracking
+export const insertPageVisitSchema = createInsertSchema(pageVisits).omit({
+  id: true,
+  timestamp: true,
+});
+
+export const insertVisitorStatsSchema = createInsertSchema(visitorStats).omit({
+  id: true,
+  updatedAt: true,
+});
+
+// TypeScript types for visitor tracking
+export type PageVisit = typeof pageVisits.$inferSelect;
+export type InsertPageVisit = z.infer<typeof insertPageVisitSchema>;
+export type VisitorStats = typeof visitorStats.$inferSelect;
+export type InsertVisitorStats = z.infer<typeof insertVisitorStatsSchema>;
