@@ -1,0 +1,1 @@
+dpg-d3828hmmcj7s7380s57g-a.oregon-postgres.render.com:5432:locomap:locomap_user:ryKBpKv4XT659LmsTBbF5nglexmGLA7r
