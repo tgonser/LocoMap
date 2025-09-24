@@ -99,6 +99,9 @@ export default function PublicLayout({ children }: PublicLayoutProps) {
             <p className="text-sm">
               © 2024 WhereWasI? - Visualize your location history with privacy and security.
             </p>
+            <p className="text-sm mt-1">
+              (c) 2025 TH Gonser, all rights reserved.
+            </p>
             <p className="text-xs mt-2">
               Your location data is stored securely and never shared with third parties.
             </p>
