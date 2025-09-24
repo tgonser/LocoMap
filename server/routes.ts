@@ -3384,6 +3384,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Use the same travel stops to calculate which location dominated each day
         console.log(`📅 Calculating location days from ${travelStops.length} travel stops over ${totalDaysInRange} days`);
         
+        let lastKnownLocation = null; // Carry forward for days without geocoded data
+        
         // For each calendar day, determine which location the user spent the most time in
         for (let dayOffset = 0; dayOffset < totalDaysInRange; dayOffset++) {
           const currentDay = new Date(startDate.getTime() + dayOffset * 24 * 60 * 60 * 1000);
@@ -3412,22 +3414,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
           
-          // Assign this day to the location where the most time was spent
+          let countryToCount = null;
+          let stateToCount = null;
+          let cityToCount = null;
+          
+          // FIXED: Assign this day to the location where the most time was spent
           if (locationMinutes.size > 0) {
             const dominantLocation = Array.from(locationMinutes.entries())
               .reduce((max, [location, minutes]) => minutes > max[1] ? [location, minutes] : max);
             
             const [country, state, city] = dominantLocation[0].split('|');
             
-            // Count this day for the dominant location
-            locationStats.countries.set(country, (locationStats.countries.get(country) || 0) + 1);
+            // Use the dominant location for this day
+            countryToCount = country;
+            stateToCount = state;
+            cityToCount = city;
             
-            if (country === 'United States' && state) {
-              locationStats.states.set(state, (locationStats.states.get(state) || 0) + 1);
+            // Remember this location for potential carry-forward
+            lastKnownLocation = { country, state, city };
+            
+          } else if (lastKnownLocation) {
+            // FIXED: No geocoded data for this day - carry forward last known location
+            countryToCount = lastKnownLocation.country;
+            stateToCount = lastKnownLocation.state;
+            cityToCount = lastKnownLocation.city;
+            
+          } else {
+            // FIXED: First days with no data - use any available stop from this day (even non-geocoded)
+            const anyStopThisDay = travelStops.find(stop => {
+              const stopStart = new Date(stop.start);
+              const stopEnd = new Date(stop.end);
+              const overlapStart = new Date(Math.max(dayStart.getTime(), stopStart.getTime()));
+              const overlapEnd = new Date(Math.min(dayEnd.getTime(), stopEnd.getTime()));
+              return overlapStart < overlapEnd;
+            });
+            
+            if (anyStopThisDay && anyStopThisDay.country) {
+              countryToCount = anyStopThisDay.country;
+              stateToCount = anyStopThisDay.state;
+              cityToCount = anyStopThisDay.city;
+              lastKnownLocation = { country: countryToCount, state: stateToCount, city: cityToCount };
+            } else {
+              // Fallback to United States if no location data at all
+              countryToCount = 'United States';
+              stateToCount = null;
+              cityToCount = null;
+              lastKnownLocation = { country: countryToCount, state: stateToCount, city: cityToCount };
+            }
+          }
+          
+          // FIXED: Always count every day (no more skipped days)
+          if (countryToCount) {
+            locationStats.countries.set(countryToCount, (locationStats.countries.get(countryToCount) || 0) + 1);
+            
+            if (countryToCount === 'United States' && stateToCount) {
+              locationStats.states.set(stateToCount, (locationStats.states.get(stateToCount) || 0) + 1);
             }
             
-            if (city) {
-              const cityKey = state ? `${city}, ${state}` : `${city}, ${country}`;
+            if (cityToCount) {
+              const cityKey = stateToCount ? `${cityToCount}, ${stateToCount}` : `${cityToCount}, ${countryToCount}`;
               locationStats.cities.set(cityKey, (locationStats.cities.get(cityKey) || 0) + 1);
             }
           }
