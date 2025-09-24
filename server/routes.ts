@@ -2886,7 +2886,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Calculate date range for the requested year
       const startDate = new Date(year, 0, 1); // January 1st
-      const endDate = new Date(year + 1, 0, 1); // January 1st of next year
+      let endDate = new Date(year + 1, 0, 1); // January 1st of next year
+      
+      // For current year, limit to today to avoid future dates
+      const currentYear = new Date().getFullYear();
+      if (year === currentYear) {
+        const today = new Date();
+        endDate = new Date(today.getTime() + 24 * 60 * 60 * 1000); // End of today
+      }
 
       // Get user's location datasets and raw files (contains semantic data)
       const datasets = await storage.getUserLocationDatasets(userId);
