@@ -8,12 +8,13 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Lock, Eye, EyeOff, ArrowLeft, User, Key } from "lucide-react";
-import { changePasswordSchema } from "@shared/schema";
+import { changePasswordSchema, setPasswordSchema } from "@shared/schema";
 import { z } from "zod";
 import { apiRequest } from "@/lib/queryClient";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 
 type ChangePasswordFormData = z.infer<typeof changePasswordSchema>;
+type SetPasswordFormData = z.infer<typeof setPasswordSchema>;
 
 interface SettingsPageProps {
   onBack: () => void;
@@ -27,10 +28,26 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const form = useForm<ChangePasswordFormData>({
+  // Check if user has a password set
+  const { data: passwordStatus, isLoading: loadingPasswordStatus } = useQuery({
+    queryKey: ["/api/auth/has-password"],
+    refetchOnWindowFocus: false,
+  });
+
+  const hasPassword = passwordStatus?.hasPassword || false;
+
+  const changePasswordForm = useForm<ChangePasswordFormData>({
     resolver: zodResolver(changePasswordSchema),
     defaultValues: {
       currentPassword: '',
+      newPassword: '',
+      confirmPassword: '',
+    },
+  });
+
+  const setPasswordForm = useForm<SetPasswordFormData>({
+    resolver: zodResolver(setPasswordSchema),
+    defaultValues: {
       newPassword: '',
       confirmPassword: '',
     },
@@ -48,7 +65,7 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
         title: "Password Changed",
         description: "Your password has been successfully updated.",
       });
-      form.reset();
+      changePasswordForm.reset();
     },
     onError: (error: any) => {
       toast({
@@ -59,8 +76,36 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
     },
   });
 
-  const onSubmit = (data: ChangePasswordFormData) => {
+  const setPasswordMutation = useMutation({
+    mutationFn: async (data: SetPasswordFormData) => {
+      return await apiRequest('/api/auth/set-password', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Password Set",
+        description: "Your password has been successfully set.",
+      });
+      setPasswordForm.reset();
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/has-password"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Set Password Failed",
+        description: error.message || "Failed to set password. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const onChangePassword = (data: ChangePasswordFormData) => {
     changePasswordMutation.mutate(data);
+  };
+
+  const onSetPassword = (data: SetPasswordFormData) => {
+    setPasswordMutation.mutate(data);
   };
 
   return (
@@ -130,17 +175,29 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
             </CardContent>
           </Card>
 
-          {/* Change Password Card */}
+          {/* Password Management Card */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Key className="h-5 w-5" />
-                Change Password
+                {loadingPasswordStatus ? 'Loading...' : hasPassword ? 'Change Password' : 'Set Password'}
               </CardTitle>
-              <CardDescription>Update your password to keep your account secure</CardDescription>
+              <CardDescription>
+                {loadingPasswordStatus 
+                  ? 'Checking password status...' 
+                  : hasPassword 
+                    ? 'Update your password to keep your account secure'
+                    : 'Set a password for your account to enable password-based login'
+                }
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              {loadingPasswordStatus ? (
+                <div className="text-center py-8">
+                  <div className="text-muted-foreground">Loading...</div>
+                </div>
+              ) : hasPassword ? (
+                <form onSubmit={changePasswordForm.handleSubmit(onChangePassword)} className="space-y-4">
                 {/* Current Password */}
                 <div className="space-y-2">
                   <Label htmlFor="currentPassword">Current Password</Label>
@@ -149,7 +206,7 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
                       id="currentPassword"
                       type={showCurrentPassword ? "text" : "password"}
                       placeholder="Enter your current password"
-                      {...form.register("currentPassword")}
+                      {...changePasswordForm.register("currentPassword")}
                       className="pr-10"
                       data-testid="input-current-password"
                     />
@@ -168,9 +225,9 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
                       )}
                     </Button>
                   </div>
-                  {form.formState.errors.currentPassword && (
+                  {changePasswordForm.formState.errors.currentPassword && (
                     <p className="text-sm text-destructive">
-                      {form.formState.errors.currentPassword.message}
+                      {changePasswordForm.formState.errors.currentPassword.message}
                     </p>
                   )}
                 </div>
@@ -183,7 +240,7 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
                       id="newPassword"
                       type={showNewPassword ? "text" : "password"}
                       placeholder="Enter your new password"
-                      {...form.register("newPassword")}
+                      {...changePasswordForm.register("newPassword")}
                       className="pr-10"
                       data-testid="input-new-password"
                     />
@@ -202,9 +259,9 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
                       )}
                     </Button>
                   </div>
-                  {form.formState.errors.newPassword && (
+                  {changePasswordForm.formState.errors.newPassword && (
                     <p className="text-sm text-destructive">
-                      {form.formState.errors.newPassword.message}
+                      {changePasswordForm.formState.errors.newPassword.message}
                     </p>
                   )}
                 </div>
@@ -217,7 +274,7 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
                       id="confirmPassword"
                       type={showConfirmPassword ? "text" : "password"}
                       placeholder="Confirm your new password"
-                      {...form.register("confirmPassword")}
+                      {...changePasswordForm.register("confirmPassword")}
                       className="pr-10"
                       data-testid="input-confirm-password"
                     />
@@ -236,9 +293,9 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
                       )}
                     </Button>
                   </div>
-                  {form.formState.errors.confirmPassword && (
+                  {changePasswordForm.formState.errors.confirmPassword && (
                     <p className="text-sm text-destructive">
-                      {form.formState.errors.confirmPassword.message}
+                      {changePasswordForm.formState.errors.confirmPassword.message}
                     </p>
                   )}
                 </div>
@@ -266,7 +323,7 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => form.reset()}
+                    onClick={() => changePasswordForm.reset()}
                     disabled={changePasswordMutation.isPending}
                     data-testid="button-reset-form"
                   >
@@ -274,6 +331,109 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
                   </Button>
                 </div>
               </form>
+              ) : (
+                {/* Set Password Form */}
+                <form onSubmit={setPasswordForm.handleSubmit(onSetPassword)} className="space-y-4">
+                  {/* New Password */}
+                  <div className="space-y-2">
+                    <Label htmlFor="setNewPassword">New Password</Label>
+                    <div className="relative">
+                      <Input
+                        id="setNewPassword"
+                        type={showNewPassword ? "text" : "password"}
+                        placeholder="Enter your password"
+                        {...setPasswordForm.register("newPassword")}
+                        className="pr-10"
+                        data-testid="input-set-new-password"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        data-testid="button-toggle-set-new-password"
+                      >
+                        {showNewPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                    {setPasswordForm.formState.errors.newPassword && (
+                      <p className="text-sm text-destructive">
+                        {setPasswordForm.formState.errors.newPassword.message}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Confirm Password */}
+                  <div className="space-y-2">
+                    <Label htmlFor="setConfirmPassword">Confirm Password</Label>
+                    <div className="relative">
+                      <Input
+                        id="setConfirmPassword"
+                        type={showConfirmPassword ? "text" : "password"}
+                        placeholder="Confirm your password"
+                        {...setPasswordForm.register("confirmPassword")}
+                        className="pr-10"
+                        data-testid="input-set-confirm-password"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        data-testid="button-toggle-set-confirm-password"
+                      >
+                        {showConfirmPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                    {setPasswordForm.formState.errors.confirmPassword && (
+                      <p className="text-sm text-destructive">
+                        {setPasswordForm.formState.errors.confirmPassword.message}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Password Requirements */}
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    <p>Password requirements:</p>
+                    <ul className="list-disc list-inside space-y-1">
+                      <li>At least 6 characters long</li>
+                      <li>Will enable password-based login for your account</li>
+                    </ul>
+                  </div>
+
+                  {/* Submit Button */}
+                  <div className="flex gap-3 pt-4">
+                    <Button
+                      type="submit"
+                      disabled={setPasswordMutation.isPending}
+                      className="flex items-center gap-2"
+                      data-testid="button-set-password"
+                    >
+                      <Lock className="h-4 w-4" />
+                      {setPasswordMutation.isPending ? 'Setting Password...' : 'Set Password'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setPasswordForm.reset()}
+                      disabled={setPasswordMutation.isPending}
+                      data-testid="button-reset-set-form"
+                    >
+                      Reset
+                    </Button>
+                  </div>
+                </form>
+              )}
             </CardContent>
           </Card>
         </div>

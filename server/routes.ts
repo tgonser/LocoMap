@@ -141,7 +141,7 @@ import { z } from "zod";
 import OpenAI from "openai";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { registerSchema, loginSchema, changePasswordSchema } from "@shared/schema";
+import { registerSchema, loginSchema, changePasswordSchema, setPasswordSchema } from "@shared/schema";
 import { sendContactFormEmail } from "./emailService";
 
 // JWT verification middleware  
@@ -1685,8 +1685,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get current user from database
       const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-      if (!user || !user.password) {
-        return res.status(404).json({ message: "User not found or password not set" });
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Check if user has an existing password
+      if (!user.password) {
+        return res.status(400).json({ 
+          message: "No password set for this account. Use the 'Set Password' option instead." 
+        });
       }
 
       // Verify current password
@@ -1722,6 +1729,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Set password endpoint (for OAuth users who don't have passwords)
+  app.post('/api/auth/set-password', combinedAuth, async (req, res) => {
+    try {
+      const validation = setPasswordSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "Validation error", 
+          errors: validation.error.issues 
+        });
+      }
+
+      const { newPassword } = validation.data;
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+
+      if (!userId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Get current user from database
+      const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Check if user already has a password
+      if (user.password) {
+        return res.status(400).json({ 
+          message: "Password already set for this account. Use the 'Change Password' option instead." 
+        });
+      }
+
+      // Hash new password
+      const saltRounds = 12;
+      const hashedNewPassword = await bcrypt.hash(newPassword, saltRounds);
+
+      // Set password in database
+      await db.update(users)
+        .set({ 
+          password: hashedNewPassword,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, userId));
+
+      res.json({
+        message: "Password set successfully"
+      });
+    } catch (error) {
+      console.error("Set password error:", error);
+      res.status(500).json({ message: "Server error during password setup" });
+    }
+  });
+
   app.get('/api/auth/user', combinedAuth, async (req, res) => {
     try {
       const { claims } = getAuthenticatedUser(req);
@@ -1747,6 +1806,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
+  // Check if user has password set
+  app.get('/api/auth/has-password', combinedAuth, async (req, res) => {
+    try {
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+      if (!userId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      const [user] = await db.select({
+        hasPassword: sql<boolean>`CASE WHEN password IS NULL THEN false ELSE true END`
+      }).from(users).where(eq(users.id, userId)).limit(1);
+
+      res.json({
+        hasPassword: user?.hasPassword || false
+      });
+    } catch (error) {
+      console.error("Error checking password status:", error);
+      res.status(500).json({ message: "Failed to check password status" });
     }
   });
 

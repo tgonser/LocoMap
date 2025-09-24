@@ -162,6 +162,14 @@ export const changePasswordSchema = z.object({
   path: ["confirmPassword"],
 });
 
+export const setPasswordSchema = z.object({
+  newPassword: z.string().min(6, "Password must be at least 6 characters"),
+  confirmPassword: z.string().min(1, "Password confirmation is required"),
+}).refine((data) => data.newPassword === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"],
+});
+
 export const insertLocationDatasetSchema = createInsertSchema(locationDatasets).omit({
   id: true,
   uploadedAt: true,
