@@ -5,8 +5,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { Users, CheckCircle, XCircle, Clock, Shield } from 'lucide-react';
+import { Users, CheckCircle, XCircle, Clock, Shield, UserMinus } from 'lucide-react';
 
 interface PendingUser {
   id: string;
@@ -16,6 +17,19 @@ interface PendingUser {
   lastName: string | null;
   approvalStatus: string;
   createdAt: string;
+}
+
+interface ApprovedUser {
+  id: string;
+  username: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  approvalStatus: string;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  createdAt: string;
+  role: string;
 }
 
 interface AdminStats {
@@ -36,15 +50,21 @@ export default function AdminPanel() {
     refetchInterval: 5000, // Auto-refresh every 5 seconds
   });
 
+  // Fetch approved users
+  const { data: approvedUsersData, isLoading: loadingApprovedUsers } = useQuery({
+    queryKey: ['/api/admin/approved-users'],
+    refetchInterval: 5000, // Auto-refresh every 5 seconds
+  });
+
   // Fetch admin stats
   const { data: stats, isLoading: loadingStats } = useQuery<AdminStats>({
     queryKey: ['/api/admin/stats'],
     refetchInterval: 5000,
   });
 
-  // Approval mutation
+  // Approval mutation (now supports revoke)
   const approvalMutation = useMutation({
-    mutationFn: async ({ userId, action, reason }: { userId: string; action: 'approve' | 'reject'; reason?: string }) => {
+    mutationFn: async ({ userId, action, reason }: { userId: string; action: 'approve' | 'reject' | 'revoke'; reason?: string }) => {
       const response = await apiRequest('PATCH', `/api/admin/users/${userId}/approval`, {
         action,
         reason
@@ -59,8 +79,9 @@ export default function AdminPanel() {
         title: `User ${variables.action}d successfully`,
         description: `${data.user.email} has been ${variables.action}d.`,
       });
-      // Refresh both queries
+      // Refresh all admin queries
       queryClient.invalidateQueries({ queryKey: ['/api/admin/pending-users'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/approved-users'] });
       queryClient.invalidateQueries({ queryKey: ['/api/admin/stats'] });
     },
     onError: (error: any) => {
@@ -84,6 +105,14 @@ export default function AdminPanel() {
     approvalMutation.mutate({ userId, action: 'reject', reason: reason || undefined });
   };
 
+  const handleRevoke = (userId: string, userEmail: string) => {
+    const confirmed = confirm(`Are you sure you want to revoke access for ${userEmail}? This will immediately block their access to the application.`);
+    if (confirmed) {
+      const reason = prompt("Optional: Reason for revoking access:");
+      approvalMutation.mutate({ userId, action: 'revoke', reason: reason || undefined });
+    }
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -95,6 +124,7 @@ export default function AdminPanel() {
   };
 
   const pendingUsers: PendingUser[] = pendingUsersData?.users || [];
+  const approvedUsers: ApprovedUser[] = approvedUsersData?.users || [];
 
   return (
     <div className="min-h-screen bg-background p-4">
@@ -164,84 +194,163 @@ export default function AdminPanel() {
           </div>
         )}
 
-        {/* Pending Users */}
+        {/* User Management Tabs */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5" />
-              Pending User Approvals
+              <Users className="h-5 w-5" />
+              User Management
             </CardTitle>
             <CardDescription>
-              Users waiting for account approval
+              Manage pending approvals and approved user access
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {loadingUsers ? (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-                <p className="text-muted-foreground">Loading pending users...</p>
-              </div>
-            ) : pendingUsers.length === 0 ? (
-              <Alert>
-                <CheckCircle className="h-4 w-4" />
-                <AlertDescription>
-                  <strong>No pending approvals</strong><br />
-                  All users have been processed. New registration requests will appear here automatically.
-                </AlertDescription>
-              </Alert>
-            ) : (
-              <div className="space-y-4">
-                {pendingUsers.map((user) => (
-                  <div key={user.id} className="flex items-center justify-between p-4 border rounded-lg bg-card">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3 className="font-semibold">
-                          {user.firstName && user.lastName 
-                            ? `${user.firstName} ${user.lastName}` 
-                            : user.username}
-                        </h3>
-                        <Badge variant="secondary">{user.approvalStatus}</Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground mb-1">
-                        <strong>Email:</strong> {user.email}
-                      </p>
-                      <p className="text-sm text-muted-foreground mb-1">
-                        <strong>Username:</strong> {user.username}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        <strong>Requested:</strong> {formatDate(user.createdAt)}
-                      </p>
-                    </div>
-                    
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleApprove(user.id)}
-                        disabled={processingUser === user.id}
-                        className="text-green-600 border-green-200 hover:bg-green-50"
-                        data-testid={`button-approve-${user.id}`}
-                      >
-                        <CheckCircle className="h-4 w-4 mr-1" />
-                        Approve
-                      </Button>
-                      
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleReject(user.id)}
-                        disabled={processingUser === user.id}
-                        className="text-red-600 border-red-200 hover:bg-red-50"
-                        data-testid={`button-reject-${user.id}`}
-                      >
-                        <XCircle className="h-4 w-4 mr-1" />
-                        Reject
-                      </Button>
-                    </div>
+            <Tabs defaultValue="pending" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="pending" data-testid="tab-pending-users">
+                  <Clock className="h-4 w-4 mr-1" />
+                  Pending ({pendingUsers.length})
+                </TabsTrigger>
+                <TabsTrigger value="approved" data-testid="tab-approved-users">
+                  <CheckCircle className="h-4 w-4 mr-1" />
+                  Approved ({approvedUsers.length})
+                </TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="pending" className="mt-6">
+                {loadingUsers ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                    <p className="text-muted-foreground">Loading pending users...</p>
                   </div>
-                ))}
-              </div>
-            )}
+                ) : pendingUsers.length === 0 ? (
+                  <Alert>
+                    <CheckCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      <strong>No pending approvals</strong><br />
+                      All users have been processed. New registration requests will appear here automatically.
+                    </AlertDescription>
+                  </Alert>
+                ) : (
+                  <div className="space-y-4">
+                    {pendingUsers.map((user) => (
+                      <div key={user.id} className="flex items-center justify-between p-4 border rounded-lg bg-card">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h3 className="font-semibold">
+                              {user.firstName && user.lastName 
+                                ? `${user.firstName} ${user.lastName}` 
+                                : user.username}
+                            </h3>
+                            <Badge variant="secondary">{user.approvalStatus}</Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground mb-1">
+                            <strong>Email:</strong> {user.email}
+                          </p>
+                          <p className="text-sm text-muted-foreground mb-1">
+                            <strong>Username:</strong> {user.username}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            <strong>Requested:</strong> {formatDate(user.createdAt)}
+                          </p>
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleApprove(user.id)}
+                            disabled={processingUser === user.id}
+                            className="text-green-600 border-green-200 hover:bg-green-50"
+                            data-testid={`button-approve-${user.id}`}
+                          >
+                            <CheckCircle className="h-4 w-4 mr-1" />
+                            Approve
+                          </Button>
+                          
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleReject(user.id)}
+                            disabled={processingUser === user.id}
+                            className="text-red-600 border-red-200 hover:bg-red-50"
+                            data-testid={`button-reject-${user.id}`}
+                          >
+                            <XCircle className="h-4 w-4 mr-1" />
+                            Reject
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+              
+              <TabsContent value="approved" className="mt-6">
+                {loadingApprovedUsers ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                    <p className="text-muted-foreground">Loading approved users...</p>
+                  </div>
+                ) : approvedUsers.length === 0 ? (
+                  <Alert>
+                    <Users className="h-4 w-4" />
+                    <AlertDescription>
+                      <strong>No approved users</strong><br />
+                      Once you approve pending users, they will appear here for management.
+                    </AlertDescription>
+                  </Alert>
+                ) : (
+                  <div className="space-y-4">
+                    {approvedUsers.map((user) => (
+                      <div key={user.id} className="flex items-center justify-between p-4 border rounded-lg bg-card">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h3 className="font-semibold">
+                              {user.firstName && user.lastName 
+                                ? `${user.firstName} ${user.lastName}` 
+                                : user.username}
+                            </h3>
+                            <Badge variant="outline" className="text-green-600 border-green-200">
+                              {user.role === 'admin' ? 'Admin' : 'Approved'}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground mb-1">
+                            <strong>Email:</strong> {user.email}
+                          </p>
+                          <p className="text-sm text-muted-foreground mb-1">
+                            <strong>Username:</strong> {user.username}
+                          </p>
+                          <p className="text-sm text-muted-foreground mb-1">
+                            <strong>Approved:</strong> {user.approvedAt ? formatDate(user.approvedAt) : 'N/A'}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            <strong>Member since:</strong> {formatDate(user.createdAt)}
+                          </p>
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                          {user.role !== 'admin' && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleRevoke(user.id, user.email)}
+                              disabled={processingUser === user.id}
+                              className="text-orange-600 border-orange-200 hover:bg-orange-50"
+                              data-testid={`button-revoke-${user.id}`}
+                            >
+                              <UserMinus className="h-4 w-4 mr-1" />
+                              Revoke Access
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
       </div>

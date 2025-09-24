@@ -191,7 +191,7 @@ function combinedAuth(req: any, res: any, next: any) {
 }
 
 // Approval status middleware - requires approved account
-function requireApproval(req: any, res: any, next: any) {
+async function requireApproval(req: any, res: any, next: any) {
   // Skip approval check for admin routes and auth routes
   if (req.path.startsWith('/api/admin') || req.path.startsWith('/api/auth')) {
     return next();
@@ -202,15 +202,42 @@ function requireApproval(req: any, res: any, next: any) {
     return res.status(401).json({ message: "Authentication required" });
   }
   
-  // For JWT users, check approval status from token
-  if (user.claims && user.claims.isApproved === false) {
-    return res.status(403).json({ 
-      message: "Account pending admin approval. Please contact the administrator.",
-      status: "pending_approval"
-    });
+  try {
+    // Always check current approval status from database (don't trust JWT claims)
+    const userId = user.claims?.sub || user.claims?.id;
+    if (!userId) {
+      return res.status(401).json({ message: "Invalid user token" });
+    }
+
+    const [currentUser] = await db.select({
+      isApproved: users.isApproved,
+      approvalStatus: users.approvalStatus,
+      role: users.role
+    }).from(users).where(eq(users.id, userId)).limit(1);
+
+    if (!currentUser) {
+      return res.status(401).json({ message: "User not found" });
+    }
+
+    // Update user claims with current database values
+    if (user.claims) {
+      user.claims.isApproved = currentUser.isApproved;
+      user.claims.role = currentUser.role;
+    }
+
+    // Check approval status from database
+    if (!currentUser.isApproved || currentUser.approvalStatus !== 'approved') {
+      return res.status(403).json({ 
+        message: "Account access has been revoked or is pending approval. Please contact the administrator.",
+        status: currentUser.approvalStatus || "pending_approval"
+      });
+    }
+    
+    next();
+  } catch (error) {
+    console.error("Error checking user approval status:", error);
+    return res.status(500).json({ message: "Error verifying account status" });
   }
-  
-  next();
 }
 
 // Admin role middleware
@@ -4422,15 +4449,62 @@ Return your response as a JSON object with this exact structure:
     }
   });
 
-  // Approve or reject user
+  // Get approved users for management
+  app.get('/api/admin/approved-users', [combinedAuth, requireAdmin], async (req, res) => {
+    try {
+      const approvedUsers = await db.select({
+        id: users.id,
+        username: users.username,
+        email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        approvalStatus: users.approvalStatus,
+        approvedBy: users.approvedBy,
+        approvedAt: users.approvedAt,
+        createdAt: users.createdAt,
+        role: users.role
+      }).from(users).where(eq(users.approvalStatus, 'approved')).orderBy(users.approvedAt);
+
+      res.json({
+        users: approvedUsers,
+        count: approvedUsers.length
+      });
+    } catch (error) {
+      console.error("Error fetching approved users:", error);
+      res.status(500).json({ message: "Failed to fetch approved users" });
+    }
+  });
+
+  // Approve, reject, or revoke user approval
   app.patch('/api/admin/users/:userId/approval', [combinedAuth, requireAdmin], async (req, res) => {
     try {
       const { userId } = req.params;
-      const { action, reason } = req.body; // action: 'approve' or 'reject'
+      const { action, reason } = req.body; // action: 'approve', 'reject', or 'revoke'
       const adminUserId = req.user.claims?.sub || req.user.claims?.id;
 
-      if (!['approve', 'reject'].includes(action)) {
-        return res.status(400).json({ message: "Invalid action. Use 'approve' or 'reject'" });
+      if (!['approve', 'reject', 'revoke'].includes(action)) {
+        return res.status(400).json({ message: "Invalid action. Use 'approve', 'reject', or 'revoke'" });
+      }
+
+      // Security check: Prevent self-revocation and admin revocation
+      if (action === 'revoke') {
+        if (userId === adminUserId) {
+          return res.status(403).json({ message: "Cannot revoke your own access" });
+        }
+
+        // Check if target user is an admin
+        const [targetUser] = await db.select({
+          role: users.role,
+          email: users.email
+        }).from(users).where(eq(users.id, userId)).limit(1);
+
+        if (!targetUser) {
+          return res.status(404).json({ message: "User not found" });
+        }
+
+        if (targetUser.role === 'admin') {
+          return res.status(403).json({ message: "Cannot revoke access for admin users" });
+        }
       }
 
       const updateData: any = {
@@ -4442,10 +4516,17 @@ Return your response as a JSON object with this exact structure:
       if (action === 'approve') {
         updateData.isApproved = true;
         updateData.approvalStatus = 'approved';
-      } else {
+        updateData.rejectedReason = null; // Clear any previous rejection reason
+      } else if (action === 'reject') {
         updateData.isApproved = false;
         updateData.approvalStatus = 'rejected';
         updateData.rejectedReason = reason || 'No reason provided';
+      } else if (action === 'revoke') {
+        updateData.isApproved = false;
+        updateData.approvalStatus = 'pending';
+        updateData.rejectedReason = reason || 'Access revoked by administrator';
+        updateData.approvedBy = null;
+        updateData.approvedAt = null;
       }
 
       const [updatedUser] = await db.update(users)
