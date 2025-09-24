@@ -34,7 +34,7 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
     refetchOnWindowFocus: false,
   });
 
-  const hasPassword = passwordStatus?.hasPassword || false;
+  const hasPassword = (passwordStatus as { hasPassword?: boolean })?.hasPassword || false;
 
   const changePasswordForm = useForm<ChangePasswordFormData>({
     resolver: zodResolver(changePasswordSchema),
