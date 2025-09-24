@@ -3291,22 +3291,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const continuousCityJumps: any[] = [];
         let totalTravelDistance = 0;
         
-        // Filter for geocoded stops with location data and sort by start time
-        const geocodedStops = travelStops
-          .filter(stop => stop.geocoded && (stop.city || stop.state || stop.country))
+        // FIXED: Include ALL travel stops, not just geocoded ones, and sort by start time
+        const allStops = travelStops
           .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
           
-        console.log(`🗺️ Processing ${geocodedStops.length} geocoded stops for continuous travel chain`);
+        console.log(`🗺️ Processing ${allStops.length} travel stops for continuous travel chain (including non-geocoded)`);
         
-        // Walk through stops sequentially, emitting jumps only when city changes
-        if (geocodedStops.length > 1) {
-          let previousStop = geocodedStops[0];
+        // Helper function to detect if two stops represent different locations
+        const isDifferentLocation = (stop1: any, stop2: any): boolean => {
+          // If both have geocoded city data, use city comparison
+          if (stop1.geocoded && stop2.geocoded && stop1.city && stop2.city) {
+            return normalizeCityKey(stop1) !== normalizeCityKey(stop2);
+          }
           
-          for (let i = 1; i < geocodedStops.length; i++) {
-            const currentStop = geocodedStops[i];
+          // If neither has city data, use coordinate-based detection (50+ mile threshold)
+          if ((!stop1.city && !stop2.city) || (!stop1.geocoded && !stop2.geocoded)) {
+            const distance = calculateStraightLineDistance(stop1.lat, stop1.lng, stop2.lat, stop2.lng);
+            return distance > 50; // Consider it a "jump" if more than 50 miles apart
+          }
+          
+          // Mixed case: one geocoded, one not - use coordinates with lower threshold  
+          const distance = calculateStraightLineDistance(stop1.lat, stop1.lng, stop2.lat, stop2.lng);
+          return distance > 25; // Lower threshold when mixing geocoded/non-geocoded
+        };
+        
+        // Walk through ALL stops sequentially, emitting jumps when location changes significantly
+        if (allStops.length > 1) {
+          let previousStop = allStops[0];
+          
+          for (let i = 1; i < allStops.length; i++) {
+            const currentStop = allStops[i];
             
-            // Check if we've moved to a different city
-            if (normalizeCityKey(currentStop) !== normalizeCityKey(previousStop)) {
+            // Check if we've moved to a significantly different location
+            if (isDifferentLocation(currentStop, previousStop)) {
               // Calculate actual route distance using GPS coordinates from the primary dataset
               let distance = 0;
               try {
@@ -3351,17 +3368,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 );
               }
               
-              // Create jump entry
+              // FIXED: Create meaningful jump entry even for non-geocoded stops
+              const getLocationName = (stop: any) => {
+                if (stop.city) return stop.city;
+                if (stop.state) return `Somewhere in ${stop.state}`;
+                if (stop.country) return `Somewhere in ${stop.country}`;
+                return `Location (${stop.lat.toFixed(3)}, ${stop.lng.toFixed(3)})`;
+              };
+              
               const jump = {
-                fromCity: previousStop.city || 'Unknown',
+                fromCity: getLocationName(previousStop),
                 fromState: previousStop.state,
                 fromCountry: previousStop.country || 'Unknown',
-                toCity: currentStop.city || 'Unknown', 
+                toCity: getLocationName(currentStop), 
                 toState: currentStop.state,
                 toCountry: currentStop.country || 'Unknown',
                 date: currentStop.start, // Use start time of destination stop
                 distance: Math.round(distance * 10) / 10, // Round to 1 decimal
-                mode: 'travel' // Default mode since we don't have activity data
+                mode: currentStop.geocoded && previousStop.geocoded ? 'travel' : 'estimated', // Mark non-geocoded as estimated
+                geocoded: currentStop.geocoded && previousStop.geocoded // Track geocoding status
               };
               
               continuousCityJumps.push(jump);
