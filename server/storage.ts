@@ -27,6 +27,10 @@ import {
 } from "@shared/schema";
 import { db } from "./db.js";
 import { eq, and, or, desc, sql, gte, lte, exists, inArray } from "drizzle-orm";
+import path from 'path';
+
+// Configure uploads directory (supports persistent disk)
+const UPLOADS_DIR = process.env.UPLOADS_DIR || './uploads';
 
 // Interface for storage operations
 export interface IStorage {
@@ -1673,7 +1677,7 @@ export class DatabaseStorage implements IStorage {
 
     // Read JSON file and process timelinePath data (SAME as maps)
     const fs = await import('fs');
-    const filePath = `./uploads/${datasetId}.json`;
+    const filePath = path.join(UPLOADS_DIR, `${datasetId}.json`);
     
     if (!fs.existsSync(filePath)) {
       console.log(`❌ JSON file not found: ${filePath}`);
