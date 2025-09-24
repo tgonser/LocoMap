@@ -46,11 +46,12 @@ interface LocationSample {
 // Parse timestamp from Google location format
 function parseToUTCDate(timestampStr: string): Date | null {
   try {
-    if (timestampStr.endsWith('Z')) {
-      return new Date(timestampStr);
-    } else {
-      return new Date(timestampStr + 'Z');
+    const date = new Date(timestampStr);
+    // Check if the parsed date is valid
+    if (isNaN(date.getTime())) {
+      return null;
     }
+    return date;
   } catch {
     return null;
   }
@@ -265,14 +266,14 @@ export function parseVisitsActivitiesModern(jsonData: any, year: number): Locati
   console.log(`📍 Processing NEW FORMAT with ${timelineObjects.length} timeline objects for ${year}`);
   
   timelineObjects.forEach((obj: any) => {
-    // Parse placeVisit records (stationary periods - high value for presence)
-    if (obj.placeVisit) {
-      const visit = obj.placeVisit;
-      if (visit.location?.latitudeE7 && visit.location?.longitudeE7 && 
-          visit.duration?.startTimestamp && visit.duration?.endTimestamp) {
-        
-        const startTime = parseToUTCDate(visit.duration.startTimestamp);
-        const endTime = parseToUTCDate(visit.duration.endTimestamp);
+    // Parse visit records (stationary periods - high value for presence)
+    // Handle both modern format (placeVisit) and user's actual format (visit)
+    const visit = obj.placeVisit || obj.visit;
+    if (visit && obj.startTime && obj.endTime) {
+      // Handle modern format with latitudeE7/longitudeE7
+      if (visit.location?.latitudeE7 && visit.location?.longitudeE7) {
+        const startTime = parseToUTCDate(obj.startTime);
+        const endTime = parseToUTCDate(obj.endTime);
         
         if (startTime && endTime && startTime >= yearStart && startTime < yearEnd) {
           const lat = visit.location.latitudeE7 / 1e7;
@@ -290,32 +291,72 @@ export function parseVisitsActivitiesModern(jsonData: any, year: number): Locati
           });
         }
       }
-    }
-    
-    // Parse activitySegment records (movement periods - fallback for presence)
-    if (obj.activitySegment) {
-      const activity = obj.activitySegment;
-      if (activity.duration?.startTimestamp && activity.duration?.endTimestamp) {
-        
-        const startTime = parseToUTCDate(activity.duration.startTimestamp);
-        const endTime = parseToUTCDate(activity.duration.endTimestamp);
+      // Handle user's actual format with "geo:lat,lng" placeLocation
+      else if (visit.topCandidate?.placeLocation) {
+        const startTime = parseToUTCDate(obj.startTime);
+        const endTime = parseToUTCDate(obj.endTime);
         
         if (startTime && endTime && startTime >= yearStart && startTime < yearEnd) {
+          // Parse "geo:32.705498,-117.160133" format
+          const geoMatch = visit.topCandidate.placeLocation.match(/geo:([^,]+),([^,]+)/);
+          if (geoMatch) {
+            const lat = parseFloat(geoMatch[1]);
+            const lng = parseFloat(geoMatch[2]);
+            const durationMs = endTime.getTime() - startTime.getTime();
+            const date = getLocalDateKey(startTime);
+            
+            samples.push({
+              date,
+              lat,
+              lng,
+              durationMs,
+              provenance: 'visit',
+              timestamp: startTime
+            });
+          }
+        }
+      }
+    }
+    
+    // Parse activity records (movement periods - fallback for presence)
+    // Handle both modern format (activitySegment) and user's actual format (activity)
+    const activity = obj.activitySegment || obj.activity;
+    if (activity && obj.startTime && obj.endTime) {
+      // Handle modern format with startLocation/endLocation
+      if (activity.startLocation?.latitudeE7 && activity.startLocation?.longitudeE7) {
+        const startTime = parseToUTCDate(obj.startTime);
+        const endTime = parseToUTCDate(obj.endTime);
+        
+        if (startTime && endTime && startTime >= yearStart && startTime < yearEnd) {
+          const lat = activity.startLocation.latitudeE7 / 1e7;
+          const lng = activity.startLocation.longitudeE7 / 1e7;
           const durationMs = endTime.getTime() - startTime.getTime();
           const date = getLocalDateKey(startTime);
           
-          // Use start location if available, otherwise end location
-          let lat: number | undefined, lng: number | undefined;
-          
-          if (activity.startLocation?.latitudeE7 && activity.startLocation?.longitudeE7) {
-            lat = activity.startLocation.latitudeE7 / 1e7;
-            lng = activity.startLocation.longitudeE7 / 1e7;
-          } else if (activity.endLocation?.latitudeE7 && activity.endLocation?.longitudeE7) {
-            lat = activity.endLocation.latitudeE7 / 1e7;
-            lng = activity.endLocation.longitudeE7 / 1e7;
-          }
-          
-          if (lat !== undefined && lng !== undefined) {
+          samples.push({
+            date,
+            lat,
+            lng,
+            durationMs,
+            provenance: 'activity',
+            timestamp: startTime
+          });
+        }
+      }
+      // Handle user's actual format with "geo:lat,lng" start/end locations
+      else if (activity.start) {
+        const startTime = parseToUTCDate(obj.startTime);
+        const endTime = parseToUTCDate(obj.endTime);
+        
+        if (startTime && endTime && startTime >= yearStart && startTime < yearEnd) {
+          // Parse "geo:32.707917,-117.162824" format from start location
+          const geoMatch = activity.start.match(/geo:([^,]+),([^,]+)/);
+          if (geoMatch) {
+            const lat = parseFloat(geoMatch[1]);
+            const lng = parseFloat(geoMatch[2]);
+            const durationMs = endTime.getTime() - startTime.getTime();
+            const date = getLocalDateKey(startTime);
+            
             samples.push({
               date,
               lat,
