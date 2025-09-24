@@ -8,13 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LogIn, MapPin, UserPlus, User, Eye, EyeOff, AlertCircle, Shield, Home } from "lucide-react";
+import { LogIn, MapPin, UserPlus, User, Eye, EyeOff, AlertCircle, Shield, Home, Settings } from "lucide-react";
 import LocationHistoryApp from "@/components/LocationHistoryApp";
 import AdminPanel from "@/pages/AdminPanel";
 import LandingPage from "@/pages/LandingPage";
 import HowItWorksPage from "@/pages/HowItWorksPage";
 import ContactPage from "@/pages/ContactPage";
 import TechnologyPage from "@/pages/TechnologyPage";
+import SettingsPage from "@/pages/SettingsPage";
 import NotFound from "@/pages/not-found";
 import ThemeToggle from "@/components/ThemeToggle";
 import { useState, useEffect } from "react";
@@ -75,7 +76,7 @@ function PendingApprovalScreen({ user, logout }: { user: any, logout: () => void
 
 function AuthenticatedApp() {
   const { user, logout } = useAuth();
-  const [currentView, setCurrentView] = useState<'app' | 'admin'>('app');
+  const [currentView, setCurrentView] = useState<'app' | 'admin' | 'settings'>('app');
   
   // Check if user is admin
   const isAdmin = user?.role === 'admin';
@@ -114,6 +115,16 @@ function AuthenticatedApp() {
                 </Button>
               </>
             )}
+            <Button 
+              variant={currentView === 'settings' ? 'default' : 'outline'} 
+              size="sm" 
+              onClick={() => setCurrentView(currentView === 'settings' ? 'app' : 'settings')}
+              className="gap-2"
+              data-testid="button-settings"
+            >
+              <Settings className="h-4 w-4" />
+              {currentView === 'settings' ? 'Back to App' : 'Settings'}
+            </Button>
             <ThemeToggle />
             <Button variant="outline" size="sm" onClick={logout} data-testid="button-logout">
               Logout
@@ -122,7 +133,13 @@ function AuthenticatedApp() {
         </div>
       </header>
       <main>
-        {currentView === 'admin' ? <AdminPanel /> : <LocationHistoryApp />}
+        {currentView === 'admin' ? (
+          <AdminPanel />
+        ) : currentView === 'settings' ? (
+          <SettingsPage onBack={() => setCurrentView('app')} />
+        ) : (
+          <LocationHistoryApp />
+        )}
       </main>
     </div>
   );
