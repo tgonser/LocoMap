@@ -55,10 +55,7 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
 
   const changePasswordMutation = useMutation({
     mutationFn: async (data: ChangePasswordFormData) => {
-      return await apiRequest('/api/auth/change-password', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      });
+      return await apiRequest('POST', '/api/auth/change-password', data);
     },
     onSuccess: () => {
       toast({
@@ -78,10 +75,7 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
 
   const setPasswordMutation = useMutation({
     mutationFn: async (data: SetPasswordFormData) => {
-      return await apiRequest('/api/auth/set-password', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      });
+      return await apiRequest('POST', '/api/auth/set-password', data);
     },
     onSuccess: () => {
       toast({
