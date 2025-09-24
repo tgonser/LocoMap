@@ -3372,6 +3372,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let travelStops = generateTravelStopsFromTimelinePoints(timelinePoints, primaryDataset.id);
         console.log(`🎯 Generated ${travelStops.length} travel stops from timeline data`);
         
+        // CRITICAL: Geocode the travel stops to get city names for city jumps
+        console.log(`🌍 Geocoding ${travelStops.length} travel stops to resolve city names...`);
+        
+        // Extract coordinates for batch geocoding
+        const coordinates = travelStops.map(stop => ({
+          lat: stop.lat,
+          lng: stop.lng
+        }));
+        
+        // Deduplicate coordinates to avoid redundant API calls
+        const uniqueCoordinates = deduplicateCoordinates(coordinates);
+        console.log(`🔍 Deduplicated to ${uniqueCoordinates.length} unique coordinates for geocoding`);
+        
+        // Batch reverse geocode all unique coordinates
+        const geocodingResults = await batchReverseGeocode(uniqueCoordinates);
+        console.log(`✅ Geocoded ${geocodingResults.length} locations`);
+        
+        // Map geocoding results back to travel stops
+        travelStops = travelStops.map(stop => {
+          const coordKey = `${stop.lat.toFixed(4)},${stop.lng.toFixed(4)}`;
+          const geocodingResult = geocodingResults.find(result => {
+            const resultKey = `${result.lat.toFixed(4)},${result.lng.toFixed(4)}`;
+            return resultKey === coordKey;
+          });
+          
+          if (geocodingResult && geocodingResult.country) {
+            return {
+              ...stop,
+              city: geocodingResult.city,
+              state: geocodingResult.state,
+              country: geocodingResult.country,
+              geocoded: true
+            };
+          }
+          
+          return stop; // Keep as non-geocoded if no result
+        });
+        
+        const geocodedStops = travelStops.filter(stop => stop.geocoded);
+        console.log(`🎯 Successfully geocoded ${geocodedStops.length}/${travelStops.length} travel stops with city names`);
+        
         console.log(`🔄 Building continuous city jumps from ${travelStops.length} travel stops...`);
         
         // Helper function to normalize city keys for comparison
@@ -3398,11 +3439,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const continuousCityJumps: any[] = [];
         let totalTravelDistance = 0;
         
-        // FIXED: Include ALL travel stops, not just geocoded ones, and sort by start time
-        const allStops = travelStops
+        // FIXED: Only include geocoded travel stops for city jumps (must have city names)
+        const geocodedStopsOnly = travelStops
+          .filter(stop => stop.geocoded && stop.city) // Only stops with city names
           .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
           
-        console.log(`🗺️ Processing ${allStops.length} travel stops for continuous travel chain (including non-geocoded)`);
+        console.log(`🗺️ Processing ${geocodedStopsOnly.length} geocoded travel stops for city jumps chain (filtered from ${travelStops.length} total)`);
         
         // Helper function to detect if two stops represent different locations
         const isDifferentLocation = (stop1: any, stop2: any): boolean => {
@@ -3422,12 +3464,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return distance > 25; // Lower threshold when mixing geocoded/non-geocoded
         };
         
-        // Walk through ALL stops sequentially, emitting jumps when location changes significantly
-        if (allStops.length > 1) {
-          let previousStop = allStops[0];
+        // Walk through geocoded stops sequentially, emitting jumps when location changes significantly
+        if (geocodedStopsOnly.length > 1) {
+          let previousStop = geocodedStopsOnly[0];
           
-          for (let i = 1; i < allStops.length; i++) {
-            const currentStop = allStops[i];
+          for (let i = 1; i < geocodedStopsOnly.length; i++) {
+            const currentStop = geocodedStopsOnly[i];
             
             // Check if we've moved to a significantly different location
             if (isDifferentLocation(currentStop, previousStop)) {
