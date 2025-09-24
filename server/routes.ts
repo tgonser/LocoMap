@@ -3345,8 +3345,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const primaryDataset = datasets[0]; // Use first dataset
         
         // Read and parse the raw JSON file
-        console.log(`📁 Reading large file from disk: ${storage.getUploadPath(primaryDataset.id)}`);
-        const rawContent = await storage.getRawFileContent(primaryDataset.id, userId);
+        console.log(`📁 Reading timeline JSON file for dataset ${primaryDataset.id}`);
+        const rawContent = await storage.getRawFile(primaryDataset.id, userId);
+        if (!rawContent) {
+          console.log(`❌ No raw content found for dataset ${primaryDataset.id}`);
+          return res.status(400).json({ error: "No location data found" });
+        }
         const jsonData = JSON.parse(rawContent);
         console.log(`✅ File read successfully: ${(rawContent.length / 1024 / 1024).toFixed(2)}MB`);
 
