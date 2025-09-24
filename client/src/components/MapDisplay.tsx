@@ -49,6 +49,12 @@ function MapViewController({ locations, selectedDate, selectedPoint }: MapViewCo
   const map = useMap();
 
   useEffect(() => {
+    // Skip bounds fitting if user has manually selected a specific point
+    // This preserves manual zoom levels during timeline navigation
+    if (selectedPoint) {
+      return;
+    }
+
     // Filter locations by selected date
     const filteredLocations = selectedDate 
       ? locations.filter(loc => 
@@ -84,7 +90,7 @@ function MapViewController({ locations, selectedDate, selectedPoint }: MapViewCo
       duration: 0.8
     });
 
-  }, [map, locations, selectedDate]);
+  }, [map, locations, selectedDate, selectedPoint]);
 
   // Handle individual point selection with smooth animation
   useEffect(() => {
