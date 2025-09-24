@@ -2715,8 +2715,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const resolvedSamples = await resolveSamples(selectedSamples, cacheArray, 20);
       console.log(`🗺️ Resolved ${resolvedSamples.length} samples with state/country data`);
 
-      // Step 5: Build daily presence records
-      const dailyPresence = buildDailyPresence(resolvedSamples);
+      // Step 5: Build daily presence records (FIXED: pass date range for complete coverage)
+      const dailyPresence = buildDailyPresence(resolvedSamples, startDate, endDate);
       console.log(`📅 Built ${dailyPresence.length} daily presence records`);
 
       // Step 6: Aggregate state/country statistics

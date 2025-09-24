@@ -466,8 +466,13 @@ export async function resolveSamples(
 /**
  * Build daily presence data by consolidating multiple samples per day
  * Uses majority vote for state/country, tie-breaks by longest duration
+ * FIXED: Now creates records for ALL days in the date range, not just travel days
  */
-export function buildDailyPresence(resolvedSamples: Array<LocationSample & {state?: string, country: string, resolution: 'cache' | 'api'}>): DailyPresence[] {
+export function buildDailyPresence(
+  resolvedSamples: Array<LocationSample & {state?: string, country: string, resolution: 'cache' | 'api'}>,
+  startDate: Date,
+  endDate: Date
+): DailyPresence[] {
   const presenceByDate = new Map<string, Array<LocationSample & {state?: string, country: string, resolution: 'cache' | 'api'}>>();
   
   // Group by date
@@ -480,46 +485,88 @@ export function buildDailyPresence(resolvedSamples: Array<LocationSample & {stat
   
   const dailyPresence: DailyPresence[] = [];
   
-  presenceByDate.forEach((daySamples, date) => {
-    // Count occurrences of each state/country combination
-    const locationCounts = new Map<string, {count: number, totalDuration: number, sample: typeof daySamples[0]}>();
+  // CRITICAL FIX: Generate ALL days in the requested range
+  const currentDate = new Date(startDate);
+  let lastKnownLocation: DailyPresence | null = null;
+  
+  // Handle edge case: find the first available location for leading empty days
+  const firstSample = resolvedSamples.length > 0 ? resolvedSamples[0] : null;
+  
+  while (currentDate <= endDate) {
+    const dateKey = getLocalDateKey(currentDate);
+    const daySamples = presenceByDate.get(dateKey);
     
-    daySamples.forEach(sample => {
-      const key = `${sample.state || 'N/A'}_${sample.country}`;
-      if (!locationCounts.has(key)) {
-        locationCounts.set(key, {count: 0, totalDuration: 0, sample});
+    if (daySamples && daySamples.length > 0) {
+      // This day has actual samples - process normally
+      const locationCounts = new Map<string, {count: number, totalDuration: number, sample: typeof daySamples[0]}>();
+      
+      daySamples.forEach(sample => {
+        const key = `${sample.state || 'N/A'}_${sample.country}`;
+        if (!locationCounts.has(key)) {
+          locationCounts.set(key, {count: 0, totalDuration: 0, sample});
+        }
+        const entry = locationCounts.get(key)!;
+        entry.count++;
+        entry.totalDuration += sample.durationMs;
+      });
+      
+      // Find best location by count, then by total duration
+      let bestLocation: {count: number, totalDuration: number, sample: typeof daySamples[0]} | null = null;
+      
+      for (const location of Array.from(locationCounts.values())) {
+        if (!bestLocation || 
+            location.count > bestLocation.count ||
+            (location.count === bestLocation.count && location.totalDuration > bestLocation.totalDuration)) {
+          bestLocation = location;
+        }
       }
-      const entry = locationCounts.get(key)!;
-      entry.count++;
-      entry.totalDuration += sample.durationMs;
-    });
-    
-    // Find best location by count, then by total duration
-    let bestLocation: {count: number, totalDuration: number, sample: typeof daySamples[0]} | null = null;
-    
-    for (const location of Array.from(locationCounts.values())) {
-      if (!bestLocation || 
-          location.count > bestLocation.count ||
-          (location.count === bestLocation.count && location.totalDuration > bestLocation.totalDuration)) {
-        bestLocation = location;
+      
+      if (bestLocation) {
+        const dayPresence: DailyPresence = {
+          date: dateKey,
+          lat: bestLocation.sample.lat,
+          lng: bestLocation.sample.lng,
+          state: bestLocation.sample.state,
+          country: bestLocation.sample.country,
+          provenance: bestLocation.sample.provenance,
+          resolution: bestLocation.sample.resolution,
+          sampleCount: daySamples.length
+        };
+        
+        dailyPresence.push(dayPresence);
+        lastKnownLocation = dayPresence; // Remember this location
       }
-    }
-    
-    if (bestLocation) {
+    } else if (lastKnownLocation) {
+      // No samples for this day - carry forward the last known location
       dailyPresence.push({
-        date,
-        lat: bestLocation.sample.lat,
-        lng: bestLocation.sample.lng,
-        state: bestLocation.sample.state,
-        country: bestLocation.sample.country,
-        provenance: bestLocation.sample.provenance,
-        resolution: bestLocation.sample.resolution,
-        sampleCount: daySamples.length
+        date: dateKey,
+        lat: lastKnownLocation.lat,
+        lng: lastKnownLocation.lng,
+        state: lastKnownLocation.state,
+        country: lastKnownLocation.country,
+        provenance: 'carried_forward' as any, // Mark as carried forward
+        resolution: lastKnownLocation.resolution,
+        sampleCount: 0 // No samples for this day
+      });
+    } else if (firstSample) {
+      // Leading days with no prior location - use first available sample
+      dailyPresence.push({
+        date: dateKey,
+        lat: firstSample.lat,
+        lng: firstSample.lng,
+        state: firstSample.state,
+        country: firstSample.country,
+        provenance: 'estimated' as any, // Mark as estimated from first sample
+        resolution: firstSample.resolution,
+        sampleCount: 0 // No samples for this day
       });
     }
-  });
+    
+    // Move to next day
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
   
-  console.log(`🏠 Built daily presence for ${dailyPresence.length} days`);
+  console.log(`🏠 Built daily presence for ${dailyPresence.length} days (covering complete date range)`);
   return dailyPresence;
 }
 
@@ -549,8 +596,11 @@ export async function getDailyPresence(
   // Step 3: Resolve state/country using cache + API
   const resolvedSamples = await resolveSamples(selectedSamples, existingCache, 20);
   
-  // Step 4: Build daily presence data
-  const dailyPresence = buildDailyPresence(resolvedSamples);
+  // Step 4: Build daily presence data (TODO: This function needs date range parameters for complete coverage)
+  // For now, estimate the range from the samples - this is a limitation of the current interface
+  const startDate = new Date(`${year}-01-01`);
+  const endDate = new Date(`${year}-12-31`);
+  const dailyPresence = buildDailyPresence(resolvedSamples, startDate, endDate);
   
   console.log(`🏠 Presence detection complete: ${dailyPresence.length} days with location presence`);
   return dailyPresence;
