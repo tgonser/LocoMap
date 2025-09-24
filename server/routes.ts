@@ -12,6 +12,7 @@ import { setupAuth, isAuthenticated } from "./replitAuth";
 import { parseGoogleLocationHistory, validateGoogleLocationHistory } from "./googleLocationParser";
 import { indexGoogleLocationFile, type LocationFileIndex } from "./googleLocationIndexer";
 import { buildParentIndex, processTimelinePathsForDateRange, type TimelinePathPoint } from "./timelineAssociation";
+import crypto from 'crypto';
 
 // Configure uploads directory (supports persistent disk)
 const UPLOADS_DIR = process.env.UPLOADS_DIR || './uploads';
@@ -4629,7 +4630,6 @@ Return your response as a JSON object with this exact structure:
   
   // Hash IP address for privacy-preserving tracking
   function hashIP(ip: string): string {
-    const crypto = require('crypto');
     return crypto.createHash('sha256').update(ip + 'salt').digest('hex');
   }
 

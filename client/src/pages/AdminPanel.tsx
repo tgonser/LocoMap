@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { Users, CheckCircle, XCircle, Clock, Shield, UserMinus } from 'lucide-react';
+import { Users, CheckCircle, XCircle, Clock, Shield, UserMinus, BarChart3, Eye } from 'lucide-react';
 
 interface PendingUser {
   id: string;
@@ -40,6 +40,22 @@ interface AdminStats {
   admins: number;
 }
 
+interface VisitorStats {
+  totalVisits: number;
+  uniqueVisitors: number;
+  period: string;
+  recentVisits: Array<{
+    date: string;
+    visits: number;
+    uniqueVisitors: number;
+  }>;
+  topPages: Array<{
+    path: string;
+    visits: number;
+    uniqueVisitors: number;
+  }>;
+}
+
 export default function AdminPanel() {
   const { toast } = useToast();
   const [processingUser, setProcessingUser] = useState<string | null>(null);
@@ -60,6 +76,12 @@ export default function AdminPanel() {
   const { data: stats, isLoading: loadingStats } = useQuery<AdminStats>({
     queryKey: ['/api/admin/stats'],
     refetchInterval: 5000,
+  });
+
+  // Fetch visitor stats
+  const { data: visitorStats, isLoading: loadingVisitorStats } = useQuery<VisitorStats>({
+    queryKey: ['/api/admin/visitor-stats'],
+    refetchInterval: 30000, // Refresh every 30 seconds
   });
 
   // Approval mutation (now supports revoke)
@@ -207,7 +229,7 @@ export default function AdminPanel() {
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="pending" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
+              <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="pending" data-testid="tab-pending-users">
                   <Clock className="h-4 w-4 mr-1" />
                   Pending ({pendingUsers.length})
@@ -215,6 +237,10 @@ export default function AdminPanel() {
                 <TabsTrigger value="approved" data-testid="tab-approved-users">
                   <CheckCircle className="h-4 w-4 mr-1" />
                   Approved ({approvedUsers.length})
+                </TabsTrigger>
+                <TabsTrigger value="analytics" data-testid="tab-analytics">
+                  <BarChart3 className="h-4 w-4 mr-1" />
+                  Analytics
                 </TabsTrigger>
               </TabsList>
               
@@ -347,6 +373,105 @@ export default function AdminPanel() {
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+              </TabsContent>
+
+              {/* Analytics Tab */}
+              <TabsContent value="analytics" className="mt-6">
+                {loadingVisitorStats ? (
+                  <div className="text-center py-8">
+                    <div className="text-muted-foreground">Loading visitor statistics...</div>
+                  </div>
+                ) : visitorStats ? (
+                  <div className="space-y-6">
+                    {/* Visitor Overview Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                          <CardTitle className="text-sm font-medium">Total Visits</CardTitle>
+                          <Eye className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-2xl font-bold">{visitorStats.totalVisits}</div>
+                          <p className="text-xs text-muted-foreground">
+                            Last {visitorStats.period}
+                          </p>
+                        </CardContent>
+                      </Card>
+                      
+                      <Card>
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                          <CardTitle className="text-sm font-medium">Unique Visitors</CardTitle>
+                          <Users className="h-4 w-4 text-muted-foreground" />
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-2xl font-bold">{visitorStats.uniqueVisitors}</div>
+                          <p className="text-xs text-muted-foreground">
+                            Distinct IP addresses
+                          </p>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    {/* Top Pages */}
+                    {visitorStats.topPages && visitorStats.topPages.length > 0 && (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Most Visited Pages</CardTitle>
+                          <CardDescription>Popular pages on your website</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-3">
+                            {visitorStats.topPages.slice(0, 5).map((page, index) => (
+                              <div key={page.path} className="flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                  <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-medium">
+                                    {index + 1}
+                                  </div>
+                                  <div>
+                                    <div className="font-medium text-sm">{page.path}</div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {page.uniqueVisitors} unique visitors
+                                    </div>
+                                  </div>
+                                </div>
+                                <Badge variant="secondary">{page.visits} visits</Badge>
+                              </div>
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Recent Activity */}
+                    {visitorStats.recentVisits && visitorStats.recentVisits.length > 0 && (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Recent Activity</CardTitle>
+                          <CardDescription>Daily visitor trends</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-2">
+                            {visitorStats.recentVisits.slice(0, 7).map((day) => (
+                              <div key={day.date} className="flex items-center justify-between py-2">
+                                <div className="text-sm font-medium">
+                                  {new Date(day.date).toLocaleDateString()}
+                                </div>
+                                <div className="flex items-center space-x-4 text-sm text-muted-foreground">
+                                  <span>{day.visits} visits</span>
+                                  <span>{day.uniqueVisitors} unique</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <div className="text-muted-foreground">No visitor data available</div>
                   </div>
                 )}
               </TabsContent>
