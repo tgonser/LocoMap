@@ -1870,6 +1870,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Extract date ranges for feedback (used in both merge and replace modes)
       const newDataDateRange = extractDateRange(jsonData.timelineObjects || []);
       
+      // Initialize merge statistics variables
+      let originalCount = 0;
+      let newCount = 0;
+      let finalCount = 0;
+      let addedObjects = 0;
+      let duplicatesRemoved = 0;
+      let existingDataDateRange: any = null;
+      
       if (uploadMode === 'merge') {
         console.log('🔀 Merge mode selected - looking for existing dataset to merge with...');
         
@@ -1949,11 +1957,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         // Calculate merge statistics for user feedback
-        const originalCount = existingJsonData.timelineObjects?.length || 0;
-        const newCount = jsonData.timelineObjects?.length || 0;
-        const finalCount = finalJsonData.timelineObjects?.length || 0;
-        const addedObjects = finalCount - originalCount;
-        const duplicatesRemoved = newCount - addedObjects;
+        originalCount = existingJsonData.timelineObjects?.length || 0;
+        newCount = jsonData.timelineObjects?.length || 0;
+        finalCount = finalJsonData.timelineObjects?.length || 0;
+        addedObjects = finalCount - originalCount;
+        duplicatesRemoved = newCount - addedObjects;
         
         console.log(`📊 Merge stats: ${originalCount} existing + ${newCount} new = ${finalCount} total (${addedObjects} added, ${duplicatesRemoved} duplicates removed)`);
         
