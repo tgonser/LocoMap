@@ -48,9 +48,14 @@ export default function YearlyStateReport() {
       
       try {
         // Add timestamp to force fresh request and bypass browser cache
-        // Add refresh=true to bypass server cache and get fresh calculation with correct date ranges
         const timestamp = Date.now();
-        const response = await apiRequest('GET', `/api/yearly-state-report?year=${selectedYear}&refresh=true&t=${timestamp}`);
+        const currentYear = new Date().getFullYear();
+        
+        // Only refresh for current year - use cache for completed years
+        const shouldRefresh = parseInt(selectedYear) === currentYear;
+        const refreshParam = shouldRefresh ? "&refresh=true" : "";
+        
+        const response = await apiRequest('GET', `/api/yearly-state-report?year=${selectedYear}${refreshParam}&t=${timestamp}`);
         
         setProcessingProgress("Processing complete!");
         return response.json();
