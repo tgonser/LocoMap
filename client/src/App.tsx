@@ -17,9 +17,10 @@ import ContactPage from "@/pages/ContactPage";
 import TechnologyPage from "@/pages/TechnologyPage";
 import NotFound from "@/pages/not-found";
 import ThemeToggle from "@/components/ThemeToggle";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Switch, Route, useLocation, Link } from "wouter";
+import { trackInitialPageLoad } from "@/lib/analytics";
 
 function PendingApprovalScreen({ user, logout }: { user: any, logout: () => void }) {
   return (
@@ -452,6 +453,11 @@ function AppContent() {
 }
 
 function App() {
+  // Track initial page load for visitor analytics
+  useEffect(() => {
+    trackInitialPageLoad();
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="dark">
