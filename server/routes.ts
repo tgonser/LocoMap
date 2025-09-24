@@ -1965,6 +1965,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         console.log(`📊 Merge stats: ${originalCount} existing + ${newCount} new = ${finalCount} total (${addedObjects} added, ${duplicatesRemoved} duplicates removed)`);
         
+        // Record merge event for audit trail
+        try {
+          await storage.createMergeEvent({
+            datasetId: dataset.id,
+            addedObjects,
+            duplicatesRemoved,
+            newDataStart: newDataDateRange?.start ? new Date(newDataDateRange.start) : null,
+            newDataEnd: newDataDateRange?.end ? new Date(newDataDateRange.end) : null,
+            sourceFilename: req.file.originalname,
+          });
+          
+          // Update dataset merge statistics
+          const currentMergeCount = (dataset.mergeCount || 0) + 1;
+          await storage.updateDatasetMergeStats(dataset.id, {
+            mergeCount: currentMergeCount,
+            lastMergeAt: new Date(),
+            firstDataAt: existingDataDateRange?.start ? new Date(existingDataDateRange.start) : dataset.firstDataAt,
+            lastDataAt: newDataDateRange?.end ? new Date(newDataDateRange.end) : dataset.lastDataAt,
+            totalSources: currentMergeCount + 1, // Original file + number of merges
+            lastMergeAdded: addedObjects,
+            lastMergeDuplicates: duplicatesRemoved,
+            fileSize: Math.round(Buffer.byteLength(JSON.stringify(finalJsonData))),
+            totalPoints: finalCount,
+          });
+          
+          console.log(`✅ Merge event recorded: dataset ${dataset.id} now has ${currentMergeCount} merges`);
+        } catch (mergeEventError) {
+          console.error('❌ Failed to record merge event:', mergeEventError);
+          // Continue with upload - don't fail the whole operation for tracking issues
+        }
+        
         // Recalculate metadata for the merged result
         if (fileSizeMB > 10) {
           // For large merged files, create temporary file to scan
