@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from 'react-leaflet';
 import { Icon, LatLngBounds } from 'leaflet';
 import { Card } from '@/components/ui/card';
@@ -47,14 +47,9 @@ interface MapViewControllerProps {
 
 function MapViewController({ locations, selectedDate, selectedPoint }: MapViewControllerProps) {
   const map = useMap();
+  const isNavigatingRef = useRef(false);
 
   useEffect(() => {
-    // Skip bounds fitting if user has manually selected a specific point
-    // This preserves manual zoom levels during timeline navigation
-    if (selectedPoint) {
-      return;
-    }
-
     // Filter locations by selected date
     const filteredLocations = selectedDate 
       ? locations.filter(loc => 
@@ -64,6 +59,11 @@ function MapViewController({ locations, selectedDate, selectedPoint }: MapViewCo
 
     if (filteredLocations.length === 0) {
       return; // Keep current view if no locations
+    }
+
+    // If user is actively navigating timeline points, don't interfere with zoom level
+    if (isNavigatingRef.current) {
+      return;
     }
 
     // Handle single location case
@@ -76,7 +76,7 @@ function MapViewController({ locations, selectedDate, selectedPoint }: MapViewCo
       return;
     }
 
-    // Handle multiple locations - calculate bounds
+    // Handle multiple locations - calculate bounds (only on initial load)
     const bounds = new LatLngBounds([]);
     filteredLocations.forEach(location => {
       bounds.extend([location.lat, location.lng]);
@@ -90,11 +90,19 @@ function MapViewController({ locations, selectedDate, selectedPoint }: MapViewCo
       duration: 0.8
     });
 
-  }, [map, locations, selectedDate, selectedPoint]);
+  }, [map, locations, selectedDate]);
+
+  // Reset navigation mode when date changes
+  useEffect(() => {
+    isNavigatingRef.current = false;
+  }, [selectedDate]);
 
   // Handle individual point selection with smooth animation
   useEffect(() => {
     if (selectedPoint) {
+      // User is now actively navigating timeline points
+      isNavigatingRef.current = true;
+      
       map.panTo([selectedPoint.lat, selectedPoint.lng], {
         animate: true,
         duration: 1.0
