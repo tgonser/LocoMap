@@ -7,7 +7,7 @@ import path from 'path';
 import { storage } from "./storage";
 import { db } from "./db";
 import { yearlyReportCache, users, pageVisits, visitorStats, insertPageVisitSchema, type PageVisit, type VisitorStats } from "@shared/schema";
-import { eq, and, or, sql } from "drizzle-orm";
+import { eq, and, or, sql, gte } from "drizzle-orm";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { parseGoogleLocationHistory, validateGoogleLocationHistory } from "./googleLocationParser";
 import { indexGoogleLocationFile, type LocationFileIndex } from "./googleLocationIndexer";
@@ -4798,13 +4798,16 @@ Return your response as a JSON object with this exact structure:
       const daysCount = Math.min(parseInt(days as string) || 30, 365);
       
       // Get recent page visits
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - daysCount);
+      
       const recentVisits = await db.select({
         date: sql`DATE(${pageVisits.timestamp})`,
         visits: sql`COUNT(*)`,
         uniqueVisitors: sql`COUNT(DISTINCT ${pageVisits.ipHash})`
       })
       .from(pageVisits)
-      .where(sql`${pageVisits.timestamp} >= NOW() - INTERVAL '${daysCount} days'`)
+      .where(gte(pageVisits.timestamp, cutoffDate))
       .groupBy(sql`DATE(${pageVisits.timestamp})`)
       .orderBy(sql`DATE(${pageVisits.timestamp}) DESC`);
 
@@ -4815,7 +4818,7 @@ Return your response as a JSON object with this exact structure:
         uniqueVisitors: sql`COUNT(DISTINCT ${pageVisits.ipHash})`
       })
       .from(pageVisits)
-      .where(sql`${pageVisits.timestamp} >= NOW() - INTERVAL '${daysCount} days'`)
+      .where(gte(pageVisits.timestamp, cutoffDate))
       .groupBy(pageVisits.path)
       .orderBy(sql`COUNT(*) DESC`)
       .limit(10);
