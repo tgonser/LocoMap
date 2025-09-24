@@ -6,8 +6,8 @@ import fs from 'fs';
 import path from 'path';
 import { storage } from "./storage";
 import { db } from "./db";
-import { yearlyReportCache, users } from "@shared/schema";
-import { eq, and, or } from "drizzle-orm";
+import { yearlyReportCache, users, pageVisits, visitorStats, insertPageVisitSchema, type PageVisit, type VisitorStats } from "@shared/schema";
+import { eq, and, or, sql } from "drizzle-orm";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { parseGoogleLocationHistory, validateGoogleLocationHistory } from "./googleLocationParser";
 import { indexGoogleLocationFile, type LocationFileIndex } from "./googleLocationIndexer";
@@ -4622,6 +4622,83 @@ Return your response as a JSON object with this exact structure:
         success: false,
         message: 'Server error. Please try again later.' 
       });
+    }
+  });
+
+  // ========== VISITOR TRACKING ENDPOINTS ==========
+  
+  // Hash IP address for privacy-preserving tracking
+  function hashIP(ip: string): string {
+    const crypto = require('crypto');
+    return crypto.createHash('sha256').update(ip + 'salt').digest('hex');
+  }
+
+  // Record page visit (called by frontend on route changes)
+  app.post('/api/track/visit', async (req, res) => {
+    try {
+      const { path, referrer } = req.body;
+      const ip = req.ip || req.connection.remoteAddress || 'unknown';
+      const userAgent = req.headers['user-agent'] || '';
+      
+      await db.insert(pageVisits).values({
+        path: path || '/',
+        ipHash: hashIP(ip),
+        userAgent: userAgent.slice(0, 500), // Limit length
+        referrer: referrer || null,
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error recording page visit:", error);
+      res.status(500).json({ message: "Failed to record visit" });
+    }
+  });
+
+  // Get visitor statistics (admin only)
+  app.get('/api/admin/visitor-stats', [combinedAuth, requireAdmin], async (req, res) => {
+    try {
+      const { days = 30 } = req.query;
+      const daysCount = Math.min(parseInt(days as string) || 30, 365);
+      
+      // Get recent page visits
+      const recentVisits = await db.select({
+        date: sql`DATE(${pageVisits.timestamp})`,
+        visits: sql`COUNT(*)`,
+        uniqueVisitors: sql`COUNT(DISTINCT ${pageVisits.ipHash})`
+      })
+      .from(pageVisits)
+      .where(sql`${pageVisits.timestamp} >= NOW() - INTERVAL '${daysCount} days'`)
+      .groupBy(sql`DATE(${pageVisits.timestamp})`)
+      .orderBy(sql`DATE(${pageVisits.timestamp}) DESC`);
+
+      // Get top pages
+      const topPages = await db.select({
+        path: pageVisits.path,
+        visits: sql`COUNT(*)`,
+        uniqueVisitors: sql`COUNT(DISTINCT ${pageVisits.ipHash})`
+      })
+      .from(pageVisits)
+      .where(sql`${pageVisits.timestamp} >= NOW() - INTERVAL '${daysCount} days'`)
+      .groupBy(pageVisits.path)
+      .orderBy(sql`COUNT(*) DESC`)
+      .limit(10);
+
+      // Get total counts
+      const [totalStats] = await db.select({
+        totalVisits: sql`COUNT(*)`,
+        uniqueVisitors: sql`COUNT(DISTINCT ${pageVisits.ipHash})`
+      }).from(pageVisits);
+
+      res.json({
+        totalVisits: totalStats.totalVisits || 0,
+        uniqueVisitors: totalStats.uniqueVisitors || 0,
+        recentVisits,
+        topPages,
+        period: `${daysCount} days`
+      });
+    } catch (error) {
+      console.error("Error fetching visitor stats:", error);
+      res.status(500).json({ message: "Failed to fetch visitor statistics" });
     }
   });
 
