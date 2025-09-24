@@ -3051,7 +3051,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       Object.entries(stateCounts).forEach(([state, days]) => {
         stateCountryStats.push({
           location: state,
-          type: 'state',
+          type: 'us_state',
           days,
           percentage: Math.round((days / totalDays) * 100 * 10) / 10
         });
