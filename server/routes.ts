@@ -3,6 +3,7 @@ import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import multer from "multer";
 import fs from 'fs';
+import path from 'path';
 import { storage } from "./storage";
 import { db } from "./db";
 import { yearlyReportCache, users } from "@shared/schema";
@@ -11,6 +12,15 @@ import { setupAuth, isAuthenticated } from "./replitAuth";
 import { parseGoogleLocationHistory, validateGoogleLocationHistory } from "./googleLocationParser";
 import { indexGoogleLocationFile, type LocationFileIndex } from "./googleLocationIndexer";
 import { buildParentIndex, processTimelinePathsForDateRange, type TimelinePathPoint } from "./timelineAssociation";
+
+// Configure uploads directory (supports persistent disk)
+const UPLOADS_DIR = process.env.UPLOADS_DIR || './uploads';
+
+// Ensure uploads directory exists
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  console.log(`📁 Created uploads directory: ${UPLOADS_DIR}`);
+}
 
 // New function to generate travel stops directly from timeline GPS data
 function generateTravelStopsFromTimelinePoints(
@@ -539,7 +549,7 @@ async function validateBusinessUrls(places: Array<{description: string, location
 // Configure multer for file uploads using disk storage to avoid memory issues
 const upload = multer({ 
   storage: multer.diskStorage({
-    destination: '/tmp/uploads/',
+    destination: UPLOADS_DIR,
     filename: (_req, file, cb) => {
       // Generate unique filename with timestamp
       const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}-${file.originalname}`;
