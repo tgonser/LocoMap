@@ -2208,7 +2208,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`⚡ Using streaming ingestion to avoid memory issues`);
       
       // Write raw content to temporary file for streaming processing
-      const tempFilePath = `/tmp/uploads/process-${datasetId}-${Date.now()}.json`;
+      const tempFilePath = path.join(UPLOADS_DIR, `process-${datasetId}-${Date.now()}.json`);
       await fs.promises.writeFile(tempFilePath, rawContent, 'utf8');
 
       try {

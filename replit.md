@@ -111,7 +111,7 @@ A breakthrough performance optimization implementing a shared geocoding cache th
 - **User Confirmation**: Both features tested and confirmed working correctly
 
 **Technical Implementation:**
-- **JSON Processing**: Both features read JSON directly from `./uploads/{datasetId}.json` 
+- **JSON Processing**: Both features read JSON directly from `{UPLOADS_DIR}/{datasetId}.json` (configurable directory) 
 - **Data Extraction**: Uses `processTimelinePathsForDateRange()` to parse `timelinePath.point[]` arrays
 - **Parent Index**: Builds `parentIndex` via `buildParentIndex()` for timeline context and proper timestamp normalization
 - **Coordinate Conversion**: Handles Google's `latE7/lngE7` format and mixed timestamp formats (ms/ISO)
