@@ -60,7 +60,31 @@ export const locationDatasets = pgTable('location_datasets', {
   uploadedAt: timestamp('uploaded_at').defaultNow(),
   processedAt: timestamp('processed_at'),
   rawContent: text('raw_content'), // Store raw JSON for later processing (compressed if large)
+  
+  // Merge tracking fields
+  mergeCount: integer('merge_count').default(0),
+  lastMergeAt: timestamp('last_merge_at'),
+  firstDataAt: timestamp('first_data_at'),
+  lastDataAt: timestamp('last_data_at'),
+  totalSources: integer('total_sources').default(1),
+  lastMergeAdded: integer('last_merge_added'),
+  lastMergeDuplicates: integer('last_merge_duplicates'),
 });
+
+// Dataset merge events - tracks each merge operation for audit trail
+export const datasetMergeEvents = pgTable('dataset_merge_events', {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  datasetId: varchar('dataset_id').references(() => locationDatasets.id).notNull(),
+  mergedAt: timestamp('merged_at').defaultNow(),
+  addedObjects: integer('added_objects').notNull(),
+  duplicatesRemoved: integer('duplicates_removed').notNull(),
+  newDataStart: timestamp('new_data_start'),
+  newDataEnd: timestamp('new_data_end'),
+  sourceFilename: text('source_filename'),
+}, (table) => [
+  index('idx_dataset_merge_events_dataset').on(table.datasetId),
+  index('idx_dataset_merge_events_date').on(table.mergedAt),
+]);
 
 // Location data points from Google location history (user-specific)
 export const locationPoints = pgTable("location_points", {
@@ -132,6 +156,11 @@ export const loginSchema = z.object({
 export const insertLocationDatasetSchema = createInsertSchema(locationDatasets).omit({
   id: true,
   uploadedAt: true,
+});
+
+export const insertDatasetMergeEventSchema = createInsertSchema(datasetMergeEvents).omit({
+  id: true,
+  mergedAt: true,
 });
 
 export const insertLocationPointSchema = createInsertSchema(locationPoints).omit({
@@ -271,6 +300,8 @@ export const insertYearlyReportCacheSchema = createInsertSchema(yearlyReportCach
 // TypeScript types for location data
 export type LocationDataset = typeof locationDatasets.$inferSelect;
 export type InsertLocationDataset = z.infer<typeof insertLocationDatasetSchema>;
+export type DatasetMergeEvent = typeof datasetMergeEvents.$inferSelect;
+export type InsertDatasetMergeEvent = z.infer<typeof insertDatasetMergeEventSchema>;
 export type LocationPoint = typeof locationPoints.$inferSelect;
 export type InsertLocationPoint = z.infer<typeof insertLocationPointSchema>;
 export type UniqueLocation = typeof uniqueLocations.$inferSelect;
