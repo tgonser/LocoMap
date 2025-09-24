@@ -79,10 +79,9 @@ export default function DateNavigator({
 
   const formatDate = (date: Date) => {
     return date.toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
+      month: 'numeric',
+      day: 'numeric',
+      year: '2-digit'
     });
   };
 
