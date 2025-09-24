@@ -3,6 +3,7 @@ import {
   users,
   locationPoints,
   locationDatasets,
+  datasetMergeEvents,
   uniqueLocations,
   dailyGeocodes,
   travelStops,
@@ -13,6 +14,8 @@ import {
   type InsertLocationPoint,
   type LocationDataset,
   type InsertLocationDataset,
+  type DatasetMergeEvent,
+  type InsertDatasetMergeEvent,
   type UniqueLocation,
   type InsertUniqueLocation,
   type DailyGeocode,
@@ -36,6 +39,21 @@ export interface IStorage {
   getUserLocationDatasets(userId: string): Promise<LocationDataset[]>;
   getLocationDataset(id: string, userId: string): Promise<LocationDataset | undefined>;
   updateDatasetProcessed(id: string, deduplicatedPoints: number): Promise<void>;
+  updateDatasetMergeStats(id: string, mergeStats: {
+    mergeCount: number;
+    lastMergeAt: Date;
+    firstDataAt?: Date;
+    lastDataAt?: Date;
+    totalSources: number;
+    lastMergeAdded: number;
+    lastMergeDuplicates: number;
+    fileSize?: number;
+    totalPoints?: number;
+  }): Promise<void>;
+  
+  // Dataset merge event operations
+  createMergeEvent(event: InsertDatasetMergeEvent): Promise<DatasetMergeEvent>;
+  getDatasetMergeEvents(datasetId: string): Promise<DatasetMergeEvent[]>;
   
   // Raw file storage for deferred processing
   storeRawFile(datasetId: string, userId: string, rawContent: string): Promise<void>;
@@ -162,6 +180,15 @@ export class DatabaseStorage implements IStorage {
         uploadedAt: locationDatasets.uploadedAt,
         processedAt: locationDatasets.processedAt,
         rawContent: sql`NULL`.as('rawContent'), // Exclude actual content to avoid "response too large" error
+        
+        // Include merge tracking fields
+        mergeCount: locationDatasets.mergeCount,
+        lastMergeAt: locationDatasets.lastMergeAt,
+        firstDataAt: locationDatasets.firstDataAt,
+        lastDataAt: locationDatasets.lastDataAt,
+        totalSources: locationDatasets.totalSources,
+        lastMergeAdded: locationDatasets.lastMergeAdded,
+        lastMergeDuplicates: locationDatasets.lastMergeDuplicates,
       })
       .from(locationDatasets)
       .where(eq(locationDatasets.userId, userId))
@@ -184,6 +211,60 @@ export class DatabaseStorage implements IStorage {
         processedAt: new Date(),
       })
       .where(eq(locationDatasets.id, id));
+  }
+
+  async updateDatasetMergeStats(id: string, mergeStats: {
+    mergeCount: number;
+    lastMergeAt: Date;
+    firstDataAt?: Date;
+    lastDataAt?: Date;
+    totalSources: number;
+    lastMergeAdded: number;
+    lastMergeDuplicates: number;
+    fileSize?: number;
+    totalPoints?: number;
+  }): Promise<void> {
+    const updateData: any = {
+      mergeCount: mergeStats.mergeCount,
+      lastMergeAt: mergeStats.lastMergeAt,
+      totalSources: mergeStats.totalSources,
+      lastMergeAdded: mergeStats.lastMergeAdded,
+      lastMergeDuplicates: mergeStats.lastMergeDuplicates,
+    };
+
+    if (mergeStats.firstDataAt) {
+      updateData.firstDataAt = mergeStats.firstDataAt;
+    }
+    if (mergeStats.lastDataAt) {
+      updateData.lastDataAt = mergeStats.lastDataAt;
+    }
+    if (mergeStats.fileSize) {
+      updateData.fileSize = mergeStats.fileSize;
+    }
+    if (mergeStats.totalPoints) {
+      updateData.totalPoints = mergeStats.totalPoints;
+    }
+
+    await db
+      .update(locationDatasets)
+      .set(updateData)
+      .where(eq(locationDatasets.id, id));
+  }
+
+  async createMergeEvent(event: InsertDatasetMergeEvent): Promise<DatasetMergeEvent> {
+    const [created] = await db
+      .insert(datasetMergeEvents)
+      .values(event)
+      .returning();
+    return created;
+  }
+
+  async getDatasetMergeEvents(datasetId: string): Promise<DatasetMergeEvent[]> {
+    return await db
+      .select()
+      .from(datasetMergeEvents)
+      .where(eq(datasetMergeEvents.datasetId, datasetId))
+      .orderBy(desc(datasetMergeEvents.mergedAt));
   }
 
   async resetDatasetProcessed(id: string): Promise<void> {
