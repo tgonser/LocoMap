@@ -1,0 +1,31 @@
+locomap=> \d users
+                                         Table "public.users"
+      Column       |            Type             | Collation | Nullable |           Default
+-------------------+-----------------------------+-----------+----------+------------------------------
+ id                | character varying           |           | not null | gen_random_uuid()
+ username          | character varying(50)       |           |          |
+ email             | character varying           |           |          |
+ password          | character varying(255)      |           |          |
+ first_name        | character varying           |           |          |
+ last_name         | character varying           |           |          |
+ profile_image_url | character varying           |           |          |
+ is_approved       | boolean                     |           |          | false
+ approval_status   | character varying(20)       |           |          | 'pending'::character varying
+ approved_by       | character varying           |           |          |
+ approved_at       | timestamp without time zone |           |          |
+ rejected_reason   | character varying(500)      |           |          |
+ role              | character varying(20)       |           |          | 'user'::character varying
+ created_at        | timestamp without time zone |           |          | now()
+ updated_at        | timestamp without time zone |           |          | now()
+Indexes:
+    "users_pkey" PRIMARY KEY, btree (id)
+    "users_email_key" UNIQUE CONSTRAINT, btree (email)
+    "users_username_key" UNIQUE CONSTRAINT, btree (username)
+Referenced by:
+    TABLE "daily_geocodes" CONSTRAINT "daily_geocodes_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id)
+    TABLE "location_datasets" CONSTRAINT "location_datasets_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id)
+    TABLE "location_points" CONSTRAINT "location_points_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    TABLE "travel_segments" CONSTRAINT "travel_segments_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id)
+    TABLE "travel_stops" CONSTRAINT "travel_stops_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id)
+    TABLE "unique_locations" CONSTRAINT "unique_locations_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id)
+    TABLE "yearly_report_cache" CONSTRAINT "yearly_report_cache_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id)
