@@ -141,7 +141,7 @@ import { z } from "zod";
 import OpenAI from "openai";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { registerSchema, loginSchema } from "@shared/schema";
+import { registerSchema, loginSchema, changePasswordSchema } from "@shared/schema";
 import { sendContactFormEmail } from "./emailService";
 
 // JWT verification middleware  
@@ -1662,6 +1662,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Login error:", error);
       res.status(500).json({ message: "Server error during login" });
+    }
+  });
+
+  // Change password endpoint
+  app.post('/api/auth/change-password', combinedAuth, async (req, res) => {
+    try {
+      const validation = changePasswordSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "Validation error", 
+          errors: validation.error.issues 
+        });
+      }
+
+      const { currentPassword, newPassword } = validation.data;
+      const userId = req.user?.claims?.sub || req.user?.claims?.id;
+
+      if (!userId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Get current user from database
+      const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      if (!user || !user.password) {
+        return res.status(404).json({ message: "User not found or password not set" });
+      }
+
+      // Verify current password
+      const validCurrentPassword = await bcrypt.compare(currentPassword, user.password);
+      if (!validCurrentPassword) {
+        return res.status(401).json({ message: "Current password is incorrect" });
+      }
+
+      // Prevent using the same password
+      const samePassword = await bcrypt.compare(newPassword, user.password);
+      if (samePassword) {
+        return res.status(400).json({ message: "New password must be different from current password" });
+      }
+
+      // Hash new password
+      const saltRounds = 12;
+      const hashedNewPassword = await bcrypt.hash(newPassword, saltRounds);
+
+      // Update password in database
+      await db.update(users)
+        .set({ 
+          password: hashedNewPassword,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, userId));
+
+      res.json({
+        message: "Password changed successfully"
+      });
+    } catch (error) {
+      console.error("Password change error:", error);
+      res.status(500).json({ message: "Server error during password change" });
     }
   });
 
