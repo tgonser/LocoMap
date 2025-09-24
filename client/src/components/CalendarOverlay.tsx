@@ -116,7 +116,7 @@ export default function CalendarOverlay({
         >
           <Calendar className="w-4 h-4" />
           <span className="text-sm">
-            {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            {selectedDate.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' })}
           </span>
         </Button>
       </Card>
