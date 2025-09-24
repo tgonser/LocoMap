@@ -214,6 +214,8 @@ export default function AnalyticsPanel({
   };
 
   const handleRunAnalytics = async () => {
+    let progressTimeout: NodeJS.Timeout | null = null;
+    
     try {
       setLoading(true);
       setError(null);
@@ -235,11 +237,26 @@ export default function AnalyticsPanel({
         description: "Running complete analytics pipeline - this may take a few minutes for large datasets...",
       });
       
+      // Show progress indicator after 15 seconds for long-running analysis
+      progressTimeout = setTimeout(() => {
+        toast({
+          title: "Still Processing...",
+          description: "Analyzing GPS data for city jumps and travel patterns. Large datasets can take 30-45 seconds.",
+          duration: 10000, // Keep this toast longer
+        });
+      }, 15000);
+      
       const response = await apiRequest('POST', '/api/analytics/run', {
         startDate,
         endDate,
         taskId // Send taskId to backend for progress tracking
       });
+      
+      // Clear the progress timeout since request completed
+      if (progressTimeout) {
+        clearTimeout(progressTimeout);
+        progressTimeout = null;
+      }
       
       console.log('AnalyticsPanel: Response status:', response.status);
       
@@ -288,6 +305,11 @@ export default function AnalyticsPanel({
       
     } catch (err) {
       console.error('AnalyticsPanel: Run analytics error:', err);
+      // Clear progress timeout on error as well
+      if (progressTimeout) {
+        clearTimeout(progressTimeout);
+        progressTimeout = null;
+      }
       const errorMessage = err instanceof Error ? err.message : 'Failed to run analytics pipeline';
       setError(errorMessage);
       toast({
