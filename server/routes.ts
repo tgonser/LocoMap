@@ -3386,16 +3386,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`🔍 Deduplicated to ${uniqueCoordinates.length} unique coordinates for geocoding`);
         
         // Batch reverse geocode all unique coordinates
-        const geocodingResults = await batchReverseGeocode(uniqueCoordinates);
+        const geocodingResponse = await batchReverseGeocode(uniqueCoordinates);
+        const geocodingResults = geocodingResponse.results;
         console.log(`✅ Geocoded ${geocodingResults.length} locations`);
         
         // Map geocoding results back to travel stops
         travelStops = travelStops.map(stop => {
           const coordKey = `${stop.lat.toFixed(4)},${stop.lng.toFixed(4)}`;
-          const geocodingResult = geocodingResults.find(result => {
-            const resultKey = `${result.lat.toFixed(4)},${result.lng.toFixed(4)}`;
-            return resultKey === coordKey;
+          
+          // Find geocoding result for this coordinate
+          const resultIndex = uniqueCoordinates.findIndex(coord => {
+            const uniqueKey = `${coord.lat.toFixed(4)},${coord.lng.toFixed(4)}`;
+            return uniqueKey === coordKey;
           });
+          
+          const geocodingResult = resultIndex !== -1 ? geocodingResults[resultIndex] : null;
           
           if (geocodingResult && geocodingResult.country) {
             return {
