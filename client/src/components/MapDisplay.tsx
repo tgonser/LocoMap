@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from 'react-leaflet';
 import { Icon, LatLngBounds } from 'leaflet';
 import { Card } from '@/components/ui/card';
@@ -122,12 +122,14 @@ export default function MapDisplay({
   className,
   selectedPoint 
 }: MapDisplayProps) {
-  // Filter locations by selected date if provided
-  const filteredLocations = selectedDate 
-    ? locations.filter(loc => 
-        loc.timestamp.toDateString() === selectedDate.toDateString()
-      )
-    : locations;
+  // Filter locations by selected date if provided - memoized to prevent bounds recalculation
+  const filteredLocations = useMemo(() => {
+    return selectedDate 
+      ? locations.filter(loc => 
+          loc.timestamp.toDateString() === selectedDate.toDateString()
+        )
+      : locations;
+  }, [locations, selectedDate]);
 
   // Create clean path segments for realistic track visualization
   const createCleanPathSegments = (locations: LocationPoint[]): {
