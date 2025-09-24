@@ -332,7 +332,7 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
                 </div>
               </form>
               ) : (
-                {/* Set Password Form */}
+                /* Set Password Form */
                 <form onSubmit={setPasswordForm.handleSubmit(onSetPassword)} className="space-y-4">
                   {/* New Password */}
                   <div className="space-y-2">
