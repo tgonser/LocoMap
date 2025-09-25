@@ -88,6 +88,14 @@ export default function FileUploader({ onFileUpload, isProcessing = false, hasEx
       const result = await response.json();
 
       if (!response.ok) {
+        // Handle specific error codes
+        if (response.status === 409) {
+          // Duplicate file detected
+          setUploadStatus('error');
+          setUploadResult({ error: result.error || result.message || 'Duplicate file detected' });
+          console.log('Duplicate file detected:', result.message);
+          return; // Don't call onFileUpload for duplicates
+        }
         throw new Error(result.error || 'Upload failed');
       }
 
@@ -98,6 +106,7 @@ export default function FileUploader({ onFileUpload, isProcessing = false, hasEx
     } catch (error) {
       console.error('Error uploading file:', error);
       setUploadStatus('error');
+      setUploadResult({ error: error instanceof Error ? error.message : 'Upload failed' });
     }
   };
 
@@ -255,7 +264,9 @@ export default function FileUploader({ onFileUpload, isProcessing = false, hasEx
             ) : uploadStatus === 'error' ? (
               <div>
                 <p className="text-lg font-medium text-destructive">Upload failed</p>
-                <p className="text-sm text-muted-foreground">Please check your JSON file format</p>
+                <p className="text-sm text-muted-foreground">
+                  {uploadResult?.error || 'Please check your JSON file format'}
+                </p>
               </div>
             ) : (
               <div>
