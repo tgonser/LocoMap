@@ -2000,6 +2000,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: errorMsg });
       }
 
+      // 🔍 DUPLICATE PREVENTION: Check if this exact file has already been uploaded
+      try {
+        const duplicateDatasetId = await checkForDuplicateFile(fileContent, userId);
+        if (duplicateDatasetId) {
+          console.log(`🚫 Duplicate file detected: matches existing dataset ${duplicateDatasetId}`);
+          await fs.promises.unlink(filePath).catch(() => {}); // Clean up temp file
+          return res.status(409).json({ 
+            error: "This file has already been uploaded to your account",
+            existingDatasetId: duplicateDatasetId,
+            message: "The exact same file content already exists in your datasets. No upload needed."
+          });
+        }
+      } catch (duplicateCheckError) {
+        console.warn('⚠️  Failed to check for duplicate file (continuing with upload):', duplicateCheckError);
+      }
+
       // SMART UPLOAD: Use fast streaming scanner for large files, legacy analysis for small files
       const fileSizeMB = req.file.size / (1024 * 1024);
       let metadata;
