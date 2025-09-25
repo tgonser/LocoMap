@@ -124,15 +124,6 @@ export default function LocationHistoryApp() {
   // Handle day click interactions
   const handleDayClick = (dayData: DayData) => {
     // Single click: highlight day and fly to day start location
-    console.log('🎯 Day clicked:', {
-      clickedDate: dayData.date,
-      clickedDateObj: dayData.dateObj.toISOString(),
-      currentSelectedDate: selectedDate?.toISOString(),
-      currentSelectedDateRange: selectedDateRange ? {
-        start: selectedDateRange.start.toISOString(),
-        end: selectedDateRange.end.toISOString()
-      } : null
-    });
     setHighlightedDay(dayData.date);
     const { lat, lng } = dayData.firstPoint;
     setSelectedPoint({ lat, lng });
@@ -140,12 +131,6 @@ export default function LocationHistoryApp() {
 
   const handleDayDoubleClick = (dayData: DayData) => {
     // Double click: switch to single day view and select the day
-    console.log('🎯 Day double-clicked, switching to single view:', {
-      clickedDate: dayData.date,
-      clickedDateObj: dayData.dateObj.toISOString(),
-      previousSelectedDate: selectedDate?.toISOString(),
-      clearingDateRange: selectedDateRange ? 'YES' : 'NO'
-    });
     setHighlightedDay(null);
     setSelectedDate(dayData.dateObj);
     setSelectedDateRange(null); // Clear date range to switch to single-day view
@@ -315,7 +300,7 @@ export default function LocationHistoryApp() {
 
   // Get locations for selected date (using filtered data)
   const dayLocations = validLocationData.filter(loc => 
-    loc.timestamp.toDateString() === selectedDate.toDateString()
+    getLocalDateKey(loc.timestamp) === getLocalDateKey(selectedDate)
   );
 
   // Get all locations within date range for multi-day map view
@@ -385,23 +370,6 @@ export default function LocationHistoryApp() {
   const mapLocations = selectedDateRange && dayAggregatedData.length > 1 
     ? dateRangeLocations  // Multi-day view: use all locations in range
     : dayLocations;       // Single-day view: use single day locations
-  
-  console.log('📊 MapLocations selection:', {
-    selectedDate: selectedDate?.toISOString(),
-    selectedDateRange: selectedDateRange ? {
-      start: selectedDateRange.start.toISOString(), 
-      end: selectedDateRange.end.toISOString()
-    } : null,
-    dayAggregatedDataLength: dayAggregatedData.length,
-    isMultiDayView: selectedDateRange && dayAggregatedData.length > 1,
-    mapLocationsCount: mapLocations.length,
-    dayLocationsCount: dayLocations.length,
-    dateRangeLocationsCount: dateRangeLocations.length,
-    dayLocationsSample: dayLocations.slice(0, 2).map(l => ({
-      timestamp: l.timestamp.toISOString(),
-      dateKey: getLocalDateKey(l.timestamp)
-    }))
-  });
 
   // Analytics calculations (using filtered data)
   const totalLocations = validLocationData.length;
@@ -595,6 +563,12 @@ export default function LocationHistoryApp() {
                           // When switching to single day view, clear the date range
                           // so sidebar switches from daily list to hourly timeline
                           setSelectedDateRange(null);
+                        } else if (mode === 'multi') {
+                          // When switching back to multi-day view, restore previous date range
+                          // or open date picker if no previous range exists
+                          if (!selectedDateRange) {
+                            setShowDateRangePicker(true);
+                          }
                         }
                       }}
                     />

@@ -160,18 +160,8 @@ export default function MapDisplay({
   
   // Auto-switch view mode based on dateRange prop
   useEffect(() => {
-    const newViewMode = dateRange ? 'multi' : 'single';
-    console.log('🔄 MapDisplay viewMode auto-switch:', {
-      dateRange: dateRange ? {
-        start: dateRange.start.toISOString(),
-        end: dateRange.end.toISOString()
-      } : null,
-      oldViewMode: viewMode,
-      newViewMode,
-      selectedDate: selectedDate?.toISOString()
-    });
-    setViewMode(newViewMode);
-  }, [dateRange, viewMode, selectedDate]);
+    setViewMode(dateRange ? 'multi' : 'single');
+  }, [dateRange]);
   
   // Map reference for programmatic control
   const mapRef = useRef<any>(null);
@@ -434,14 +424,6 @@ export default function MapDisplay({
           variant={viewMode === 'single' ? 'default' : 'secondary'}
           size="sm"
           onClick={() => {
-            console.log('📱 Single Day button clicked:', {
-              currentViewMode: viewMode,
-              selectedDate: selectedDate?.toISOString(),
-              dateRange: dateRange ? {
-                start: dateRange.start.toISOString(),
-                end: dateRange.end.toISOString()
-              } : null
-            });
             setViewMode('single');
             onViewModeChange?.('single');
           }}
@@ -454,15 +436,6 @@ export default function MapDisplay({
           variant={viewMode === 'multi' ? 'default' : 'secondary'} 
           size="sm"
           onClick={() => {
-            console.log('🌍 View All button clicked:', {
-              currentViewMode: viewMode,
-              selectedDate: selectedDate?.toISOString(),
-              dateRange: dateRange ? {
-                start: dateRange.start.toISOString(),
-                end: dateRange.end.toISOString()
-              } : null,
-              disabled: !dateRange
-            });
             setViewMode('multi');
             onViewModeChange?.('multi');
           }}
