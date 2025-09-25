@@ -435,22 +435,18 @@ export default function LocationHistoryApp() {
                       </div>
                     </Card>
                   ) : mapDataLoaded ? (
-                    <>
-                      {console.log('LocationHistoryApp selectedDateRange:', selectedDateRange)}
-                      {console.log('LocationHistoryApp dateRange passed to MapDisplay:', selectedDateRange ?? undefined)}
-                      <MapDisplay
-                        locations={dayLocations}
-                        selectedDate={selectedDate}
-                        onDateChange={setSelectedDate}
-                        availableDates={availableDates}
-                        locationCountByDate={locationCountByDate}
-                        className="h-full"
-                        selectedPoint={selectedPoint}
-                        dateRange={selectedDateRange ?? undefined}
-                        onDayFlyTo={(lat, lng) => setSelectedPoint({ lat, lng })}
-                        onSwitchToSingleDay={(date) => setSelectedDate(date)}
-                      />
-                    </>
+                    <MapDisplay
+                      locations={dayLocations}
+                      selectedDate={selectedDate}
+                      onDateChange={setSelectedDate}
+                      availableDates={availableDates}
+                      locationCountByDate={locationCountByDate}
+                      className="h-full"
+                      selectedPoint={selectedPoint}
+                      dateRange={selectedDateRange ?? undefined}
+                      onDayFlyTo={(lat, lng) => setSelectedPoint({ lat, lng })}
+                      onSwitchToSingleDay={(date) => setSelectedDate(date)}
+                    />
                   ) : (
                     <Card className="h-full flex items-center justify-center">
                       <div className="text-center">

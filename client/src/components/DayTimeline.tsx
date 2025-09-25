@@ -27,9 +27,10 @@ interface LocationPoint {
 interface DayTimelineProps {
   dayData: DayData[];
   selectedDate?: Date;
-  onDayClick?: (dayData: DayData) => void; // Single click to fly to day start
+  onDayClick?: (dayData: DayData) => void; // Single click to highlight/focus day
   onDayDoubleClick?: (dayData: DayData) => void; // Double click to switch to single-day view
   className?: string;
+  highlightedDay?: string; // YYYY-MM-DD format for highlighting
 }
 
 export default function DayTimeline({ 
@@ -37,13 +38,21 @@ export default function DayTimeline({
   selectedDate,
   onDayClick,
   onDayDoubleClick,
-  className = ''
+  className = '',
+  highlightedDay
 }: DayTimelineProps) {
   const clickSequenceRef = useRef(0);
   
   const formatDate = (date: Date) => {
     return date.toLocaleDateString('en-US', {
       weekday: 'short',
+      month: 'short',
+      day: 'numeric'
+    });
+  };
+
+  const formatDateShort = (date: Date) => {
+    return date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric'
     });
@@ -106,6 +115,10 @@ export default function DayTimeline({
     return dayData.dateObj.toDateString() === selectedDate.toDateString();
   };
 
+  const isHighlightedDay = (dayData: DayData) => {
+    return highlightedDay === dayData.date;
+  };
+
   const handleDayClick = (dayData: DayData, event: React.MouseEvent) => {
     const sequenceId = ++clickSequenceRef.current;
     
@@ -126,78 +139,80 @@ export default function DayTimeline({
 
   return (
     <Card className={className}>
-      <CardHeader className="pb-4">
+      <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2">
-          <Calendar className="w-5 h-5" />
-          Days
+          <Calendar className="w-4 h-4" />
+          Days Timeline
         </CardTitle>
-        <p className="text-sm text-muted-foreground">
-          {dayData.length} day{dayData.length !== 1 ? 's' : ''} with location data
-        </p>
-        <p className="text-xs text-muted-foreground/70 mt-1">
-          Click to fly to day • Double-click for single-day view
+        <p className="text-xs text-muted-foreground">
+          Click to highlight • Double-click for single-day view
         </p>
       </CardHeader>
       
       <CardContent>
         {dayData.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <Calendar className="w-8 h-8 mx-auto mb-2 opacity-50" />
-            <p>No location data available</p>
+          <div className="text-center py-6 text-muted-foreground">
+            <Calendar className="w-6 h-6 mx-auto mb-2 opacity-50" />
+            <p className="text-sm">No location data available</p>
           </div>
         ) : (
-          <ScrollArea className="h-64">
-            <div className="space-y-3">
-              {dayData.map((day) => {
+          <ScrollArea className="h-80">
+            <div className="space-y-1">
+              {dayData.map((day, index) => {
                 const distance = calculateDistance(day.points);
                 const duration = calculateDuration(day.startTime, day.endTime);
                 const isSelected = isSelectedDay(day);
+                const isHighlighted = isHighlightedDay(day);
                 
                 return (
                   <div 
                     key={day.date}
-                    className={`p-4 rounded-lg border transition-all cursor-pointer hover-elevate active-elevate-2 ${
-                      isSelected 
+                    className={`p-3 rounded-md border transition-all cursor-pointer hover-elevate active-elevate-2 ${
+                      isHighlighted
+                        ? 'border-primary bg-primary/10 shadow-sm' 
+                        : isSelected 
                         ? 'border-primary bg-primary/5' 
-                        : 'border-border bg-card hover:bg-muted/30'
+                        : 'border-border bg-card/50 hover:bg-muted/30'
                     }`}
                     onClick={(event) => handleDayClick(day, event)}
-                    data-testid={`day-card-${day.date}`}
+                    data-testid={`day-timeline-${day.date}`}
                   >
-                    <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-muted-foreground" />
-                        <span className="font-medium">
-                          {formatDate(day.dateObj)}
+                        <div className={`w-2 h-2 rounded-full ${
+                          isHighlighted ? 'bg-primary' : 'bg-muted-foreground/40'
+                        }`} />
+                        <span className="font-medium text-sm">
+                          {formatDateShort(day.dateObj)}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {day.startTime.toLocaleTimeString('en-US', {
+                            hour: 'numeric',
+                            minute: '2-digit',
+                            hour12: true
+                          })}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-muted-foreground">
+                          {day.totalPoints}pts
                         </span>
                         {isSelected && (
-                          <Badge variant="default" className="text-xs">
-                            Selected
+                          <Badge variant="secondary" className="text-xs px-1 py-0 h-4">
+                            Current
                           </Badge>
                         )}
                       </div>
-                      <Badge variant="outline" className="text-xs">
-                        {day.totalPoints} points
-                      </Badge>
                     </div>
                     
-                    <div className="grid grid-cols-1 gap-2 text-sm text-muted-foreground">
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-3 h-3" />
-                        <span>{formatTimeRange(day.startTime, day.endTime)}</span>
-                        <span className="text-xs">({duration})</span>
-                      </div>
-                      
-                      <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-1">
                         <Route className="w-3 h-3" />
-                        <span>{formatDistance(distance)} traveled</span>
+                        <span>{formatDistance(distance)}</span>
                       </div>
-                      
-                      <div className="flex items-center gap-2">
-                        <MapPin className="w-3 h-3" />
-                        <span>
-                          {day.firstPoint.lat.toFixed(4)}, {day.firstPoint.lng.toFixed(4)} → {day.lastPoint.lat.toFixed(4)}, {day.lastPoint.lng.toFixed(4)}
-                        </span>
+                      <div className="flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        <span>{duration}</span>
                       </div>
                     </div>
                   </div>

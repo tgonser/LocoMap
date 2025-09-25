@@ -163,12 +163,8 @@ export default function MapDisplay({
   // Internal selected point state for day fly-to functionality
   const [internalSelectedPoint, setInternalSelectedPoint] = useState<{ lat: number; lng: number } | null>(null);
   
-  // Debug logging for dateRange prop
-  useEffect(() => {
-    console.log('MapDisplay dateRange prop:', dateRange);
-    console.log('MapDisplay dateRange type:', typeof dateRange);
-    console.log('MapDisplay dateRange truthy:', !!dateRange);
-  }, [dateRange]);
+  // Highlighted day state for multi-day view
+  const [highlightedDay, setHighlightedDay] = useState<string | null>(null);
   // Helper function for consistent local date normalization
   const getLocalDateKey = (date: Date): string => {
     const year = date.getFullYear();
@@ -190,7 +186,7 @@ export default function MapDisplay({
           )
         : locations;
     } else {
-      // Multi-day view: show all locations within date range
+      // Multi-day view: show ALL locations within date range (not just selected day)
       if (!dateRange) return locations;
       
       return locations.filter(loc => {
@@ -200,7 +196,7 @@ export default function MapDisplay({
         return locDate >= startDate && locDate <= endDate;
       });
     }
-  }, [locations, selectedDate, viewMode, dateRange]);
+  }, [locations, selectedDate, viewMode, dateRange]); // Removed selectedDate dependency for multi-day
 
   // Aggregate locations by day for multi-day view using consistent date normalization
   const dayAggregatedData = useMemo(() => {
@@ -239,9 +235,10 @@ export default function MapDisplay({
       .sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
   }, [filteredLocations, viewMode]);
 
-  // Handle day click interactions with self-sufficient functionality
+  // Handle day click interactions - highlight day and fly to location
   const handleDayClick = (dayData: DayData) => {
-    // Single click: fly to day start location
+    // Single click: highlight day and fly to day start location
+    setHighlightedDay(dayData.date);
     const { lat, lng } = dayData.firstPoint;
     
     // Use external handler if provided, otherwise handle internally
@@ -254,8 +251,9 @@ export default function MapDisplay({
   };
 
   const handleDayDoubleClick = (dayData: DayData) => {
-    // Double click: switch to single day view
+    // Double click: switch to single day view and select the day
     setViewMode('single');
+    setHighlightedDay(null);
     
     // Clear internal selected point to avoid lingering pan state
     setInternalSelectedPoint(null);
@@ -464,12 +462,13 @@ export default function MapDisplay({
   return (
     <Card className={`h-full relative ${className}`}>
       {/* View Mode Toggle Controls */}
-      <div className="absolute top-4 left-4 z-[1000] flex gap-2">
+      <div className="absolute top-4 left-4 z-[1000] flex gap-1">
         <Button 
           variant={viewMode === 'single' ? 'default' : 'outline'}
           size="sm"
           onClick={() => setViewMode('single')}
           data-testid="button-single-day"
+          className="text-xs px-2 py-1 h-7"
         >
           Single Day
         </Button>
@@ -478,10 +477,10 @@ export default function MapDisplay({
           size="sm"
           onClick={() => setViewMode('multi')}
           data-testid="button-multi-day"
-          disabled={false}
-          title={`dateRange: ${dateRange ? 'exists' : 'missing'}`}
+          disabled={!dateRange}
+          className="text-xs px-2 py-1 h-7"
         >
-          View All Range {!dateRange && '(debug: no range)'}
+          View All
         </Button>
       </div>
       
@@ -607,6 +606,7 @@ export default function MapDisplay({
           onDayClick={handleDayClick}
           onDayDoubleClick={handleDayDoubleClick}
           className="absolute top-4 right-4 z-[1000] w-80"
+          highlightedDay={highlightedDay ?? undefined}
         />
       )}
       
