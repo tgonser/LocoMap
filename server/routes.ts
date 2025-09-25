@@ -2218,8 +2218,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`✅ Merge complete: ${finalJsonData.timelineObjects?.length || 0} total timeline objects`);
         
       } else {
-        // Replace mode - create new dataset as before
-        console.log('🔄 Replace mode selected - creating new dataset...');
+        // Replace mode - create new dataset and clean up old ones
+        console.log('🔄 Replace mode selected - creating new dataset and cleaning up old data...');
+        
+        // Get existing datasets for cleanup later
+        const existingDatasets = await storage.getUserLocationDatasets(userId);
+        console.log(`📊 Found ${existingDatasets.length} existing datasets to replace`);
+        
         dataset = await storage.createLocationDataset({
           userId,
           filename: req.file.originalname || 'location-history.json',
@@ -2227,6 +2232,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           totalPoints: metadata.estimatedPoints,
           deduplicatedPoints: 0, // Will be set during processing
         });
+        
+        // Store existing dataset IDs for cleanup after successful upload
+        dataset._existingDatasetsForCleanup = existingDatasets.map(d => d.id);
       }
 
       // Store final data (original or merged) to file system or database
@@ -2264,6 +2272,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // Clean up temporary uploaded file
         await fs.promises.unlink(req.file.path).catch(() => {});
+      }
+
+      // 🧹 AUTO-CLEANUP: Clean up old datasets after successful replace
+      if (uploadMode === 'replace' && dataset._existingDatasetsForCleanup && dataset._existingDatasetsForCleanup.length > 0) {
+        console.log(`🧹 Replace mode cleanup: removing ${dataset._existingDatasetsForCleanup.length} old datasets`);
+        try {
+          for (const oldDatasetId of dataset._existingDatasetsForCleanup) {
+            await cleanupAfterReplace(dataset.id, oldDatasetId, userId);
+          }
+          console.log(`✅ Replace mode cleanup completed`);
+        } catch (cleanupError) {
+          console.error('⚠️  Failed to cleanup after replace (upload was successful):', cleanupError);
+        }
       }
 
       res.json({
