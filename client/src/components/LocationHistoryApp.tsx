@@ -443,6 +443,9 @@ export default function LocationHistoryApp() {
                       locationCountByDate={locationCountByDate}
                       className="h-full"
                       selectedPoint={selectedPoint}
+                      dateRange={selectedDateRange ?? undefined}
+                      onDayFlyTo={(lat, lng) => setSelectedPoint({ lat, lng })}
+                      onSwitchToSingleDay={(date) => setSelectedDate(date)}
                     />
                   ) : (
                     <Card className="h-full flex items-center justify-center">
