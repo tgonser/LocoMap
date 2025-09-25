@@ -60,6 +60,7 @@ export const locationDatasets = pgTable('location_datasets', {
   uploadedAt: timestamp('uploaded_at').defaultNow(),
   processedAt: timestamp('processed_at'),
   rawContent: text('raw_content'), // Store raw JSON for later processing (compressed if large)
+  contentHash: varchar('content_hash', { length: 64 }), // SHA-256 hash for persistent duplicate detection
   
   // Merge tracking fields
   mergeCount: integer('merge_count').default(0),
@@ -69,12 +70,16 @@ export const locationDatasets = pgTable('location_datasets', {
   totalSources: integer('total_sources').default(1),
   lastMergeAdded: integer('last_merge_added'),
   lastMergeDuplicates: integer('last_merge_duplicates'),
-});
+}, (table) => [
+  // Unique constraint for duplicate prevention
+  unique('unique_user_content_hash').on(table.userId, table.contentHash),
+]);
 
 // Dataset merge events - tracks each merge operation for audit trail
 export const datasetMergeEvents = pgTable('dataset_merge_events', {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   datasetId: varchar('dataset_id').references(() => locationDatasets.id).notNull(),
+  sourceDatasetId: varchar('source_dataset_id').references(() => locationDatasets.id), // Added for proper cleanup tracking
   mergedAt: timestamp('merged_at').defaultNow(),
   addedObjects: integer('added_objects').notNull(),
   duplicatesRemoved: integer('duplicates_removed').notNull(),
@@ -83,6 +88,7 @@ export const datasetMergeEvents = pgTable('dataset_merge_events', {
   sourceFilename: text('source_filename'),
 }, (table) => [
   index('idx_dataset_merge_events_dataset').on(table.datasetId),
+  index('idx_dataset_merge_events_source').on(table.sourceDatasetId),
   index('idx_dataset_merge_events_date').on(table.mergedAt),
 ]);
 

@@ -1,4 +1,4 @@
-import { db } from './db.js';
+import { db } from './db';
 import { locationDatasets, datasetMergeEvents } from '@shared/schema';
 import { eq, and, sql } from 'drizzle-orm';
 import path from 'path';
@@ -8,11 +8,26 @@ import crypto from 'crypto';
 // Configure uploads directory (supports persistent disk)
 const UPLOADS_DIR = process.env.UPLOADS_DIR || './uploads';
 
+// UUID validation regex
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Validate UUID format for security
+ */
+function isValidUUID(id: string): boolean {
+  return UUID_REGEX.test(id);
+}
+
 /**
  * Clean up redundant source files after successful merge
  */
 export async function cleanupAfterMerge(mergedDatasetId: string, userId: string): Promise<void> {
   console.log(`🧹 Starting post-merge cleanup for dataset ${mergedDatasetId}`);
+  
+  if (!isValidUUID(mergedDatasetId)) {
+    console.error(`❌ Invalid dataset ID format: ${mergedDatasetId}`);
+    return;
+  }
   
   try {
     // 1. Get the merged dataset info
@@ -29,18 +44,22 @@ export async function cleanupAfterMerge(mergedDatasetId: string, userId: string)
       return;
     }
     
-    // 2. Find source datasets that were merged into this one
+    // 2. Find source datasets that were merged into this one using the new sourceDatasetId field
     const mergeEvents = await db.select()
       .from(datasetMergeEvents)
       .where(eq(datasetMergeEvents.datasetId, mergedDatasetId));
       
     const sourceDatasetIds = mergeEvents
-      .map(event => event.sourceFilename)
+      .map(event => event.sourceDatasetId)
       .filter(Boolean) as string[];
     
     // 3. Clean up source files (preserve metadata, remove raw content)
     for (const sourceId of sourceDatasetIds) {
-      await cleanupRedundantDataset(sourceId, mergedDatasetId, userId);
+      if (isValidUUID(sourceId)) {
+        await cleanupRedundantDataset(sourceId, mergedDatasetId, userId);
+      } else {
+        console.warn(`⚠️  Skipping invalid source dataset ID: ${sourceId}`);
+      }
     }
     
     console.log(`✅ Post-merge cleanup completed for ${sourceDatasetIds.length} source files`);
@@ -91,11 +110,27 @@ export async function cleanupRedundantDataset(redundantId: string, replacementId
 }
 
 /**
- * Delete filesystem file if it exists
+ * Safely delete filesystem file if it exists
  */
 export async function deleteFileIfExists(datasetId: string): Promise<void> {
-  const filePath = path.join(UPLOADS_DIR, `${datasetId}.json`);
+  if (!isValidUUID(datasetId)) {
+    console.error(`❌ Security: Invalid UUID format for file deletion: ${datasetId}`);
+    return;
+  }
+  
+  const fileName = `${datasetId}.json`;
+  const filePath = path.join(UPLOADS_DIR, fileName);
+  
   try {
+    // Security check: ensure the resolved path is within UPLOADS_DIR
+    const resolvedPath = path.resolve(filePath);
+    const resolvedUploadsDir = path.resolve(UPLOADS_DIR);
+    
+    if (!resolvedPath.startsWith(resolvedUploadsDir)) {
+      console.error(`❌ Security: File path outside uploads directory: ${filePath}`);
+      return;
+    }
+    
     await fs.promises.unlink(filePath);
     console.log(`🗑️ Deleted file: ${filePath}`);
   } catch (error: any) {
@@ -107,27 +142,44 @@ export async function deleteFileIfExists(datasetId: string): Promise<void> {
 }
 
 /**
- * Prevent duplicate uploads via file content comparison
+ * Prevent duplicate uploads via persistent content hash
  */
 export async function checkForDuplicateFile(fileContent: string, userId: string): Promise<string | null> {
   const fileHash = crypto.createHash('sha256').update(fileContent).digest('hex');
   
-  // Get all user's datasets and check raw content hash
-  const userDatasets = await db.select()
+  // Check if this exact content hash already exists for this user
+  const existingDataset = await db.select()
     .from(locationDatasets)
     .where(and(
       eq(locationDatasets.userId, userId),
-      sql`${locationDatasets.rawContent} IS NOT NULL`
-    ));
+      eq(locationDatasets.contentHash, fileHash)
+    ))
+    .limit(1);
     
-  for (const dataset of userDatasets) {
-    if (dataset.rawContent) {
-      const existingHash = crypto.createHash('sha256').update(dataset.rawContent).digest('hex');
-      if (existingHash === fileHash) {
-        return dataset.id;
-      }
-    }
+  return existingDataset.length > 0 ? existingDataset[0].id : null;
+}
+
+/**
+ * Store content hash when creating a new dataset
+ */
+export async function storeContentHash(datasetId: string, fileContent: string, userId: string): Promise<void> {
+  if (!isValidUUID(datasetId)) {
+    console.error(`❌ Invalid dataset ID format: ${datasetId}`);
+    return;
   }
-    
-  return null;
+  
+  const fileHash = crypto.createHash('sha256').update(fileContent).digest('hex');
+  
+  try {
+    await db.update(locationDatasets)
+      .set({ contentHash: fileHash })
+      .where(and(
+        eq(locationDatasets.id, datasetId),
+        eq(locationDatasets.userId, userId)
+      ));
+      
+    console.log(`🔐 Stored content hash for dataset ${datasetId}`);
+  } catch (error) {
+    console.error(`❌ Failed to store content hash for dataset ${datasetId}:`, error);
+  }
 }

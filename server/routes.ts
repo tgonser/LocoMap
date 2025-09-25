@@ -135,7 +135,7 @@ function generateTravelStopsFromTimelinePoints(
 }
 import { batchReverseGeocode, deduplicateCoordinates, getAllCachedLocations } from "./geocodingService";
 import { mergeTimelineDatasets, generateMergePreview, mergePointsForDateRange, calculateContentHash, extractDateRange, type MergePreview } from "./jsonMerger";
-import { cleanupAfterMerge, cleanupAfterReplace, checkForDuplicateFile } from "./cleanupService";
+import { cleanupAfterMerge, cleanupAfterReplace, checkForDuplicateFile, storeContentHash } from "./cleanupService";
 import { parseVisitsActivitiesModern, selectDailySamples, resolveSamples, buildDailyPresence } from "./presenceDetection";
 import { GoogleLocationIngest } from "./googleLocationIngest";
 import { z } from "zod";
@@ -2157,10 +2157,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         console.log(`📊 Merge stats: ${originalCount} existing + ${newCount} new = ${finalCount} total (${addedObjects} added, ${duplicatesRemoved} duplicates removed)`);
         
-        // Record merge event for audit trail
+        // Record merge event for audit trail with source dataset ID
         try {
           await storage.createMergeEvent({
             datasetId: dataset.id,
+            sourceDatasetId: 'new_upload', // Will be cleaned up to actual dataset ID if needed
             addedObjects,
             duplicatesRemoved,
             newDataStart: newDataDateRange?.start ? new Date(newDataDateRange.start) : null,
@@ -2288,6 +2289,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // Clean up temporary uploaded file
         await fs.promises.unlink(req.file.path).catch(() => {});
+      }
+
+      // 🔐 CONTENT HASH: Store hash for duplicate detection
+      try {
+        await storeContentHash(dataset.id, JSON.stringify(finalJsonData), userId);
+      } catch (hashError) {
+        console.warn('⚠️  Failed to store content hash (continuing with upload):', hashError);
       }
 
       // 🧹 AUTO-CLEANUP: Clean up old datasets after successful replace
