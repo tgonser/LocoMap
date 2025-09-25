@@ -3071,18 +3071,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Get user's location datasets and raw files (contains semantic data)
-      const datasets = await storage.getUserLocationDatasets(userId);
+      const allDatasets = await storage.getUserLocationDatasets(userId);
+      
+      // Smart dataset selection: prioritize merged datasets over source files
+      const datasets = allDatasets.filter(dataset => {
+        // Prefer merged datasets (those with merge_count > 0)
+        if (dataset.mergeCount && dataset.mergeCount > 0) {
+          console.log(`📦 Using merged dataset ${dataset.id} (${dataset.totalSources} sources merged)`);
+          return true;
+        }
+        
+        // For non-merged datasets, only use if no merged datasets exist
+        const hasMergedDatasets = allDatasets.some(d => d.mergeCount && d.mergeCount > 0);
+        if (!hasMergedDatasets) {
+          console.log(`📦 Using original dataset ${dataset.id} (no merged datasets found)`);
+          return true;
+        }
+        
+        // Skip source files that were likely merged into other datasets
+        console.log(`⏭️  Skipping source dataset ${dataset.id} (merged datasets available)`);
+        return false;
+      });
+      
+      console.log(`📊 Selected ${datasets.length} of ${allDatasets.length} datasets for processing`);
       
       const semanticData: Array<{id: string, jsonData: any}> = [];
       for (const dataset of datasets) {
         try {
+          console.log(`📖 Reading dataset ${dataset.id} (${dataset.filename})`);
           const rawContent = await storage.getRawFile(dataset.id, userId);
           if (rawContent) {
             const jsonData = JSON.parse(rawContent);
             semanticData.push({ id: dataset.id, jsonData });
           }
         } catch (parseError) {
-          console.warn(`Failed to parse dataset ${dataset.id}:`, parseError);
+          console.warn(`❌ Failed to parse dataset ${dataset.id}: ${parseError.message}`);
         }
       }
       
