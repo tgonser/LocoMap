@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from 'react-leaflet';
 import { Icon, LatLngBounds } from 'leaflet';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import CalendarOverlay from './CalendarOverlay';
 
 // Fix for default markers in react-leaflet
@@ -38,24 +39,34 @@ interface LocationPoint {
   activity?: string;
 }
 
-// Component to handle auto-pan and auto-zoom functionality
-interface MapViewControllerProps {
-  locations: LocationPoint[];
-  selectedDate?: Date;
-  selectedPoint?: { lat: number; lng: number } | null;
+// View modes for map display
+type MapViewMode = 'single' | 'multi';
+
+// Day aggregation for multi-day view
+interface DayData {
+  date: string; // YYYY-MM-DD format
+  dateObj: Date;
+  points: LocationPoint[];
+  firstPoint: LocationPoint;
+  lastPoint: LocationPoint;
+  totalPoints: number;
+  startTime: Date;
+  endTime: Date;
 }
 
-function MapViewController({ locations, selectedDate, selectedPoint }: MapViewControllerProps) {
+// Component to handle auto-pan and auto-zoom functionality
+interface MapViewControllerProps {
+  filteredLocations: LocationPoint[]; // Use pre-filtered locations from parent
+  selectedPoint?: { lat: number; lng: number } | null;
+  viewMode: MapViewMode;
+}
+
+function MapViewController({ filteredLocations, selectedPoint, viewMode }: MapViewControllerProps) {
   const map = useMap();
   const isNavigatingRef = useRef(false);
 
   useEffect(() => {
-    // Filter locations by selected date
-    const filteredLocations = selectedDate 
-      ? locations.filter(loc => 
-          loc.timestamp.toDateString() === selectedDate.toDateString()
-        )
-      : locations;
+    // Use pre-filtered locations from parent component
 
     if (filteredLocations.length === 0) {
       return; // Keep current view if no locations
@@ -90,12 +101,12 @@ function MapViewController({ locations, selectedDate, selectedPoint }: MapViewCo
       duration: 0.8
     });
 
-  }, [map, locations, selectedDate]);
+  }, [map, filteredLocations]);
 
-  // Reset navigation mode when date changes
+  // Reset navigation mode when view mode or filter changes
   useEffect(() => {
     isNavigatingRef.current = false;
-  }, [selectedDate]);
+  }, [filteredLocations, viewMode]);
 
   // Handle individual point selection with smooth animation
   useEffect(() => {
@@ -123,6 +134,7 @@ interface MapDisplayProps {
   zoom?: number;
   className?: string;
   selectedPoint?: { lat: number; lng: number } | null;
+  dateRange?: { start: Date; end: Date }; // For multi-day view
 }
 
 export default function MapDisplay({ 
@@ -134,16 +146,80 @@ export default function MapDisplay({
   center = [37.7749, -122.4194], // San Francisco default
   zoom = 13,
   className,
-  selectedPoint 
+  selectedPoint,
+  dateRange
 }: MapDisplayProps) {
-  // Filter locations by selected date if provided - memoized to prevent bounds recalculation
+  // View mode state management
+  const [viewMode, setViewMode] = useState<MapViewMode>('single');
+  // Helper function for consistent local date normalization
+  const getLocalDateKey = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const getLocalDateOnly = (date: Date): Date => {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  };
+
+  // Filter locations based on view mode - memoized to prevent bounds recalculation
   const filteredLocations = useMemo(() => {
-    return selectedDate 
-      ? locations.filter(loc => 
-          loc.timestamp.toDateString() === selectedDate.toDateString()
-        )
-      : locations;
-  }, [locations, selectedDate]);
+    if (viewMode === 'single') {
+      return selectedDate 
+        ? locations.filter(loc => 
+            getLocalDateKey(loc.timestamp) === getLocalDateKey(selectedDate)
+          )
+        : locations;
+    } else {
+      // Multi-day view: show all locations within date range
+      if (!dateRange) return locations;
+      
+      return locations.filter(loc => {
+        const locDate = getLocalDateOnly(loc.timestamp);
+        const startDate = getLocalDateOnly(dateRange.start);
+        const endDate = getLocalDateOnly(dateRange.end);
+        return locDate >= startDate && locDate <= endDate;
+      });
+    }
+  }, [locations, selectedDate, viewMode, dateRange]);
+
+  // Aggregate locations by day for multi-day view using consistent date normalization
+  const dayAggregatedData = useMemo(() => {
+    if (viewMode === 'single') return [];
+    
+    const dayMap = new Map<string, LocationPoint[]>();
+    
+    filteredLocations.forEach(location => {
+      const dateKey = getLocalDateKey(location.timestamp);
+      if (!dayMap.has(dateKey)) {
+        dayMap.set(dateKey, []);
+      }
+      dayMap.get(dateKey)!.push(location);
+    });
+    
+    return Array.from(dayMap.entries())
+      .map(([dateKey, points]) => {
+        // Sort a copy to avoid mutating the original array
+        const sortedPoints = [...points].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        
+        // Parse date key back to Date object using consistent method
+        const [year, month, day] = dateKey.split('-').map(Number);
+        const dateObj = new Date(year, month - 1, day); // month is 0-indexed
+        
+        return {
+          date: dateKey, // Already in YYYY-MM-DD format
+          dateObj,
+          points: sortedPoints,
+          firstPoint: sortedPoints[0],
+          lastPoint: sortedPoints[sortedPoints.length - 1],
+          totalPoints: sortedPoints.length,
+          startTime: sortedPoints[0].timestamp,
+          endTime: sortedPoints[sortedPoints.length - 1].timestamp
+        } as DayData;
+      })
+      .sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
+  }, [filteredLocations, viewMode]);
 
   // Create clean path segments for realistic track visualization
   const createCleanPathSegments = (locations: LocationPoint[]): {
@@ -288,6 +364,27 @@ export default function MapDisplay({
 
   return (
     <Card className={`h-full relative ${className}`}>
+      {/* View Mode Toggle Controls */}
+      <div className="absolute top-4 left-4 z-[1000] flex gap-2">
+        <Button 
+          variant={viewMode === 'single' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setViewMode('single')}
+          data-testid="button-single-day"
+        >
+          Single Day
+        </Button>
+        <Button 
+          variant={viewMode === 'multi' ? 'default' : 'outline'} 
+          size="sm"
+          onClick={() => setViewMode('multi')}
+          data-testid="button-multi-day"
+          disabled={!dateRange}
+        >
+          View All Range
+        </Button>
+      </div>
+      
       <div className="h-full rounded-lg" style={{ minHeight: '400px' }}>
         <MapContainer
           center={mapCenter}
@@ -334,9 +431,9 @@ export default function MapDisplay({
           
           {/* Auto-pan and auto-zoom controller */}
           <MapViewController 
-            locations={locations} 
-            selectedDate={selectedDate}
+            filteredLocations={filteredLocations}
             selectedPoint={selectedPoint}
+            viewMode={viewMode}
           />
           
           {/* Highlight marker for clicked timeline points */}
