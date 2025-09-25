@@ -374,7 +374,58 @@ export default function MapDisplay({
     return R * c;
   };
 
-  const { segments: pathSegments, gaps: pathGaps } = createCleanPathSegments(filteredLocations);
+  // Color scheme for different days in multi-day view
+  const getDayColor = (dayIndex: number): string => {
+    const colors = [
+      '#3b82f6', // blue
+      '#ef4444', // red
+      '#10b981', // green
+      '#f59e0b', // amber
+      '#8b5cf6', // violet
+      '#06b6d4', // cyan
+      '#f97316', // orange
+      '#84cc16', // lime
+      '#ec4899', // pink
+      '#6366f1', // indigo
+    ];
+    return colors[dayIndex % colors.length];
+  };
+
+  // Generate polyline data based on view mode
+  const polylineData = useMemo(() => {
+    if (viewMode === 'single') {
+      // Single day view: use existing logic with blue color
+      const { segments, gaps } = createCleanPathSegments(filteredLocations);
+      return {
+        daySegments: [{ segments, gaps, color: '#3b82f6', date: selectedDate?.toDateString() || 'single' }],
+        dayMarkers: []
+      };
+    } else {
+      // Multi-day view: create separate segments for each day
+      const daySegments = dayAggregatedData.map((dayData, index) => {
+        const { segments, gaps } = createCleanPathSegments(dayData.points);
+        return {
+          segments,
+          gaps,
+          color: getDayColor(index),
+          date: dayData.date,
+          dayData
+        };
+      });
+      
+      // Create day start markers for multi-day view
+      const dayMarkers = dayAggregatedData.map((dayData, index) => ({
+        position: [dayData.firstPoint.lat, dayData.firstPoint.lng] as [number, number],
+        color: getDayColor(index),
+        date: dayData.date,
+        dayData
+      }));
+      
+      return { daySegments, dayMarkers };
+    }
+  }, [viewMode, filteredLocations, dayAggregatedData, selectedDate]);
+
+  const { daySegments, dayMarkers } = polylineData;
 
   // Use first location as center if available, ensure valid coordinates
   const mapCenter = filteredLocations.length > 0 
@@ -445,29 +496,61 @@ export default function MapDisplay({
             zoomOffset={0}
           />
           
-          {/* Draw clean path segments (GPS-tracked routes) */}
-          {pathSegments.map((segment, segmentIndex) => (
-            <Polyline
-              key={`segment-${segmentIndex}`}
-              positions={segment}
-              color="#3b82f6"
-              weight={3}
-              opacity={0.9}
-              smoothFactor={1.0}
-            />
-          ))}
+          {/* Draw path segments grouped by day */}
+          {daySegments.flatMap((daySegment, dayIndex) => [
+            // Draw clean path segments (GPS-tracked routes) for this day
+            ...daySegment.segments.map((segment, segmentIndex) => (
+              <Polyline
+                key={`day-${dayIndex}-segment-${segmentIndex}`}
+                positions={segment}
+                color={daySegment.color}
+                weight={3}
+                opacity={0.9}
+                smoothFactor={1.0}
+              />
+            )),
+            // Draw dotted lines for gaps (inferred travel) for this day
+            ...daySegment.gaps.map((gap, gapIndex) => (
+              <Polyline
+                key={`day-${dayIndex}-gap-${gapIndex}`}
+                positions={gap}
+                color={daySegment.color}
+                weight={2}
+                opacity={0.4}
+                dashArray="8,12"
+                smoothFactor={1.0}
+              />
+            ))
+          ])}
           
-          {/* Draw dotted lines for gaps (inferred travel) */}
-          {pathGaps.map((gap, gapIndex) => (
-            <Polyline
-              key={`gap-${gapIndex}`}
-              positions={gap}
-              color="#6b7280"
-              weight={2}
-              opacity={0.6}
-              dashArray="8,12"
-              smoothFactor={1.0}
-            />
+          {/* Day start markers for multi-day view */}
+          {viewMode === 'multi' && dayMarkers.map((marker, markerIndex) => (
+            <Marker
+              key={`day-marker-${marker.date}`}
+              position={marker.position}
+              icon={new Icon({
+                iconUrl: `data:image/svg+xml;base64,${btoa(`
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 25 41" fill="none">
+                    <path d="M12.5 0C5.6 0 0 5.6 0 12.5c0 7.8 12.5 28.5 12.5 28.5s12.5-20.7 12.5-28.5C25 5.6 19.4 0 12.5 0z" fill="${marker.color}" stroke="#fff" stroke-width="2"/>
+                    <circle cx="12.5" cy="12.5" r="6" fill="#fff"/>
+                    <text x="12.5" y="17" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="bold" fill="${marker.color}">${markerIndex + 1}</text>
+                  </svg>
+                `)}`,
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34]
+              })}
+            >
+              <Popup>
+                <div className="text-sm">
+                  <strong>Day {markerIndex + 1}: {new Date(marker.date).toLocaleDateString()}</strong><br/>
+                  Start: {marker.dayData.startTime.toLocaleTimeString()}<br/>
+                  Points: {marker.dayData.totalPoints}<br/>
+                  Lat: {marker.position[0].toFixed(6)}<br/>
+                  Lng: {marker.position[1].toFixed(6)}
+                </div>
+              </Popup>
+            </Marker>
           ))}
           
           {/* Auto-pan and auto-zoom controller */}
