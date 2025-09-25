@@ -133,6 +133,7 @@ export default function LocationHistoryApp() {
     // Double click: switch to single day view and select the day
     setHighlightedDay(null);
     setSelectedDate(dayData.dateObj);
+    setSelectedDateRange(null); // Clear date range to switch to single-day view
   };
 
   // Check for existing data on component mount
@@ -384,7 +385,7 @@ export default function LocationHistoryApp() {
   const getViewModeButton = (mode: ViewMode, icon: React.ReactNode, label: string) => (
     <Button
       key={mode}
-      variant={viewMode === mode ? "default" : "ghost"}
+      variant={viewMode === mode ? "default" : "secondary"}
       size="sm"
       onClick={() => handleViewModeChange(mode)}
       className="gap-2"

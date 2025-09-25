@@ -59,16 +59,20 @@ interface MapViewControllerProps {
   filteredLocations: LocationPoint[]; // Use pre-filtered locations from parent
   selectedPoint?: { lat: number; lng: number } | null;
   viewMode: MapViewMode;
+  dayGroupedLocations?: { date: string; points: LocationPoint[] }[];
 }
 
-function MapViewController({ filteredLocations, selectedPoint, viewMode }: MapViewControllerProps) {
+function MapViewController({ filteredLocations, selectedPoint, viewMode, dayGroupedLocations = [] }: MapViewControllerProps) {
   const map = useMap();
   const isNavigatingRef = useRef(false);
 
   useEffect(() => {
-    // Use pre-filtered locations from parent component
+    // In multi-day mode, use all day locations for bounds
+    const locationsForBounds = viewMode === 'multi' && dayGroupedLocations.length > 0
+      ? dayGroupedLocations.flatMap(day => day.points)
+      : filteredLocations;
 
-    if (filteredLocations.length === 0) {
+    if (locationsForBounds.length === 0) {
       return; // Keep current view if no locations
     }
 
@@ -78,8 +82,8 @@ function MapViewController({ filteredLocations, selectedPoint, viewMode }: MapVi
     }
 
     // Handle single location case
-    if (filteredLocations.length === 1) {
-      const location = filteredLocations[0];
+    if (locationsForBounds.length === 1) {
+      const location = locationsForBounds[0];
       map.setView([location.lat, location.lng], 16, {
         animate: true,
         duration: 0.8
@@ -87,21 +91,21 @@ function MapViewController({ filteredLocations, selectedPoint, viewMode }: MapVi
       return;
     }
 
-    // Handle multiple locations - calculate bounds (only on initial load)
+    // Handle multiple locations - calculate bounds
     const bounds = new LatLngBounds([]);
-    filteredLocations.forEach(location => {
+    locationsForBounds.forEach(location => {
       bounds.extend([location.lat, location.lng]);
     });
 
     // Fit bounds with padding and constraints
     map.fitBounds(bounds, {
       padding: [20, 20], // Add 20px padding on all sides
-      maxZoom: 17, // Don't zoom in too close for multiple locations
+      maxZoom: viewMode === 'multi' ? 15 : 17, // Zoom out more for multi-day view
       animate: true,
       duration: 0.8
     });
 
-  }, [map, filteredLocations]);
+  }, [map, filteredLocations, viewMode, dayGroupedLocations]);
 
   // Reset navigation mode when view mode or filter changes
   useEffect(() => {
@@ -398,7 +402,6 @@ export default function MapDisplay({
                        mapCenter[1] >= -180 && mapCenter[1] <= 180;
 
   if (!isValidCenter) {
-    console.error('Invalid map center coordinates:', mapCenter);
     return (
       <Card className={`h-full relative ${className}`}>
         <div className="h-full flex items-center justify-center">
@@ -446,6 +449,9 @@ export default function MapDisplay({
           zoomControl={true}
           attributionControl={true}
           preferCanvas={false}
+          whenReady={() => {
+            // Scroll wheel zoom should be enabled by default with scrollWheelZoom={true}
+          }}
         >
           <TileLayer
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -466,6 +472,7 @@ export default function MapDisplay({
                 weight={3}
                 opacity={0.9}
                 smoothFactor={1.0}
+                data-testid={`polyline-day-${daySegment.date}`}
               />
             )),
             // Draw dotted lines for gaps (inferred travel) for this day
@@ -487,6 +494,7 @@ export default function MapDisplay({
             <Marker
               key={`day-marker-${marker.date}`}
               position={marker.position}
+              data-testid={`marker-daystart-${marker.date}`}
               icon={new Icon({
                 iconUrl: `data:image/svg+xml;base64,${btoa(`
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 25 41" fill="none">
@@ -517,6 +525,7 @@ export default function MapDisplay({
             filteredLocations={filteredLocations}
             selectedPoint={selectedPoint || internalSelectedPoint}
             viewMode={viewMode}
+            dayGroupedLocations={dayGroupedLocations}
           />
           
           {/* Highlight marker for clicked timeline points */}
