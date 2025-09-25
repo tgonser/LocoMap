@@ -1,0 +1,27 @@
+                                Table "public.location_datasets"
+        Column         |            Type             | Collation | Nullable |      Default
+-----------------------+-----------------------------+-----------+----------+-------------------
+ id                    | character varying           |           | not null | gen_random_uuid()
+ user_id               | character varying           |           | not null |
+ filename              | text                        |           | not null |
+ file_size             | integer                     |           | not null |
+ total_points          | integer                     |           | not null |
+ deduplicated_points   | integer                     |           | not null |
+ uploaded_at           | timestamp without time zone |           |          | now()
+ processed_at          | timestamp without time zone |           |          |
+ raw_content           | text                        |           |          |
+ merge_count           | integer                     |           |          | 0
+ last_merge_at         | timestamp without time zone |           |          |
+ first_data_at         | timestamp without time zone |           |          |
+ last_data_at          | timestamp without time zone |           |          |
+ total_sources         | integer                     |           |          | 1
+ last_merge_added      | integer                     |           |          |
+ last_merge_duplicates | integer                     |           |          |
+Indexes:
+    "location_datasets_pkey" PRIMARY KEY, btree (id)
+Foreign-key constraints:
+    "location_datasets_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id)
+Referenced by:
+    TABLE "daily_geocodes" CONSTRAINT "daily_geocodes_dataset_id_fkey" FOREIGN KEY (dataset_id) REFERENCES location_datasets(id)
+    TABLE "dataset_merge_events" CONSTRAINT "dataset_merge_events_dataset_id_fkey" FOREIGN KEY (dataset_id) REFERENCES location_datasets(id)
+    TABLE "travel_stops" CONSTRAINT "travel_stops_dataset_id_fkey" FOREIGN KEY (dataset_id) REFERENCES location_datasets(id)
