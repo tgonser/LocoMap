@@ -1931,6 +1931,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // 🔍 DUPLICATE PREVENTION: Check if this exact file has already been uploaded (EARLY CHECK)
       try {
+        console.log(`🔍 Checking for duplicates: file size ${fileContent.length} chars`);
         const duplicateDatasetId = await checkForDuplicateFile(fileContent, userId);
         if (duplicateDatasetId) {
           console.log(`🚫 Duplicate file detected: matches existing dataset ${duplicateDatasetId}`);
@@ -1940,6 +1941,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             existingDatasetId: duplicateDatasetId,
             message: "The exact same file content already exists in your datasets. No upload needed."
           });
+        } else {
+          console.log(`✅ No duplicate found - proceeding with upload`);
         }
       } catch (duplicateCheckError) {
         console.warn('⚠️  Failed to check for duplicate file (continuing with upload):', duplicateCheckError);
@@ -2295,7 +2298,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // 🔐 CONTENT HASH: Store hash for duplicate detection
       try {
         await storeContentHash(dataset.id, JSON.stringify(finalJsonData), userId);
-      } catch (hashError) {
+      } catch (hashError: any) {
+        // If this is a duplicate constraint violation, return an error instead of continuing
+        if (hashError?.code === '23505' && hashError?.constraint === 'unique_user_content_hash') {
+          console.log('🚫 Duplicate content detected during hash storage - cleaning up and rejecting upload');
+          
+          // Clean up the dataset we just created since it's a duplicate
+          try {
+            await storage.deleteDataset(dataset.id, userId);
+            await deleteFileIfExists(dataset.id);
+          } catch (cleanupError) {
+            console.warn('⚠️  Failed to cleanup duplicate dataset:', cleanupError);
+          }
+          
+          return res.status(409).json({
+            error: "This file has already been uploaded to your account",
+            message: "The exact same file content already exists in your datasets. No upload needed.",
+            duplicate: true
+          });
+        }
+        
         console.warn('⚠️  Failed to store content hash (continuing with upload):', hashError);
       }
 
