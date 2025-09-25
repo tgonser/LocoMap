@@ -303,6 +303,19 @@ export default function LocationHistoryApp() {
     loc.timestamp.toDateString() === selectedDate.toDateString()
   );
 
+  // Get all locations within date range for multi-day map view
+  const dateRangeLocations = useMemo(() => {
+    if (!selectedDateRange) return dayLocations; // Fall back to single day
+    
+    return validLocationData.filter(location => {
+      const locationDate = new Date(location.timestamp.getFullYear(), location.timestamp.getMonth(), location.timestamp.getDate());
+      const startDate = new Date(selectedDateRange.start.getFullYear(), selectedDateRange.start.getMonth(), selectedDateRange.start.getDate());
+      const endDate = new Date(selectedDateRange.end.getFullYear(), selectedDateRange.end.getMonth(), selectedDateRange.end.getDate());
+      
+      return locationDate >= startDate && locationDate <= endDate;
+    });
+  }, [validLocationData, selectedDateRange, dayLocations]);
+
   // Calculate location count by date for calendar overlay (using filtered data)
   const locationCountByDate = validLocationData.reduce((acc, loc) => {
     const dateKey = loc.timestamp.toDateString();
@@ -352,6 +365,11 @@ export default function LocationHistoryApp() {
       })
       .sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
   }, [validLocationData, selectedDateRange, getLocalDateKey]);
+
+  // Choose the right locations to pass to MapDisplay based on view type
+  const mapLocations = selectedDateRange && dayAggregatedData.length > 1 
+    ? dateRangeLocations  // Multi-day view: use all locations in range
+    : dayLocations;       // Single-day view: use single day locations
 
   // Analytics calculations (using filtered data)
   const totalLocations = validLocationData.length;
@@ -532,7 +550,7 @@ export default function LocationHistoryApp() {
                     </Card>
                   ) : mapDataLoaded ? (
                     <MapDisplay
-                      locations={dayLocations}
+                      locations={mapLocations}
                       selectedDate={selectedDate}
                       onDateChange={setSelectedDate}
                       availableDates={availableDates}
