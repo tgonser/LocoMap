@@ -135,6 +135,7 @@ function generateTravelStopsFromTimelinePoints(
 }
 import { batchReverseGeocode, deduplicateCoordinates, getAllCachedLocations } from "./geocodingService";
 import { mergeTimelineDatasets, generateMergePreview, mergePointsForDateRange, calculateContentHash, extractDateRange, type MergePreview } from "./jsonMerger";
+import { cleanupAfterMerge, cleanupAfterReplace, checkForDuplicateFile } from "./cleanupService";
 import { parseVisitsActivitiesModern, selectDailySamples, resolveSamples, buildDailyPresence } from "./presenceDetection";
 import { GoogleLocationIngest } from "./googleLocationIngest";
 import { z } from "zod";
@@ -2166,6 +2167,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
           
           console.log(`✅ Merge event recorded: dataset ${dataset.id} now has ${currentMergeCount} merges`);
+          
+          // 🧹 AUTO-CLEANUP: Remove redundant source file after successful merge
+          try {
+            await cleanupAfterMerge(dataset.id, userId);
+          } catch (cleanupError) {
+            console.error('⚠️  Failed to cleanup after merge (continuing with upload):', cleanupError);
+          }
         } catch (mergeEventError) {
           console.error('❌ Failed to record merge event:', mergeEventError);
           // Continue with upload - don't fail the whole operation for tracking issues
