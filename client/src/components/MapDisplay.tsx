@@ -162,6 +162,13 @@ export default function MapDisplay({
   
   // Internal selected point state for day fly-to functionality
   const [internalSelectedPoint, setInternalSelectedPoint] = useState<{ lat: number; lng: number } | null>(null);
+  
+  // Debug logging for dateRange prop
+  useEffect(() => {
+    console.log('MapDisplay dateRange prop:', dateRange);
+    console.log('MapDisplay dateRange type:', typeof dateRange);
+    console.log('MapDisplay dateRange truthy:', !!dateRange);
+  }, [dateRange]);
   // Helper function for consistent local date normalization
   const getLocalDateKey = (date: Date): string => {
     const year = date.getFullYear();
@@ -471,9 +478,10 @@ export default function MapDisplay({
           size="sm"
           onClick={() => setViewMode('multi')}
           data-testid="button-multi-day"
-          disabled={!dateRange}
+          disabled={false}
+          title={`dateRange: ${dateRange ? 'exists' : 'missing'}`}
         >
-          View All Range
+          View All Range {!dateRange && '(debug: no range)'}
         </Button>
       </div>
       
