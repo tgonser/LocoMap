@@ -124,6 +124,13 @@ export default function LocationHistoryApp() {
   // Handle day click interactions
   const handleDayClick = (dayData: DayData) => {
     // Single click: highlight day and fly to day start location
+    console.log('🎯 handleDayClick called:', {
+      clickedDate: dayData.date,
+      clickedDateObj: dayData.dateObj.toISOString(),
+      clickedDateObjLocal: `${dayData.dateObj.getFullYear()}-${String(dayData.dateObj.getMonth() + 1).padStart(2, '0')}-${String(dayData.dateObj.getDate()).padStart(2, '0')}`,
+      currentSelectedDate: selectedDate.toISOString(),
+      currentSelectedDateLocal: getLocalDateKey(selectedDate)
+    });
     setHighlightedDay(dayData.date);
     const { lat, lng } = dayData.firstPoint;
     setSelectedPoint({ lat, lng });
@@ -131,6 +138,11 @@ export default function LocationHistoryApp() {
 
   const handleDayDoubleClick = (dayData: DayData) => {
     // Double click: switch to single day view and select the day
+    console.log('🎯 handleDayDoubleClick called:', {
+      clickedDate: dayData.date,
+      clickedDateObj: dayData.dateObj.toISOString(),
+      settingSelectedDateTo: dayData.dateObj.toISOString()
+    });
     setHighlightedDay(null);
     setSelectedDate(dayData.dateObj);
     setSelectedDateRange(null); // Clear date range to switch to single-day view
@@ -299,9 +311,24 @@ export default function LocationHistoryApp() {
   ).map(dateStr => new Date(dateStr));
 
   // Get locations for selected date (using filtered data)
-  const dayLocations = validLocationData.filter(loc => 
-    getLocalDateKey(loc.timestamp) === getLocalDateKey(selectedDate)
-  );
+  const dayLocations = useMemo(() => {
+    const selectedKey = getLocalDateKey(selectedDate);
+    const filtered = validLocationData.filter(loc => 
+      getLocalDateKey(loc.timestamp) === selectedKey
+    );
+    console.log('📅 dayLocations filter:', {
+      selectedDate: selectedDate.toISOString(),
+      selectedKey,
+      totalLocations: validLocationData.length,
+      filteredCount: filtered.length,
+      sampleFiltered: filtered.slice(0, 2).map(l => ({
+        timestamp: l.timestamp.toISOString(),
+        key: getLocalDateKey(l.timestamp)
+      })),
+      availableKeys: Array.from(new Set(validLocationData.slice(0, 10).map(l => getLocalDateKey(l.timestamp))))
+    });
+    return filtered;
+  }, [validLocationData, selectedDate]);
 
   // Get all locations within date range for multi-day map view
   const dateRangeLocations = useMemo(() => {
@@ -559,6 +586,13 @@ export default function LocationHistoryApp() {
                       selectedPoint={selectedPoint}
                       dateRange={selectedDateRange ?? undefined}
                       onViewModeChange={(mode) => {
+                        console.log('🔄 onViewModeChange called:', {
+                          mode,
+                          currentSelectedDateRange: selectedDateRange ? {
+                            start: selectedDateRange.start.toISOString(),
+                            end: selectedDateRange.end.toISOString()
+                          } : null
+                        });
                         if (mode === 'single') {
                           // When switching to single day view, clear the date range
                           // so sidebar switches from daily list to hourly timeline
@@ -567,7 +601,10 @@ export default function LocationHistoryApp() {
                           // When switching back to multi-day view, restore previous date range
                           // or open date picker if no previous range exists
                           if (!selectedDateRange) {
+                            console.log('📅 Opening date picker because no selectedDateRange');
                             setShowDateRangePicker(true);
+                          } else {
+                            console.log('📅 selectedDateRange exists, not opening picker');
                           }
                         }
                       }}
