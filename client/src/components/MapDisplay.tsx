@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import CalendarOverlay from './CalendarOverlay';
+import DayTimeline from './DayTimeline';
 
 // Fix for default markers in react-leaflet
 delete (Icon.Default.prototype as any)._getIconUrl;
@@ -135,6 +136,8 @@ interface MapDisplayProps {
   className?: string;
   selectedPoint?: { lat: number; lng: number } | null;
   dateRange?: { start: Date; end: Date }; // For multi-day view
+  onDayFlyTo?: (lat: number, lng: number) => void; // Handle day click to fly to location
+  onSwitchToSingleDay?: (date: Date) => void; // Handle double-click to switch to single day
 }
 
 export default function MapDisplay({ 
@@ -147,10 +150,18 @@ export default function MapDisplay({
   zoom = 13,
   className,
   selectedPoint,
-  dateRange
+  dateRange,
+  onDayFlyTo,
+  onSwitchToSingleDay
 }: MapDisplayProps) {
   // View mode state management
   const [viewMode, setViewMode] = useState<MapViewMode>('single');
+  
+  // Map reference for programmatic control
+  const mapRef = useRef<any>(null);
+  
+  // Internal selected point state for day fly-to functionality
+  const [internalSelectedPoint, setInternalSelectedPoint] = useState<{ lat: number; lng: number } | null>(null);
   // Helper function for consistent local date normalization
   const getLocalDateKey = (date: Date): string => {
     const year = date.getFullYear();
@@ -220,6 +231,36 @@ export default function MapDisplay({
       })
       .sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
   }, [filteredLocations, viewMode]);
+
+  // Handle day click interactions with self-sufficient functionality
+  const handleDayClick = (dayData: DayData) => {
+    // Single click: fly to day start location
+    const { lat, lng } = dayData.firstPoint;
+    
+    // Use external handler if provided, otherwise handle internally
+    if (onDayFlyTo) {
+      onDayFlyTo(lat, lng);
+    } else {
+      // Internal handling: set point for MapViewController to handle
+      setInternalSelectedPoint({ lat, lng });
+    }
+  };
+
+  const handleDayDoubleClick = (dayData: DayData) => {
+    // Double click: switch to single day view
+    setViewMode('single');
+    
+    // Clear internal selected point to avoid lingering pan state
+    setInternalSelectedPoint(null);
+    
+    // Use external handler if provided, otherwise handle internally
+    if (onSwitchToSingleDay) {
+      onSwitchToSingleDay(dayData.dateObj);
+    } else if (onDateChange) {
+      // Internal handling: update selected date if possible
+      onDateChange(dayData.dateObj);
+    }
+  };
 
   // Create clean path segments for realistic track visualization
   const createCleanPathSegments = (locations: LocationPoint[]): {
@@ -432,7 +473,7 @@ export default function MapDisplay({
           {/* Auto-pan and auto-zoom controller */}
           <MapViewController 
             filteredLocations={filteredLocations}
-            selectedPoint={selectedPoint}
+            selectedPoint={selectedPoint || internalSelectedPoint}
             viewMode={viewMode}
           />
           
@@ -457,13 +498,24 @@ export default function MapDisplay({
         </MapContainer>
       </div>
 
-      {/* Calendar Overlay */}
-      {onDateChange && selectedDate && (
+      {/* Calendar Overlay for single-day view */}
+      {viewMode === 'single' && onDateChange && selectedDate && (
         <CalendarOverlay
           selectedDate={selectedDate}
           onDateChange={onDateChange}
           availableDates={availableDates}
           locationCountByDate={locationCountByDate}
+        />
+      )}
+      
+      {/* Day timeline for multi-day view */}
+      {viewMode === 'multi' && dayAggregatedData.length > 0 && (
+        <DayTimeline 
+          dayData={dayAggregatedData}
+          selectedDate={selectedDate}
+          onDayClick={handleDayClick}
+          onDayDoubleClick={handleDayDoubleClick}
+          className="absolute top-4 right-4 z-[1000] w-80"
         />
       )}
       
