@@ -558,6 +558,13 @@ export default function LocationHistoryApp() {
                       className="h-full"
                       selectedPoint={selectedPoint}
                       dateRange={selectedDateRange ?? undefined}
+                      onViewModeChange={(mode) => {
+                        if (mode === 'single') {
+                          // When switching to single day view, clear the date range
+                          // so sidebar switches from daily list to hourly timeline
+                          setSelectedDateRange(null);
+                        }
+                      }}
                     />
                   ) : (
                     <Card className="h-full flex items-center justify-center">

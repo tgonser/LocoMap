@@ -139,6 +139,7 @@ interface MapDisplayProps {
   className?: string;
   selectedPoint?: { lat: number; lng: number } | null;
   dateRange?: { start: Date; end: Date }; // For multi-day view
+  onViewModeChange?: (mode: 'single' | 'multi') => void; // Callback for view mode changes
 }
 
 export default function MapDisplay({ 
@@ -152,6 +153,7 @@ export default function MapDisplay({
   className,
   selectedPoint,
   dateRange,
+  onViewModeChange,
 }: MapDisplayProps) {
   // View mode state management
   const [viewMode, setViewMode] = useState<MapViewMode>('single');
@@ -198,7 +200,7 @@ export default function MapDisplay({
         return locDate >= startDate && locDate <= endDate;
       });
     }
-  }, [locations, selectedDate, viewMode, dateRange]); // Removed selectedDate dependency for multi-day
+  }, [locations, selectedDate, viewMode, dateRange]);
 
   // Simple day grouping for multi-day polyline rendering
   const dayGroupedLocations = useMemo(() => {
@@ -419,18 +421,24 @@ export default function MapDisplay({
       {/* View Mode Toggle Controls */}
       <div className="absolute top-4 left-4 z-[1000] flex gap-1">
         <Button 
-          variant={viewMode === 'single' ? 'default' : 'outline'}
+          variant={viewMode === 'single' ? 'default' : 'secondary'}
           size="sm"
-          onClick={() => setViewMode('single')}
+          onClick={() => {
+            setViewMode('single');
+            onViewModeChange?.('single');
+          }}
           data-testid="button-single-day"
           className="text-xs px-2 py-1 h-7"
         >
           Single Day
         </Button>
         <Button 
-          variant={viewMode === 'multi' ? 'default' : 'outline'} 
+          variant={viewMode === 'multi' ? 'default' : 'secondary'} 
           size="sm"
-          onClick={() => setViewMode('multi')}
+          onClick={() => {
+            setViewMode('multi');
+            onViewModeChange?.('multi');
+          }}
           data-testid="button-multi-day"
           disabled={!dateRange}
           className="text-xs px-2 py-1 h-7"
