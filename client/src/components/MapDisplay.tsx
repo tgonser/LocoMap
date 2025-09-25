@@ -5,7 +5,6 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import CalendarOverlay from './CalendarOverlay';
-import DayTimeline from './DayTimeline';
 
 // Fix for default markers in react-leaflet
 delete (Icon.Default.prototype as any)._getIconUrl;
@@ -136,8 +135,6 @@ interface MapDisplayProps {
   className?: string;
   selectedPoint?: { lat: number; lng: number } | null;
   dateRange?: { start: Date; end: Date }; // For multi-day view
-  onDayFlyTo?: (lat: number, lng: number) => void; // Handle day click to fly to location
-  onSwitchToSingleDay?: (date: Date) => void; // Handle double-click to switch to single day
 }
 
 export default function MapDisplay({ 
@@ -151,11 +148,14 @@ export default function MapDisplay({
   className,
   selectedPoint,
   dateRange,
-  onDayFlyTo,
-  onSwitchToSingleDay
 }: MapDisplayProps) {
   // View mode state management
   const [viewMode, setViewMode] = useState<MapViewMode>('single');
+  
+  // Auto-switch view mode based on dateRange prop
+  useEffect(() => {
+    setViewMode(dateRange ? 'multi' : 'single');
+  }, [dateRange]);
   
   // Map reference for programmatic control
   const mapRef = useRef<any>(null);
@@ -163,8 +163,6 @@ export default function MapDisplay({
   // Internal selected point state for day fly-to functionality
   const [internalSelectedPoint, setInternalSelectedPoint] = useState<{ lat: number; lng: number } | null>(null);
   
-  // Highlighted day state for multi-day view
-  const [highlightedDay, setHighlightedDay] = useState<string | null>(null);
   // Helper function for consistent local date normalization
   const getLocalDateKey = (date: Date): string => {
     const year = date.getFullYear();
@@ -198,8 +196,8 @@ export default function MapDisplay({
     }
   }, [locations, selectedDate, viewMode, dateRange]); // Removed selectedDate dependency for multi-day
 
-  // Aggregate locations by day for multi-day view using consistent date normalization
-  const dayAggregatedData = useMemo(() => {
+  // Simple day grouping for multi-day polyline rendering
+  const dayGroupedLocations = useMemo(() => {
     if (viewMode === 'single') return [];
     
     const dayMap = new Map<string, LocationPoint[]>();
@@ -213,59 +211,13 @@ export default function MapDisplay({
     });
     
     return Array.from(dayMap.entries())
-      .map(([dateKey, points]) => {
-        // Sort a copy to avoid mutating the original array
-        const sortedPoints = [...points].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-        
-        // Parse date key back to Date object using consistent method
-        const [year, month, day] = dateKey.split('-').map(Number);
-        const dateObj = new Date(year, month - 1, day); // month is 0-indexed
-        
-        return {
-          date: dateKey, // Already in YYYY-MM-DD format
-          dateObj,
-          points: sortedPoints,
-          firstPoint: sortedPoints[0],
-          lastPoint: sortedPoints[sortedPoints.length - 1],
-          totalPoints: sortedPoints.length,
-          startTime: sortedPoints[0].timestamp,
-          endTime: sortedPoints[sortedPoints.length - 1].timestamp
-        } as DayData;
-      })
-      .sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
-  }, [filteredLocations, viewMode]);
+      .map(([dateKey, points]) => ({
+        date: dateKey,
+        points: [...points].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [filteredLocations, viewMode, getLocalDateKey]);
 
-  // Handle day click interactions - highlight day and fly to location
-  const handleDayClick = (dayData: DayData) => {
-    // Single click: highlight day and fly to day start location
-    setHighlightedDay(dayData.date);
-    const { lat, lng } = dayData.firstPoint;
-    
-    // Use external handler if provided, otherwise handle internally
-    if (onDayFlyTo) {
-      onDayFlyTo(lat, lng);
-    } else {
-      // Internal handling: set point for MapViewController to handle
-      setInternalSelectedPoint({ lat, lng });
-    }
-  };
-
-  const handleDayDoubleClick = (dayData: DayData) => {
-    // Double click: switch to single day view and select the day
-    setViewMode('single');
-    setHighlightedDay(null);
-    
-    // Clear internal selected point to avoid lingering pan state
-    setInternalSelectedPoint(null);
-    
-    // Use external handler if provided, otherwise handle internally
-    if (onSwitchToSingleDay) {
-      onSwitchToSingleDay(dayData.dateObj);
-    } else if (onDateChange) {
-      // Internal handling: update selected date if possible
-      onDateChange(dayData.dateObj);
-    }
-  };
 
   // Create clean path segments for realistic track visualization
   const createCleanPathSegments = (locations: LocationPoint[]): {
@@ -407,7 +359,7 @@ export default function MapDisplay({
       };
     } else {
       // Multi-day view: create separate segments for each day
-      const daySegments = dayAggregatedData.map((dayData, index) => {
+      const daySegments = dayGroupedLocations.map((dayData, index) => {
         const { segments, gaps } = createCleanPathSegments(dayData.points);
         return {
           segments,
@@ -419,8 +371,8 @@ export default function MapDisplay({
       });
       
       // Create day start markers for multi-day view
-      const dayMarkers = dayAggregatedData.map((dayData, index) => ({
-        position: [dayData.firstPoint.lat, dayData.firstPoint.lng] as [number, number],
+      const dayMarkers = dayGroupedLocations.map((dayData, index) => ({
+        position: [dayData.points[0].lat, dayData.points[0].lng] as [number, number],
         color: getDayColor(index),
         date: dayData.date,
         dayData
@@ -428,7 +380,7 @@ export default function MapDisplay({
       
       return { daySegments, dayMarkers };
     }
-  }, [viewMode, filteredLocations, dayAggregatedData, selectedDate]);
+  }, [viewMode, filteredLocations, dayGroupedLocations, selectedDate]);
 
   const { daySegments, dayMarkers } = polylineData;
 
@@ -551,8 +503,8 @@ export default function MapDisplay({
               <Popup>
                 <div className="text-sm">
                   <strong>Day {markerIndex + 1}: {new Date(marker.date).toLocaleDateString()}</strong><br/>
-                  Start: {marker.dayData.startTime.toLocaleTimeString()}<br/>
-                  Points: {marker.dayData.totalPoints}<br/>
+                  Start: {marker.dayData.points[0].timestamp.toLocaleTimeString()}<br/>
+                  Points: {marker.dayData.points.length}<br/>
                   Lat: {marker.position[0].toFixed(6)}<br/>
                   Lng: {marker.position[1].toFixed(6)}
                 </div>
@@ -598,17 +550,6 @@ export default function MapDisplay({
         />
       )}
       
-      {/* Day timeline for multi-day view */}
-      {viewMode === 'multi' && dayAggregatedData.length > 0 && (
-        <DayTimeline 
-          dayData={dayAggregatedData}
-          selectedDate={selectedDate}
-          onDayClick={handleDayClick}
-          onDayDoubleClick={handleDayDoubleClick}
-          className="absolute top-4 right-4 z-[1000] w-80"
-          highlightedDay={highlightedDay ?? undefined}
-        />
-      )}
       
       {filteredLocations.length === 0 && selectedDate && (
         <div className="absolute inset-0 flex items-center justify-center bg-muted/50 rounded-lg z-[5]">

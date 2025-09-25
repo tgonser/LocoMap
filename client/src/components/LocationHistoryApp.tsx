@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -6,6 +6,7 @@ import { MapPin, Calendar, BarChart3, List, Upload, CalendarDays, Globe } from '
 import FileManager from './FileManager';
 import MapDisplay from './MapDisplay';
 import DateNavigator from './DateNavigator';
+import DayTimeline from './DayTimeline';
 import AnalyticsPanel from './AnalyticsPanel';
 import TimelineViewer from './TimelineViewer';
 import DateRangePicker from './DateRangePicker';
@@ -20,6 +21,18 @@ interface LocationData {
   activity?: string;
 }
 
+// Day aggregation for multi-day view
+interface DayData {
+  date: string; // YYYY-MM-DD format
+  dateObj: Date;
+  points: LocationData[];
+  firstPoint: LocationData;
+  lastPoint: LocationData;
+  totalPoints: number;
+  startTime: Date;
+  endTime: Date;
+}
+
 type ViewMode = 'files' | 'map' | 'analytics' | 'yearly-report';
 
 export default function LocationHistoryApp() {
@@ -27,6 +40,8 @@ export default function LocationHistoryApp() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   // State for timeline click-to-map navigation
   const [selectedPoint, setSelectedPoint] = useState<{ lat: number; lng: number } | null>(null);
+  // Highlighted day state for multi-day view
+  const [highlightedDay, setHighlightedDay] = useState<string | null>(null);
   // View mode state with localStorage persistence
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     try {
@@ -96,6 +111,29 @@ export default function LocationHistoryApp() {
   useEffect(() => {
     setSelectedPoint(null);
   }, [selectedDate, selectedDateRange]);
+
+  // Helper function for consistent local date normalization
+  const getLocalDateKey = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+
+  // Handle day click interactions
+  const handleDayClick = (dayData: DayData) => {
+    // Single click: highlight day and fly to day start location
+    setHighlightedDay(dayData.date);
+    const { lat, lng } = dayData.firstPoint;
+    setSelectedPoint({ lat, lng });
+  };
+
+  const handleDayDoubleClick = (dayData: DayData) => {
+    // Double click: switch to single day view and select the day
+    setHighlightedDay(null);
+    setSelectedDate(dayData.dateObj);
+  };
 
   // Check for existing data on component mount
   useEffect(() => {
@@ -271,6 +309,49 @@ export default function LocationHistoryApp() {
     return acc;
   }, {} as Record<string, number>);
 
+  // Day aggregation logic for multi-day view
+  const dayAggregatedData: DayData[] = useMemo(() => {
+    if (!selectedDateRange || validLocationData.length === 0) return [];
+
+    const dayGroups = new Map<string, LocationData[]>();
+    
+    // Group locations by date within the selected date range
+    validLocationData.forEach(location => {
+      const locationDate = new Date(location.timestamp.getFullYear(), location.timestamp.getMonth(), location.timestamp.getDate());
+      const startDate = new Date(selectedDateRange.start.getFullYear(), selectedDateRange.start.getMonth(), selectedDateRange.start.getDate());
+      const endDate = new Date(selectedDateRange.end.getFullYear(), selectedDateRange.end.getMonth(), selectedDateRange.end.getDate());
+      
+      // Only include locations within the selected date range
+      if (locationDate >= startDate && locationDate <= endDate) {
+        const dateKey = getLocalDateKey(location.timestamp);
+        if (!dayGroups.has(dateKey)) {
+          dayGroups.set(dateKey, []);
+        }
+        dayGroups.get(dateKey)!.push(location);
+      }
+    });
+    
+    // Convert to DayData objects
+    return Array.from(dayGroups.entries())
+      .map(([dateKey, points]) => {
+        const sortedPoints = points.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        const firstPoint = sortedPoints[0];
+        const lastPoint = sortedPoints[sortedPoints.length - 1];
+        
+        return {
+          date: dateKey,
+          dateObj: new Date(dateKey + 'T00:00:00'),
+          points: sortedPoints,
+          firstPoint,
+          lastPoint,
+          totalPoints: sortedPoints.length,
+          startTime: firstPoint.timestamp,
+          endTime: lastPoint.timestamp
+        };
+      })
+      .sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
+  }, [validLocationData, selectedDateRange, getLocalDateKey]);
+
   // Analytics calculations (using filtered data)
   const totalLocations = validLocationData.length;
   
@@ -399,33 +480,47 @@ export default function LocationHistoryApp() {
             
             {/* Content */}
             {viewMode === 'map' ? (
-              <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 p-4">
-                {/* Left Sidebar - Timeline & Analytics */}
-                <div className="lg:col-span-1 space-y-4 order-2 lg:order-1">
-                  <DateNavigator
-                    selectedDate={selectedDate}
-                    onDateChange={setSelectedDate}
-                    availableDates={availableDates}
-                    locationCount={dayLocations.length}
-                    selectedDateRange={selectedDateRange}
-                  />
-                  <TimelineViewer
-                    events={dayLocations.map(loc => ({
-                      timestamp: loc.timestamp,
-                      location: {
-                        lat: loc.lat,
-                        lng: loc.lng,
-                      },
-                      activity: loc.activity,
-                      accuracy: loc.accuracy
-                    }))}
-                    selectedDate={selectedDate}
-                    onEventClick={(lat, lng) => setSelectedPoint({ lat, lng })}
-                  />
+              <div className="flex-1 flex min-h-0">
+                {/* Left Sidebar - Fixed width with scroll */}
+                <div className="w-80 min-w-80 shrink-0 p-4 border-r bg-card/50 overflow-y-auto">
+                  {/* Multi-day view: Show DayTimeline when dateRange spans multiple days */}
+                  {selectedDateRange && dayAggregatedData.length > 1 ? (
+                    <DayTimeline 
+                      dayData={dayAggregatedData}
+                      selectedDate={selectedDate}
+                      onDayClick={handleDayClick}
+                      onDayDoubleClick={handleDayDoubleClick}
+                      highlightedDay={highlightedDay ?? undefined}
+                    />
+                  ) : (
+                    /* Single-day view: Show DateNavigator and Timeline */
+                    <div className="space-y-4">
+                      <DateNavigator
+                        selectedDate={selectedDate}
+                        onDateChange={setSelectedDate}
+                        availableDates={availableDates}
+                        locationCount={dayLocations.length}
+                        selectedDateRange={selectedDateRange}
+                      />
+                      <TimelineViewer
+                        events={dayLocations.map(loc => ({
+                          timestamp: loc.timestamp,
+                          location: {
+                            lat: loc.lat,
+                            lng: loc.lng,
+                          },
+                          activity: loc.activity,
+                          accuracy: loc.accuracy
+                        }))}
+                        selectedDate={selectedDate}
+                        onEventClick={(lat, lng) => setSelectedPoint({ lat, lng })}
+                      />
+                    </div>
+                  )}
                 </div>
 
-                {/* Main Content Area */}
-                <div className="lg:col-span-3 order-1 lg:order-2">
+                {/* Main Content Area - Takes remaining space */}
+                <div className="flex-1 min-h-0 relative overflow-hidden p-4">
                   {isLoadingMapData ? (
                     <Card className="h-full flex items-center justify-center">
                       <div className="text-center">
@@ -444,8 +539,6 @@ export default function LocationHistoryApp() {
                       className="h-full"
                       selectedPoint={selectedPoint}
                       dateRange={selectedDateRange ?? undefined}
-                      onDayFlyTo={(lat, lng) => setSelectedPoint({ lat, lng })}
-                      onSwitchToSingleDay={(date) => setSelectedDate(date)}
                     />
                   ) : (
                     <Card className="h-full flex items-center justify-center">
