@@ -2299,6 +2299,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         await storeContentHash(dataset.id, JSON.stringify(finalJsonData), userId);
       } catch (hashError: any) {
+        console.log('🔍 Hash error details:', {
+          code: hashError?.code,
+          constraint: hashError?.constraint,
+          message: hashError?.message,
+          errorType: typeof hashError
+        });
+        
         // If this is a duplicate constraint violation, return an error instead of continuing
         if (hashError?.code === '23505' && hashError?.constraint === 'unique_user_content_hash') {
           console.log('🚫 Duplicate content detected during hash storage - cleaning up and rejecting upload');

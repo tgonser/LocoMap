@@ -181,5 +181,6 @@ export async function storeContentHash(datasetId: string, fileContent: string, u
     console.log(`🔐 Stored content hash for dataset ${datasetId}`);
   } catch (error) {
     console.error(`❌ Failed to store content hash for dataset ${datasetId}:`, error);
+    throw error; // Re-throw so routes.ts can handle it
   }
 }
