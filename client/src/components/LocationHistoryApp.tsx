@@ -451,12 +451,11 @@ export default function LocationHistoryApp() {
     }
   };
 
-  // Handle "View All" button - replicate first-load experience
+  // Handle "View All" button - show all data on the map
   const handleViewAll = () => {
-    // Clear any date range filtering to show all data
+    // Clear any date range filtering to show all data on the map
     setSelectedDateRange(null);
-    // Switch to analytics view (same as first load experience)
-    setViewMode('analytics');
+    // Keep the map view open - don't switch away from it
   };
 
   // Handle re-opening date range picker when already in map view
