@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Calendar, BarChart3, List, Upload, CalendarDays, Globe } from 'lucide-react';
+import { MapPin, Calendar, BarChart3, List, Upload, CalendarDays, Globe, Eye } from 'lucide-react';
 import FileManager from './FileManager';
 import MapDisplay from './MapDisplay';
 import DateNavigator from './DateNavigator';
@@ -451,6 +451,26 @@ export default function LocationHistoryApp() {
     }
   };
 
+  // Handle "View All" button - show all data without date picker
+  const handleViewAll = async () => {
+    if (validLocationData.length === 0) return;
+    
+    // Calculate full date range from all available data
+    const allDates = validLocationData.map(loc => loc.timestamp);
+    const startDate = new Date(Math.min(...allDates.map(d => d.getTime())));
+    const endDate = new Date(Math.max(...allDates.map(d => d.getTime())));
+    
+    // Set loading state and switch to map
+    setIsLoadingMapData(true);
+    setViewMode('map');
+    
+    // Set the full date range to show all data
+    setSelectedDateRange({ start: startDate, end: endDate });
+    
+    // Load data for the full range
+    await loadLocationDataForDateRange(startDate, endDate);
+  };
+
   // Handle re-opening date range picker when already in map view
   const handleChangeDateRange = () => {
     setPreviousViewMode('map');
@@ -497,6 +517,16 @@ export default function LocationHistoryApp() {
                     </Button>
                   )}
                   {getViewModeButton('files', <Upload className="w-4 h-4" />, 'Files')}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleViewAll}
+                    className="gap-2"
+                    data-testid="button-view-all"
+                  >
+                    <Eye className="w-4 h-4" />
+                    <span className="hidden sm:inline">View All</span>
+                  </Button>
                   {getViewModeButton('map', <MapPin className="w-4 h-4" />, 'Map')}
                   {getViewModeButton('analytics', <BarChart3 className="w-4 h-4" />, 'Analytics')}
                   {getViewModeButton('yearly-report', <Globe className="w-4 h-4" />, 'Yearly Report')}
