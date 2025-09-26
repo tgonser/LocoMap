@@ -436,11 +436,6 @@ export default function MapDisplay({
           variant={viewMode === 'multi' ? 'default' : 'secondary'} 
           size="sm"
           onClick={() => {
-            console.log('🔘 View All button clicked!', {
-              currentViewMode: viewMode,
-              dateRange: dateRange,
-              onViewModeChange: !!onViewModeChange
-            });
             setViewMode('multi');
             onViewModeChange?.('multi');
           }}
