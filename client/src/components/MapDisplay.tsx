@@ -381,6 +381,30 @@ export default function MapDisplay({
         };
       });
       
+      // Create connecting lines between consecutive days
+      const interDayConnections: Array<{
+        line: [[number, number], [number, number]];
+        color: string;
+      }> = [];
+      
+      for (let i = 0; i < dayGroupedLocations.length - 1; i++) {
+        const currentDay = dayGroupedLocations[i];
+        const nextDay = dayGroupedLocations[i + 1];
+        
+        if (currentDay.points.length > 0 && nextDay.points.length > 0) {
+          const lastPointOfDay = currentDay.points[currentDay.points.length - 1];
+          const firstPointOfNextDay = nextDay.points[0];
+          
+          interDayConnections.push({
+            line: [
+              [lastPointOfDay.lat, lastPointOfDay.lng],
+              [firstPointOfNextDay.lat, firstPointOfNextDay.lng]
+            ],
+            color: getDayColor(i) // Use current day's color
+          });
+        }
+      }
+      
       // Create day start markers for multi-day view
       const dayMarkers = dayGroupedLocations.map((dayData, index) => ({
         position: [dayData.points[0].lat, dayData.points[0].lng] as [number, number],
@@ -389,11 +413,11 @@ export default function MapDisplay({
         dayData
       }));
       
-      return { daySegments, dayMarkers };
+      return { daySegments, dayMarkers, interDayConnections };
     }
   }, [viewMode, filteredLocations, dayGroupedLocations, selectedDate]);
 
-  const { daySegments, dayMarkers } = polylineData;
+  const { daySegments, dayMarkers, interDayConnections = [] } = polylineData;
 
   // Use first location as center if available, ensure valid coordinates
   const mapCenter = filteredLocations.length > 0 
@@ -509,6 +533,20 @@ export default function MapDisplay({
               />
             ))
           ])}
+          
+          {/* Draw dotted connecting lines between consecutive days */}
+          {interDayConnections.map((connection, connectionIndex) => (
+            <Polyline
+              key={`inter-day-connection-${connectionIndex}`}
+              positions={connection.line}
+              color={connection.color}
+              weight={2}
+              opacity={0.3}
+              dashArray="15,10"
+              smoothFactor={1.0}
+              data-testid={`polyline-inter-day-${connectionIndex}`}
+            />
+          ))}
           
           {/* Day start markers for multi-day view */}
           {viewMode === 'multi' && dayMarkers.map((marker, markerIndex) => (
