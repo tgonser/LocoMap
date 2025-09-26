@@ -4051,6 +4051,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const dayStart = new Date(currentDay.getFullYear(), currentDay.getMonth(), currentDay.getDate());
           const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
           
+          console.log(`🔍 [DAY ${dayOffset + 1}] Analyzing ${currentDay.toISOString().split('T')[0]}`);
+          
           // Find stops that overlap with this day and calculate minutes spent in each location
           const locationMinutes = new Map();
           
@@ -4069,6 +4071,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               if (stop.geocoded && stop.country) {
                 const locationKey = `${stop.country}|${stop.state || ''}|${stop.city || ''}`;
                 locationMinutes.set(locationKey, (locationMinutes.get(locationKey) || 0) + overlapMinutes);
+                console.log(`    📍 Found ${stop.country} stop: ${overlapMinutes.toFixed(1)} minutes`);
               }
             }
           }
@@ -4123,6 +4126,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           
           // FIXED: Always count every day (no more skipped days)
+          console.log(`    ✅ Day assigned to: ${countryToCount || 'None'}`);
           if (countryToCount) {
             locationStats.countries.set(countryToCount, (locationStats.countries.get(countryToCount) || 0) + 1);
             
