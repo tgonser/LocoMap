@@ -3859,8 +3859,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`📍 Generated ${timelinePoints.length} timeline GPS points for travel stop detection`);
         
         // Generate travel stops from timeline GPS points using clustering algorithm
-        let travelStops = generateTravelStopsFromTimelinePoints(timelinePoints, primaryDataset.id);
-        console.log(`🎯 Generated ${travelStops.length} travel stops from timeline data`);
+        // Use larger clustering radius (500m) to capture airport/transit areas and shorter stops
+        let travelStops = generateTravelStopsFromTimelinePoints(
+          timelinePoints, 
+          primaryDataset.id,
+          5,    // Reduce minimum dwell to 5 minutes for transit stops
+          500   // Increase clustering radius to 500m for airports/large transit areas
+        );
+        console.log(`🎯 Generated ${travelStops.length} travel stops from timeline data (5min dwell, 500m radius)`);
         
         // CRITICAL: Geocode the travel stops to get city names for city jumps
         console.log(`🌍 Geocoding ${travelStops.length} travel stops to resolve city names...`);
