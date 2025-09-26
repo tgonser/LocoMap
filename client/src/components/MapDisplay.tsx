@@ -542,7 +542,7 @@ export default function MapDisplay({
               color={connection.color}
               weight={2}
               opacity={0.3}
-              dashArray="15,10"
+              dashArray="5,3"
               smoothFactor={1.0}
               data-testid={`polyline-inter-day-${connectionIndex}`}
             />
