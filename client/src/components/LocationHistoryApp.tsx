@@ -580,15 +580,24 @@ export default function LocationHistoryApp() {
                           // Clear the date range so sidebar switches to hourly timeline
                           setSelectedDateRange(null);
                         } else if (mode === 'multi') {
+                          console.log('🔵 PARENT HANDLER: Multi mode requested!', {
+                            currentSelectedDateRange: selectedDateRange,
+                            previousDateRange: previousDateRange,
+                            dayAggregatedDataLength: dayAggregatedData.length
+                          });
                           // When switching to multi-day view, restore the previous date range
                           if (previousDateRange) {
+                            console.log('🔵 Restoring previous date range:', previousDateRange);
                             setSelectedDateRange(previousDateRange);
                           } else if (!selectedDateRange && dayAggregatedData.length > 0) {
                             // If no previous range, create one from available days
+                            console.log('🔵 Creating new date range from available days');
                             const dates = dayAggregatedData.map(d => d.dateObj);
                             const startDate = new Date(Math.min(...dates.map(d => d.getTime())));
                             const endDate = new Date(Math.max(...dates.map(d => d.getTime())));
                             setSelectedDateRange({ start: startDate, end: endDate });
+                          } else {
+                            console.log('🔵 No action taken - already have range or no days available');
                           }
                         }
                       }}

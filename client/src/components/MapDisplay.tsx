@@ -436,8 +436,17 @@ export default function MapDisplay({
           variant={viewMode === 'multi' ? 'default' : 'secondary'} 
           size="sm"
           onClick={() => {
+            console.log('🔴 VIEW ALL CLICKED!', {
+              currentViewMode: viewMode,
+              hasOnViewModeChange: !!onViewModeChange
+            });
             setViewMode('multi');
-            onViewModeChange?.('multi');
+            if (onViewModeChange) {
+              console.log('🔴 Calling onViewModeChange with multi');
+              onViewModeChange('multi');
+            } else {
+              console.log('🔴 No onViewModeChange prop!');
+            }
           }}
           data-testid="button-multi-day"
           className="text-xs px-2 py-1 h-7"
