@@ -4051,8 +4051,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const dayStart = new Date(currentDay.getFullYear(), currentDay.getMonth(), currentDay.getDate());
           const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
           
-          console.log(`🔍 [DAY ${dayOffset + 1}] Analyzing ${currentDay.toISOString().split('T')[0]}`);
-          
           // Find stops that overlap with this day and calculate minutes spent in each location
           const locationMinutes = new Map();
           
@@ -4071,7 +4069,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
               if (stop.geocoded && stop.country) {
                 const locationKey = `${stop.country}|${stop.state || ''}|${stop.city || ''}`;
                 locationMinutes.set(locationKey, (locationMinutes.get(locationKey) || 0) + overlapMinutes);
-                console.log(`    📍 Found ${stop.country} stop: ${overlapMinutes.toFixed(1)} minutes`);
               }
             }
           }
@@ -4134,14 +4131,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
           
-          const countriesVisited = Array.from(countryMinutes.keys());
-          console.log(`    ✅ Day countries: ${countriesVisited.join(', ') || 'None'} (dominant: ${countryToCount})`);
-          
           // Count each country proportionally based on time spent (as fraction of 24-hour day)
           for (const [country, totalMinutes] of countryMinutes.entries()) {
             const fractionOfDay = totalMinutes / (24 * 60); // Convert to fraction of 1440 minutes per day
             locationStats.countries.set(country, (locationStats.countries.get(country) || 0) + fractionOfDay);
-            console.log(`      📊 ${country}: ${totalMinutes.toFixed(1)} min = ${fractionOfDay.toFixed(3)} days`);
           }
           
           // For dominant location stats (cities/states)
@@ -4163,8 +4156,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         console.log(`📊 Location days calculated: ${locationStats.countries.size} countries (${totalCountryDays}/${totalDaysInRange} days), ${locationStats.states.size} states (${totalStateDays} days), ${locationStats.cities.size} cities`);
 
-        // Convert Maps to Objects for frontend compatibility
-        const countriesObject = Object.fromEntries(locationStats.countries);
+        // Convert Maps to Objects for frontend compatibility (round countries to 2 decimals)
+        const countriesObject = Object.fromEntries(
+          Array.from(locationStats.countries.entries()).map(([country, days]) => [country, Math.round(days * 100) / 100])
+        );
         const statesObject = Object.fromEntries(locationStats.states);
         const citiesObject = Object.fromEntries(locationStats.cities);
 
