@@ -376,7 +376,7 @@ export default function LocationHistoryApp() {
   // Choose the right locations to pass to MapDisplay based on view type
   const mapLocations = selectedDateRange && dayAggregatedData.length > 1 
     ? dateRangeLocations  // Multi-day view: use all locations in range
-    : dayLocations;       // Single-day view: use single day locations
+    : dateRangeLocations; // Always use dateRangeLocations (it handles null range by showing all data)
 
   // Analytics calculations (using filtered data)
   const totalLocations = validLocationData.length;
@@ -453,16 +453,8 @@ export default function LocationHistoryApp() {
 
   // Handle "View All" button - show all data on the map
   const handleViewAll = () => {
-    console.log('🔴 VIEW ALL CLICKED! Current state:', {
-      selectedDateRange,
-      validLocationDataLength: validLocationData.length,
-      viewMode
-    });
-    
     // Clear any date range filtering to show all data on the map
     setSelectedDateRange(null);
-    console.log('🔴 Cleared selectedDateRange - should now show ALL data');
-    // Keep the map view open - don't switch away from it
   };
 
   // Handle re-opening date range picker when already in map view
