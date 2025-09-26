@@ -91,7 +91,7 @@ export default function DayTimeline({
       const curr = points[i];
       
       // Haversine formula for distance calculation
-      const R = 6371; // Earth's radius in kilometers
+      const R = 3959; // Earth's radius in miles
       const dLat = (curr.lat - prev.lat) * Math.PI / 180;
       const dLng = (curr.lng - prev.lng) * Math.PI / 180;
       const a = 
@@ -106,8 +106,8 @@ export default function DayTimeline({
   };
 
   const formatDistance = (distance: number) => {
-    if (distance < 1) return `${Math.round(distance * 1000)}m`;
-    return `${distance.toFixed(1)}km`;
+    if (distance < 1) return `${Math.round(distance * 5280)}ft`;
+    return `${distance.toFixed(1)}mi`;
   };
 
   const isSelectedDay = (dayData: DayData) => {
