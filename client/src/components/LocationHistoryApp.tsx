@@ -141,23 +141,18 @@ export default function LocationHistoryApp() {
   useEffect(() => {
     const checkExistingData = async () => {
       try {
-        const response = await fetch('/api/datasets');
-        if (response.ok) {
-          const datasets = await response.json();
-          if (datasets && datasets.length > 0) {
-            // User has existing data - keep current viewMode (from localStorage or initial state)
-            // Only default to analytics if no saved viewMode and user has data
-            const savedViewMode = localStorage.getItem('viewMode');
-            if (!savedViewMode) {
-              setViewMode('analytics');
-            }
-            // If savedViewMode exists, we already loaded it in the useState initializer
-          } else {
-            // No data exists - force to files view regardless of saved state
-            setViewMode('files');
+        const response = await apiRequest('GET', '/api/datasets');
+        const datasets = await response.json();
+        if (datasets && datasets.length > 0) {
+          // User has existing data - keep current viewMode (from localStorage or initial state)
+          // Only default to analytics if no saved viewMode and user has data
+          const savedViewMode = localStorage.getItem('viewMode');
+          if (!savedViewMode) {
+            setViewMode('analytics');
           }
+          // If savedViewMode exists, we already loaded it in the useState initializer
         } else {
-          // API error or no auth - default to files
+          // No data exists - force to files view regardless of saved state
           setViewMode('files');
         }
       } catch (error) {
@@ -239,6 +234,12 @@ export default function LocationHistoryApp() {
         setLocationData(locationData);
         setMapDataLoaded(true);
         
+        // Check if this is still the latest request
+        if (requestId !== currentRequestIdRef.current) {
+          console.log('Request superseded, ignoring results...');
+          return;
+        }
+        
         // Store as initial data for View All reset (only if we have data)
         if (locationData.length > 0) {
           initialDateRangeRef.current = { start: startDate, end: endDate };
@@ -260,7 +261,10 @@ export default function LocationHistoryApp() {
     } catch (error) {
       console.error('Error loading location data:', error);
     } finally {
-      setIsLoadingMapData(false);
+      // Only clear loading state if this is still the latest request
+      if (requestId === currentRequestIdRef.current) {
+        setIsLoadingMapData(false);
+      }
     }
   };
 
@@ -445,12 +449,13 @@ export default function LocationHistoryApp() {
   // Handle DateRangePicker confirm - load data for selected range
   const handleDateRangeConfirm = async (startDate: Date, endDate: Date) => {
     setShowDateRangePicker(false);
-    setIsLoadingMapData(true); // Set loading state before switching views
-    setViewMode('map'); // Now switch to map view with loading state active
+    setViewMode('map'); // Switch to map view first
     
     // Update shared date range state
     setSelectedDateRange({ start: startDate, end: endDate });
     
+    // Set loading state immediately before calling loader (required for request guards)
+    setIsLoadingMapData(true);
     await loadLocationDataForDateRange(startDate, endDate);
     
     // Initial data will be stored by loadLocationDataForDateRange
