@@ -579,8 +579,27 @@ export default function LocationHistoryApp() {
                           // Clear the date range so sidebar switches to hourly timeline
                           setSelectedDateRange(null);
                         } else if (mode === 'multi') {
-                          // When switching to multi-day view, show date range picker
-                          setShowDateRangePicker(true);
+                          console.log('🔘 Multi-day mode requested!', {
+                            currentSelectedDateRange: selectedDateRange,
+                            dayAggregatedDataLength: dayAggregatedData.length,
+                            dayAggregatedData: dayAggregatedData.map(d => ({ date: d.date, dateObj: d.dateObj.toDateString() }))
+                          });
+                          // When switching to multi-day view, restore the existing date range
+                          // Don't open date picker - user wants to see all days in current range
+                          if (!selectedDateRange && dayAggregatedData.length > 0) {
+                            // If no range selected, create one from available days
+                            const dates = dayAggregatedData.map(d => d.dateObj);
+                            const startDate = new Date(Math.min(...dates.map(d => d.getTime())));
+                            const endDate = new Date(Math.max(...dates.map(d => d.getTime())));
+                            console.log('🔘 Creating date range from available days:', {
+                              startDate: startDate.toDateString(),
+                              endDate: endDate.toDateString()
+                            });
+                            setSelectedDateRange({ start: startDate, end: endDate });
+                          } else {
+                            console.log('🔘 Date range already exists or no days available');
+                          }
+                          // If we already have a date range, just switching view mode is enough
                         }
                       }}
                     />
