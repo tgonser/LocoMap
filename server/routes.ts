@@ -4125,11 +4125,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
           
-          // FIXED: Always count every day (no more skipped days)
-          console.log(`    ✅ Day assigned to: ${countryToCount || 'None'}`);
+          // FIXED: Count ALL countries visited per day (not just dominant)
+          const allCountriesThisDay = new Set<string>();
+          for (const [locationKey, minutes] of locationMinutes.entries()) {
+            if (minutes >= 5) { // Minimum 5 minutes to count as "visited"
+              const [country] = locationKey.split('|');
+              allCountriesThisDay.add(country);
+            }
+          }
+          
+          console.log(`    ✅ Day countries: ${Array.from(allCountriesThisDay).join(', ') || 'None'} (dominant: ${countryToCount})`);
+          
+          // Count every country visited this day
+          for (const country of allCountriesThisDay) {
+            locationStats.countries.set(country, (locationStats.countries.get(country) || 0) + 1);
+          }
+          
+          // For dominant location stats (cities/states)
           if (countryToCount) {
-            locationStats.countries.set(countryToCount, (locationStats.countries.get(countryToCount) || 0) + 1);
-            
             if (countryToCount === 'United States' && stateToCount) {
               locationStats.states.set(stateToCount, (locationStats.states.get(stateToCount) || 0) + 1);
             }
