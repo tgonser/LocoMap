@@ -9,7 +9,7 @@ WhereWasI is a comprehensive location analytics platform that transforms Google 
 ## Core Features
 
 ### 🗺️ **Interactive Map Visualization**
-- **Day-by-day location viewing** with route tracking and timeline scrubbing
+- **Trip Map View & Day Map View** with seamless navigation between multi-day and single-day perspectives
 - **Leaflet-powered maps** with clustering and smooth navigation
 - **Multiple data format support** for Google location exports
 - **Real-time processing** with progress tracking via Server-Sent Events
@@ -57,6 +57,53 @@ WhereWasI is a comprehensive location analytics platform that transforms Google 
 - **Environment-specific optimization** with connection pooling and custom timeouts
 - **Persistent storage handling** for cloud deployments
 - **Smart caching strategies** for sub-second report generation
+
+## Map Views
+
+### 🗺️ **Trip Map View (Multi-Day)**
+The Trip Map View provides a comprehensive overview of your travels across multiple days, perfect for analyzing longer journeys and travel patterns.
+
+**Features:**
+- **Date Range Visualization** - View all location data across your selected date range
+- **Interactive Day Navigation** - Sidebar calendar shows available days with location counts
+- **Day Highlighting** - Click any day in the sidebar to highlight that day's route on the map
+- **Fly-to Navigation** - Clicking a day flies to that day's first location for quick orientation
+- **"View All" Reset** - Instantly restore the full multi-day view after navigating to specific days
+- **Route Overlay** - See all days' routes simultaneously with visual continuity
+- **Smart Zoom** - Automatic map bounds adjustment to show all locations in your date range
+
+**Usage:**
+1. Select a date range using the date picker
+2. Trip Map View loads showing all location data for that period
+3. Use the sidebar to navigate between different days
+4. Click "View All" to reset to the full multi-day overview
+5. Double-click any day in the sidebar to switch to Day Map View
+
+### 📍 **Day Map View (Single-Day)**
+The Day Map View focuses on a single day's journey, offering detailed timeline navigation and point-by-point exploration.
+
+**Features:**
+- **Single-Day Focus** - View only one day's GPS track with enhanced detail
+- **Timeline Scrubbing** - Navigate chronologically through your day's activities
+- **Point-by-Point Navigation** - Step through individual location points in sequence
+- **Time-Based Analysis** - See exact timestamps and duration between locations
+- **Route Progression** - Visual indication of your movement throughout the day
+- **Detailed Track View** - Higher resolution view of your daily path
+- **Quick Day Switching** - Navigate between days using previous/next controls
+
+**Usage:**
+1. From Trip Map View, double-click any day in the sidebar
+2. Or use the day navigation controls to select a specific date
+3. View detailed GPS track for that single day
+4. Use timeline controls to scrub through the day chronologically
+5. Switch back to Trip Map View using the "View All" button
+
+### 🔄 **Seamless Navigation**
+Switch effortlessly between Trip Map View and Day Map View:
+- **Trip → Day**: Double-click any day in the sidebar or use day navigation
+- **Day → Trip**: Click "View All" button to return to multi-day overview
+- **State Preservation**: Your date range and data remain loaded for instant switching
+- **No Re-downloading**: All navigation happens with your already-loaded data
 
 ## Requirements
 
