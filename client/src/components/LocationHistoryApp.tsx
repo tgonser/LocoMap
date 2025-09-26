@@ -309,7 +309,7 @@ export default function LocationHistoryApp() {
 
   // Get all locations within date range for multi-day map view
   const dateRangeLocations = useMemo(() => {
-    if (!selectedDateRange) return dayLocations; // Fall back to single day
+    if (!selectedDateRange) return validLocationData; // Show ALL data when no date range selected
     
     return validLocationData.filter(location => {
       const locationDate = new Date(location.timestamp.getFullYear(), location.timestamp.getMonth(), location.timestamp.getDate());
@@ -318,7 +318,7 @@ export default function LocationHistoryApp() {
       
       return locationDate >= startDate && locationDate <= endDate;
     });
-  }, [validLocationData, selectedDateRange, dayLocations]);
+  }, [validLocationData, selectedDateRange]);
 
   // Calculate location count by date for calendar overlay (using filtered data)
   const locationCountByDate = validLocationData.reduce((acc, loc) => {
