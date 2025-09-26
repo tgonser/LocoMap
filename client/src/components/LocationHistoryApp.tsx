@@ -453,18 +453,22 @@ export default function LocationHistoryApp() {
 
   // Handle "View All" button - show all data on the map
   const handleViewAll = async () => {
-    console.log('🚨 VIEW ALL CLICKED! Loading full dataset...');
+    console.log('🚨 VIEW ALL CLICKED! Using wide date range to show everything...');
     
     // Stay in map view
     setViewMode('map');
     
-    // Load ALL location data (not just date range)
-    await loadFullLocationData();
+    // Load ALL data by using a very wide date range (covers all possible dates)
+    const startDate = new Date('2005-01-01'); // Google location history started around 2005
+    const endDate = new Date(); // Today
+    endDate.setDate(endDate.getDate() + 30); // Add buffer for future dates
     
-    // Clear any date range filtering
+    await loadLocationDataForDateRange(startDate, endDate);
+    
+    // Clear any date range filtering so we show ALL the loaded data
     setSelectedDateRange(null);
     
-    console.log('🚨 VIEW ALL COMPLETE - should show all data');
+    console.log('🚨 VIEW ALL COMPLETE - should show all historical data');
   };
 
   // Handle re-opening date range picker when already in map view
