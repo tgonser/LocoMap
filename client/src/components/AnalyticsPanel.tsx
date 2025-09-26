@@ -708,7 +708,7 @@ export default function AnalyticsPanel({
                     <div className="text-base" data-testid={`text-country-details-${index}`}>
                       <span className="font-medium">{country}</span>
                       <span className="text-muted-foreground ml-2">
-                        {days} day{days !== 1 ? 's' : ''} ({((days / analytics.totalDays) * 100).toFixed(1)}%)
+                        ({((days / analytics.totalDays) * 100).toFixed(1)}%)
                       </span>
                     </div>
                     <Badge variant="outline" data-testid={`badge-country-days-${index}`}>
@@ -741,7 +741,7 @@ export default function AnalyticsPanel({
                     <div className="text-base" data-testid={`text-state-details-${index}`}>
                       <span className="font-medium">{state}</span>
                       <span className="text-muted-foreground ml-2">
-                        {days} day{days !== 1 ? 's' : ''} ({((days / analytics.totalDays) * 100).toFixed(1)}%)
+                        ({((days / analytics.totalDays) * 100).toFixed(1)}%)
                       </span>
                     </div>
                     <Badge variant="secondary" data-testid={`badge-state-days-${index}`}>
