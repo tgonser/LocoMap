@@ -3801,25 +3801,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Sort ALL centroids chronologically for complete travel chain analysis
         const sortedCentroids = allCentroids.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
         
-        // Use only geocoded centroids for city/state/country statistics
-        const sortedGeocodedCentroids = geocodedCentroids.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-        
-        // Calculate country, state, and city statistics (only from geocoded centroids)
-        sortedGeocodedCentroids.forEach(centroid => {
-          if (centroid.country) {
-            locationStats.countries.set(centroid.country, (locationStats.countries.get(centroid.country) || 0) + 1);
-          }
-          
-          if (centroid.state && centroid.country === 'United States') {
-            locationStats.states.set(centroid.state, (locationStats.states.get(centroid.state) || 0) + 1);
-          }
-          
-          if (centroid.city) {
-            // Create city key with state/country for disambiguation
-            const cityKey = centroid.state ? `${centroid.city}, ${centroid.state}` : `${centroid.city}, ${centroid.country}`;
-            locationStats.cities.set(cityKey, (locationStats.cities.get(cityKey) || 0) + 1);
-          }
-        });
+        // FIXED: Don't pre-populate from database centroids - let waypoint analysis handle all location counting
+        // This ensures Montenegro and other waypoint-detected countries are properly included
+        console.log(`🎯 Skipping database centroid aggregation - using waypoint-based location analysis only`);
 
         // ========== CONTINUOUS CITY JUMPS CHAIN (FIXES BROKEN TRAVEL SEQUENCES) ==========
         // FIXED: Generate travel stops directly from timeline JSON data instead of database
