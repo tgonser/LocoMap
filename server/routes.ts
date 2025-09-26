@@ -4125,20 +4125,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
           
-          // FIXED: Count ALL countries visited per day (not just dominant)
-          const allCountriesThisDay = new Set<string>();
+          // FIXED: Count countries proportionally based on actual time spent
+          const countryMinutes = new Map<string, number>();
           for (const [locationKey, minutes] of locationMinutes.entries()) {
             if (minutes >= 5) { // Minimum 5 minutes to count as "visited"
               const [country] = locationKey.split('|');
-              allCountriesThisDay.add(country);
+              countryMinutes.set(country, (countryMinutes.get(country) || 0) + minutes);
             }
           }
           
-          console.log(`    ✅ Day countries: ${Array.from(allCountriesThisDay).join(', ') || 'None'} (dominant: ${countryToCount})`);
+          const countriesVisited = Array.from(countryMinutes.keys());
+          console.log(`    ✅ Day countries: ${countriesVisited.join(', ') || 'None'} (dominant: ${countryToCount})`);
           
-          // Count every country visited this day
-          for (const country of allCountriesThisDay) {
-            locationStats.countries.set(country, (locationStats.countries.get(country) || 0) + 1);
+          // Count each country proportionally based on time spent (as fraction of 24-hour day)
+          for (const [country, totalMinutes] of countryMinutes.entries()) {
+            const fractionOfDay = totalMinutes / (24 * 60); // Convert to fraction of 1440 minutes per day
+            locationStats.countries.set(country, (locationStats.countries.get(country) || 0) + fractionOfDay);
+            console.log(`      📊 ${country}: ${totalMinutes.toFixed(1)} min = ${fractionOfDay.toFixed(3)} days`);
           }
           
           // For dominant location stats (cities/states)
