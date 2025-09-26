@@ -300,13 +300,37 @@ export default function LocationHistoryApp() {
   ).map(dateStr => new Date(dateStr));
 
   // Get locations for selected date (using filtered data)
+  // CRITICAL FIX: Include locations from next day if they're part of ongoing trip
   const dayLocations = useMemo(() => {
     const selectedKey = getLocalDateKey(selectedDate);
-    const filtered = validLocationData.filter(loc => 
+    
+    // Get main day locations
+    const mainDayLocations = validLocationData.filter(loc => 
       getLocalDateKey(loc.timestamp) === selectedKey
     );
-    return filtered;
-  }, [validLocationData, selectedDate]);
+    
+    // For single-day view, also include early hours of next day (ongoing trips)
+    // This fixes the truncation issue where trips continue past midnight
+    if (!selectedDateRange) {
+      const nextDay = new Date(selectedDate);
+      nextDay.setDate(nextDay.getDate() + 1);
+      const nextDayKey = getLocalDateKey(nextDay);
+      
+      // Include locations from next day that are within 6 hours of midnight
+      // This captures ongoing trips that continue past midnight
+      const nextDayEarlyLocations = validLocationData.filter(loc => {
+        if (getLocalDateKey(loc.timestamp) !== nextDayKey) return false;
+        
+        // Only include if within first 6 hours of next day (ongoing trip)
+        const hourOfDay = loc.timestamp.getHours();
+        return hourOfDay < 6;
+      });
+      
+      return [...mainDayLocations, ...nextDayEarlyLocations];
+    }
+    
+    return mainDayLocations;
+  }, [validLocationData, selectedDate, selectedDateRange]);
 
   // Get all locations within date range for multi-day map view
   const dateRangeLocations = useMemo(() => {
