@@ -121,5 +121,25 @@ Preferred communication style: Simple, everyday language.
 - ✅ **Date Navigation**: All navigation methods working
 - ✅ **Data Processing**: All GPS points processed correctly
 
+### ✅ LATEST IMPROVEMENTS - September 26, 2025 (Session 2)
+
+**UI/UX Enhancements Completed:**
+
+1. **Fixed Duplicate Analytics Display**
+   - **Issue**: Countries and states sections showed days values twice (e.g., "Croatia 1.04 days (17.3%) 1.04 days")
+   - **Solution**: Removed redundant days display from text, keeping only percentage with days in badge
+   - **Result**: Clean display format "Croatia (17.3%)" with "1.04 days" badge
+
+2. **Standardized Distance Units to Miles**
+   - **Issue**: Map view timeline displayed distances in kilometers/meters while rest of app used miles
+   - **Solution**: Updated DayTimeline.tsx to use Earth radius in miles (3959) and display mi/ft
+   - **Result**: Consistent miles/feet units throughout entire application
+
+3. **Added Inter-Day Connecting Lines**
+   - **Issue**: Multi-day map view had gaps between days, breaking travel continuity
+   - **Solution**: Added dotted connecting lines between last point of day X and first point of day Y
+   - **Visual**: Small frequent dashes (3,2 pattern) with reduced opacity for subtle inference indication
+   - **Result**: Continuous travel routes showing complete journey across multiple days
+
 ### Outstanding:
 - 106 non-critical TypeScript diagnostics in server/routes.ts (cosmetic)
