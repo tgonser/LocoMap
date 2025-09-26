@@ -441,15 +441,12 @@ export default function MapDisplay({
           variant={viewMode === 'multi' ? 'default' : 'secondary'} 
           size="sm"
           onClick={() => {
-            console.log('🟡 VIEW ALL BUTTON CLICKED!');
             // Set to multi-day view to show all data
             setViewMode('multi');
             
             if (onViewAll) {
-              console.log('🟡 Calling onViewAll handler...');
               onViewAll();
             } else {
-              console.log('🟡 No onViewAll prop - using fallback');
               // Fallback to old behavior if no onViewAll prop
               onViewModeChange?.('multi');
             }
