@@ -524,7 +524,7 @@ export default function LocationHistoryApp() {
                     className="gap-2"
                     data-testid="button-view-all"
                   >
-                    <Eye className="w-4 h-4" />
+                    <MapPin className="w-4 h-4" />
                     <span className="hidden sm:inline">View All</span>
                   </Button>
                   {getViewModeButton('map', <MapPin className="w-4 h-4" />, 'Map')}

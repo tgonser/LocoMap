@@ -82,5 +82,29 @@ Preferred communication style: Simple, everyday language.
 - ✅ User authentication and sessions
 - ✅ Responsive design with dark mode
 
-### Next Feature: Multi-Day Map View
-**Planned Enhancement**: Allow viewing multiple days on single map with day-based timeline navigation instead of point-based navigation.
+## Recent Critical Fixes - September 26, 2025
+
+### ✅ FIXED: TimelinePath UTC Offset Regression  
+**Issue**: September 9th trip was truncated at Stayton (4:58 PM) instead of showing complete route to Portland (7:25 PM)
+**Root Cause**: Missing UTC offset calculation for timelinePath data - timestamps were incorrectly computed causing date filtering issues
+**Solution**: Restored proper UTC offset calculation using `(parent start time + UTC offset) + per-point duration offset`
+**Key Changes**:
+- Added `parseLocalWithOffsetToUTC()` helper function
+- Fixed missing `activitySegment.timelinePath.point` processing (critical nested data)
+- Updated legacy parser to use proper base UTC time calculation
+- Production Render version was working correctly; development had regressed
+
+### ✅ ADDED: "View All" Button
+**Function**: Immediately shows all location data without date picker dialog
+**Status**: Functional but needs mobile testing
+**Implementation**: Button calculates full date range from available data and loads complete multi-day view
+**Note**: Cannot test on mobile currently - needs desktop verification
+
+### 🔧 Outstanding Issues:
+1. **Mobile button interaction**: "View All" button not clickable on mobile - requires testing on desktop
+2. **LSP diagnostics**: 106 remaining TypeScript issues in server/routes.ts (non-critical)
+
+### Next Steps:
+- Test "View All" button functionality on desktop
+- Mobile compatibility testing for button interactions
+- Optional: Clean up remaining TypeScript diagnostics
