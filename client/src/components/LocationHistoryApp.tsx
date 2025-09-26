@@ -451,24 +451,12 @@ export default function LocationHistoryApp() {
     }
   };
 
-  // Handle "View All" button - show all data without date picker
-  const handleViewAll = async () => {
-    if (validLocationData.length === 0) return;
-    
-    // Calculate full date range from all available data
-    const allDates = validLocationData.map(loc => loc.timestamp);
-    const startDate = new Date(Math.min(...allDates.map(d => d.getTime())));
-    const endDate = new Date(Math.max(...allDates.map(d => d.getTime())));
-    
-    // Set loading state and switch to map
-    setIsLoadingMapData(true);
-    setViewMode('map');
-    
-    // Set the full date range to show all data
-    setSelectedDateRange({ start: startDate, end: endDate });
-    
-    // Load data for the full range
-    await loadLocationDataForDateRange(startDate, endDate);
+  // Handle "View All" button - replicate first-load experience
+  const handleViewAll = () => {
+    // Clear any date range filtering to show all data
+    setSelectedDateRange(null);
+    // Switch to analytics view (same as first load experience)
+    setViewMode('analytics');
   };
 
   // Handle re-opening date range picker when already in map view
@@ -517,16 +505,6 @@ export default function LocationHistoryApp() {
                     </Button>
                   )}
                   {getViewModeButton('files', <Upload className="w-4 h-4" />, 'Files')}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleViewAll}
-                    className="gap-2"
-                    data-testid="button-view-all"
-                  >
-                    <MapPin className="w-4 h-4" />
-                    <span className="hidden sm:inline">View All</span>
-                  </Button>
                   {getViewModeButton('map', <MapPin className="w-4 h-4" />, 'Map')}
                   {getViewModeButton('analytics', <BarChart3 className="w-4 h-4" />, 'Analytics')}
                   {getViewModeButton('yearly-report', <Globe className="w-4 h-4" />, 'Yearly Report')}
@@ -595,6 +573,7 @@ export default function LocationHistoryApp() {
                       className="h-full"
                       selectedPoint={selectedPoint}
                       dateRange={selectedDateRange ?? undefined}
+                      onViewAll={handleViewAll}
                       onViewModeChange={(mode) => {
                         if (mode === 'single') {
                           // When switching to single day view, use highlighted day if available

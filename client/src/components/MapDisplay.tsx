@@ -140,6 +140,7 @@ interface MapDisplayProps {
   selectedPoint?: { lat: number; lng: number } | null;
   dateRange?: { start: Date; end: Date }; // For multi-day view
   onViewModeChange?: (mode: 'single' | 'multi') => void; // Callback for view mode changes
+  onViewAll?: () => void; // Callback for "View All" button to show complete dataset
 }
 
 export default function MapDisplay({ 
@@ -154,6 +155,7 @@ export default function MapDisplay({
   selectedPoint,
   dateRange,
   onViewModeChange,
+  onViewAll,
 }: MapDisplayProps) {
   // View mode state management
   const [viewMode, setViewMode] = useState<MapViewMode>('single');
@@ -436,16 +438,12 @@ export default function MapDisplay({
           variant={viewMode === 'multi' ? 'default' : 'secondary'} 
           size="sm"
           onClick={() => {
-            console.log('🔴 VIEW ALL CLICKED!', {
-              currentViewMode: viewMode,
-              hasOnViewModeChange: !!onViewModeChange
-            });
-            setViewMode('multi');
-            if (onViewModeChange) {
-              console.log('🔴 Calling onViewModeChange with multi');
-              onViewModeChange('multi');
+            if (onViewAll) {
+              onViewAll();
             } else {
-              console.log('🔴 No onViewModeChange prop!');
+              // Fallback to old behavior if no onViewAll prop
+              setViewMode('multi');
+              onViewModeChange?.('multi');
             }
           }}
           data-testid="button-multi-day"

@@ -90,7 +90,9 @@ function parseLocalWithOffsetToUTC(localTimestamp: string, offsetMinutes: number
   if (Number.isNaN(localMs)) return null;
   
   // Convert: local time - offset = UTC time
-  return new Date(localMs - (offsetMinutes * 60 * 1000));
+  // Google's timezoneOffsetMinutes: positive means ahead of UTC, negative means behind UTC
+  const utcMs = localMs - (offsetMinutes * 60 * 1000);
+  return new Date(utcMs);
 }
 
 // Extract UTC offset from parent object (activitySegment or placeVisit)
