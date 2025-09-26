@@ -124,11 +124,6 @@ export default function LocationHistoryApp() {
   // Handle day click interactions
   const handleDayClick = (dayData: DayData) => {
     // Single click: highlight day and fly to day start location
-    console.log('🎯 Day CLICKED:', {
-      clickedDate: dayData.date,
-      clickedDateObj: dayData.dateObj.toDateString(),
-      currentSelectedDate: selectedDate.toDateString()
-    });
     setHighlightedDay(dayData.date);
     const { lat, lng } = dayData.firstPoint;
     setSelectedPoint({ lat, lng });
@@ -136,11 +131,6 @@ export default function LocationHistoryApp() {
 
   const handleDayDoubleClick = (dayData: DayData) => {
     // Double click: switch to single day view and select the day
-    console.log('🎯 Day DOUBLE-CLICKED:', {
-      clickedDate: dayData.date,
-      clickedDateObj: dayData.dateObj.toDateString(),
-      settingSelectedDateTo: dayData.dateObj.toDateString()
-    });
     setHighlightedDay(null);
     setSelectedDate(dayData.dateObj);
     setSelectedDateRange(null); // Clear date range to switch to single-day view
@@ -314,12 +304,6 @@ export default function LocationHistoryApp() {
     const filtered = validLocationData.filter(loc => 
       getLocalDateKey(loc.timestamp) === selectedKey
     );
-    return filtered;
-    console.log('📅 Selected date changed to:', {
-      newSelectedDate: selectedDate.toDateString(),
-      newSelectedKey: selectedKey,
-      filteredCount: filtered.length
-    });
     return filtered;
   }, [validLocationData, selectedDate]);
 
@@ -583,16 +567,20 @@ export default function LocationHistoryApp() {
                       dateRange={selectedDateRange ?? undefined}
                       onViewModeChange={(mode) => {
                         if (mode === 'single') {
-                          // When switching to single day view, clear the date range
-                          // so sidebar switches from daily list to hourly timeline
+                          // When switching to single day view, use highlighted day if available
+                          if (highlightedDay) {
+                            // Find the highlighted day data and set it as selected
+                            const dayData = dayAggregatedData.find(d => d.date === highlightedDay);
+                            if (dayData) {
+                              setSelectedDate(dayData.dateObj);
+                              setHighlightedDay(null); // Clear highlight since we're selecting it
+                            }
+                          }
+                          // Clear the date range so sidebar switches to hourly timeline
                           setSelectedDateRange(null);
                         } else if (mode === 'multi') {
-                          // When switching back to multi-day view, restore previous date range
-                          // or open date picker if no previous range exists
-                          if (!selectedDateRange) {
-                            setShowDateRangePicker(true);
-                          } else {
-                          }
+                          // When switching to multi-day view, show date range picker
+                          setShowDateRangePicker(true);
                         }
                       }}
                     />
