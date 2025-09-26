@@ -10,9 +10,13 @@ type ISO = string;
 interface ActivityTopCandidate { type?: string }
 interface Activity { topCandidate?: ActivityTopCandidate }
 
-interface Duration { startTimestamp?: ISO; endTimestamp?: ISO }
+interface Duration { 
+  startTimestamp?: ISO; 
+  endTimestamp?: ISO;
+  timezoneOffsetMinutes?: number;
+}
 
-interface Waypoint { latE7: number; lngE7: number; }
+interface Waypoint { latE7: number; lngE7: number; timestampMs?: string; }
 interface WaypointPath { waypoints?: Waypoint[] }
 
 interface RawPathPoint { latE7: number; lngE7: number; timestampMs?: string }
@@ -29,6 +33,7 @@ interface ActivitySegment {
   activityType?: string;
   waypointPath?: WaypointPath;
   simplifiedRawPath?: SimplifiedRawPath;
+  timelinePath?: TimelinePath;
 }
 
 interface PlaceLocation {
@@ -69,11 +74,39 @@ interface Segment {
 function parseToUTCDate(timestamp: string): Date | null {
   if (!timestamp) return null;
   
-  // Ensure proper UTC interpretation
+  // Only add Z if timezone info is actually missing - don't force UTC interpretation
   const hasTimezoneInfo = /(?:Z|[+-]\d{2}:\d{2})$/.test(timestamp);
   const normalized = hasTimezoneInfo ? timestamp : timestamp + 'Z';
   const ms = Date.parse(normalized);
   return Number.isNaN(ms) ? null : new Date(ms);
+}
+
+// Parse local timestamp with UTC offset to get proper UTC time
+function parseLocalWithOffsetToUTC(localTimestamp: string, offsetMinutes: number): Date | null {
+  if (!localTimestamp) return null;
+  
+  // Parse as local time, then apply UTC offset
+  const localMs = Date.parse(localTimestamp);
+  if (Number.isNaN(localMs)) return null;
+  
+  // Convert: local time - offset = UTC time
+  return new Date(localMs - (offsetMinutes * 60 * 1000));
+}
+
+// Extract UTC offset from parent object (activitySegment or placeVisit)
+function getParentOffsetMinutes(obj: TimelineObject): number | null {
+  // Check various possible offset fields
+  if (obj.activitySegment?.duration?.timezoneOffsetMinutes !== undefined) {
+    return obj.activitySegment.duration.timezoneOffsetMinutes;
+  }
+  if (obj.placeVisit?.duration?.timezoneOffsetMinutes !== undefined) {
+    return obj.placeVisit.duration.timezoneOffsetMinutes;
+  }
+  // Legacy format might have direct utcOffsetMinutes
+  if ((obj as any).utcOffsetMinutes !== undefined) {
+    return (obj as any).utcOffsetMinutes;
+  }
+  return null; // No offset info available
 }
 
 // Helper to get UTC milliseconds for comparisons
@@ -164,11 +197,49 @@ function parseModernFormat(jsonData: ModernExport): ParsedLocationPoint[] {
     
     // Legacy format fallback: timelinePath.point[] (older Google exports)
     if (obj.timelinePath?.point && Array.isArray(obj.timelinePath.point)) {
+      const parentOffset = getParentOffsetMinutes(obj);
+      
       obj.timelinePath.point.forEach((point) => {
         if (point.latE7 !== undefined && point.lngE7 !== undefined && point.time) {
           const lat = point.latE7 / 1e7;
           const lng = point.lngE7 / 1e7;
-          const timestamp = parseToUTCDate(point.time);
+          
+          // Use proper UTC offset calculation if available
+          let timestamp: Date | null = null;
+          if (parentOffset !== null) {
+            timestamp = parseLocalWithOffsetToUTC(point.time, parentOffset);
+          } else {
+            timestamp = parseToUTCDate(point.time); // Fallback to existing logic
+          }
+          
+          if (timestamp) {
+            results.push({
+              lat,
+              lng,
+              timestamp,
+              activity: 'route'  // Simple activity type for all timeline points
+            });
+          }
+        }
+      });
+    }
+    
+    // CRITICAL FIX: Handle nested timelinePath in activitySegment (missing in production!)
+    if (obj.activitySegment?.timelinePath?.point && Array.isArray(obj.activitySegment.timelinePath.point)) {
+      const parentOffset = getParentOffsetMinutes(obj);
+      
+      obj.activitySegment.timelinePath.point.forEach((point) => {
+        if (point.latE7 !== undefined && point.lngE7 !== undefined && point.time) {
+          const lat = point.latE7 / 1e7;
+          const lng = point.lngE7 / 1e7;
+          
+          // Use proper UTC offset calculation if available
+          let timestamp: Date | null = null;
+          if (parentOffset !== null) {
+            timestamp = parseLocalWithOffsetToUTC(point.time, parentOffset);
+          } else {
+            timestamp = parseToUTCDate(point.time); // Fallback to existing logic
+          }
           
           if (timestamp) {
             results.push({
@@ -247,10 +318,20 @@ function parseLegacyArrayFormat(jsonData: any): ParsedLocationPoint[] {
     if (item.timelinePath && Array.isArray(item.timelinePath)) {
       console.log(`📍 Found timelinePath with ${item.timelinePath.length} points`);
       
-      // Parse startTime for this timelinePath segment
-      let segmentStartTime: Date | undefined;
+      // Parse startTime for this timelinePath segment with proper UTC offset
+      let baseStartUtcMs: number | undefined;
+      const parentOffsetMinutes = (item as any).utcOffsetMinutes;
+      
       if (item.startTime) {
-        segmentStartTime = parseToUTCDate(item.startTime) || undefined;
+        if (parentOffsetMinutes !== undefined) {
+          // Use proper UTC offset calculation
+          const baseStartTime = parseLocalWithOffsetToUTC(item.startTime, parentOffsetMinutes);
+          baseStartUtcMs = baseStartTime ? baseStartTime.getTime() : undefined;
+        } else {
+          // Fallback to existing logic if no offset available
+          const segmentStartTime = parseToUTCDate(item.startTime);
+          baseStartUtcMs = segmentStartTime ? segmentStartTime.getTime() : undefined;
+        }
       }
       
       // Process each point in the timelinePath
@@ -272,11 +353,11 @@ function parseLegacyArrayFormat(jsonData: any): ParsedLocationPoint[] {
               lat = parsedLat;
               lng = parsedLng;
               
-              // Calculate timestamp using segment start + duration offset
-              if (segmentStartTime && pathPoint.durationMinutesOffsetFromStartTime) {
+              // Calculate timestamp using base UTC time + duration offset
+              if (baseStartUtcMs !== undefined && pathPoint.durationMinutesOffsetFromStartTime) {
                 const offsetMinutes = parseInt(pathPoint.durationMinutesOffsetFromStartTime, 10);
                 if (!isNaN(offsetMinutes)) {
-                  timestamp = new Date(segmentStartTime.getTime() + (offsetMinutes * 60 * 1000));
+                  timestamp = new Date(baseStartUtcMs + (offsetMinutes * 60 * 1000));
                 }
               }
             }

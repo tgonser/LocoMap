@@ -118,18 +118,7 @@ export default function LocationHistoryApp() {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
-    const result = `${year}-${month}-${day}`;
-    
-    // DEBUG: Log any Sept 9th processing
-    if (result === '2025-09-09') {
-      console.log('🔍 getLocalDateKey Sept 9:', {
-        originalDate: date.toISOString(),
-        localComponents: { year, month, day },
-        result
-      });
-    }
-    
-    return result;
+    return `${year}-${month}-${day}`;
   };
 
 
@@ -313,30 +302,9 @@ export default function LocationHistoryApp() {
   // Get locations for selected date (using filtered data)
   const dayLocations = useMemo(() => {
     const selectedKey = getLocalDateKey(selectedDate);
-    const filtered = validLocationData.filter(loc => 
+    return validLocationData.filter(loc => 
       getLocalDateKey(loc.timestamp) === selectedKey
     );
-    
-    // DEBUG: Log Sept 9th data to see what's missing
-    if (selectedKey === '2025-09-09') {
-      console.log('🔍 DEBUG Sept 9 locations:', {
-        selectedKey,
-        totalValidData: validLocationData.length,
-        filteredCount: filtered.length,
-        firstLocation: filtered[0] ? {
-          timestamp: filtered[0].timestamp,
-          lat: filtered[0].lat,
-          lng: filtered[0].lng
-        } : 'none',
-        lastLocation: filtered[filtered.length - 1] ? {
-          timestamp: filtered[filtered.length - 1].timestamp,
-          lat: filtered[filtered.length - 1].lat,
-          lng: filtered[filtered.length - 1].lng
-        } : 'none'
-      });
-    }
-    
-    return filtered;
   }, [validLocationData, selectedDate]);
 
   // Get all locations within date range for multi-day map view
