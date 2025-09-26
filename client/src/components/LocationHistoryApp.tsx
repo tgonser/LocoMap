@@ -453,8 +453,27 @@ export default function LocationHistoryApp() {
 
   // Handle "View All" button - show all data on the map
   const handleViewAll = () => {
+    console.log('🚨 VIEW ALL CLICKED!', {
+      before: {
+        selectedDateRange: selectedDateRange,
+        mapLocationsCount: mapLocations.length,
+        validLocationDataCount: validLocationData.length
+      }
+    });
+    
     // Clear any date range filtering to show all data on the map
     setSelectedDateRange(null);
+    
+    // Add a delay to see the effect
+    setTimeout(() => {
+      console.log('🚨 AFTER VIEW ALL:', {
+        after: {
+          selectedDateRange: selectedDateRange,
+          mapLocationsCount: mapLocations.length,
+          validLocationDataCount: validLocationData.length
+        }
+      });
+    }, 100);
   };
 
   // Handle re-opening date range picker when already in map view
