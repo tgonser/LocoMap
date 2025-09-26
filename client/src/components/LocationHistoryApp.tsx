@@ -452,28 +452,19 @@ export default function LocationHistoryApp() {
   };
 
   // Handle "View All" button - show all data on the map
-  const handleViewAll = () => {
-    console.log('🚨 VIEW ALL CLICKED!', {
-      before: {
-        selectedDateRange: selectedDateRange,
-        mapLocationsCount: mapLocations.length,
-        validLocationDataCount: validLocationData.length
-      }
-    });
+  const handleViewAll = async () => {
+    console.log('🚨 VIEW ALL CLICKED! Loading full dataset...');
     
-    // Clear any date range filtering to show all data on the map
+    // Stay in map view
+    setViewMode('map');
+    
+    // Load ALL location data (not just date range)
+    await loadFullLocationData();
+    
+    // Clear any date range filtering
     setSelectedDateRange(null);
     
-    // Add a delay to see the effect
-    setTimeout(() => {
-      console.log('🚨 AFTER VIEW ALL:', {
-        after: {
-          selectedDateRange: selectedDateRange,
-          mapLocationsCount: mapLocations.length,
-          validLocationDataCount: validLocationData.length
-        }
-      });
-    }, 100);
+    console.log('🚨 VIEW ALL COMPLETE - should show all data');
   };
 
   // Handle re-opening date range picker when already in map view

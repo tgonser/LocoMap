@@ -160,9 +160,12 @@ export default function MapDisplay({
   // View mode state management
   const [viewMode, setViewMode] = useState<MapViewMode>('single');
   
-  // Auto-switch view mode based on dateRange prop
+  // Auto-switch to multi-day view when dateRange is provided
   useEffect(() => {
-    setViewMode(dateRange ? 'multi' : 'single');
+    if (dateRange) {
+      setViewMode('multi');
+    }
+    // Don't force single mode when dateRange is null - allow "View All" to work
   }, [dateRange]);
   
   // Map reference for programmatic control
@@ -421,7 +424,7 @@ export default function MapDisplay({
   return (
     <Card className={`h-full relative ${className}`}>
       {/* View Mode Toggle Controls */}
-      <div className="absolute top-4 left-4 z-[1000] flex gap-1">
+      <div className="absolute top-4 left-4 z-[1000] flex gap-1 pointer-events-auto">
         <Button 
           variant={viewMode === 'single' ? 'default' : 'secondary'}
           size="sm"
@@ -438,11 +441,16 @@ export default function MapDisplay({
           variant={viewMode === 'multi' ? 'default' : 'secondary'} 
           size="sm"
           onClick={() => {
+            console.log('🟡 VIEW ALL BUTTON CLICKED!');
+            // Set to multi-day view to show all data
+            setViewMode('multi');
+            
             if (onViewAll) {
+              console.log('🟡 Calling onViewAll handler...');
               onViewAll();
             } else {
+              console.log('🟡 No onViewAll prop - using fallback');
               // Fallback to old behavior if no onViewAll prop
-              setViewMode('multi');
               onViewModeChange?.('multi');
             }
           }}
