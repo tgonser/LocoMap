@@ -440,7 +440,9 @@ export default function MapDisplay({
         <Button 
           variant={viewMode === 'multi' ? 'default' : 'secondary'} 
           size="sm"
-          onClick={() => {
+          onClick={(e) => {
+            e.stopPropagation(); // Prevent event bubbling
+            
             // Set to multi-day view to show all data
             setViewMode('multi');
             

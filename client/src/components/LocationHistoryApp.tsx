@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -174,6 +174,22 @@ export default function LocationHistoryApp() {
 
   // Load location data with efficient server-side date range filtering
   const loadLocationDataForDateRange = async (startDate: Date, endDate: Date) => {
+    // Prevent duplicate requests
+    if (isLoadingMapData) {
+      console.log('Request already in progress, skipping...');
+      return;
+    }
+    
+    // Cancel any previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    
+    // Create new abort controller and request ID
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    const requestId = ++currentRequestIdRef.current;
+    
     // Loading state is set by caller to avoid empty state flash
     try {
       // Format dates as YYYY-MM-DD strings for API using local date components to avoid timezone shifts
@@ -221,8 +237,13 @@ export default function LocationHistoryApp() {
         }));
         
         setLocationData(locationData);
-        setSelectedDateRange({ start: startDate, end: endDate });
         setMapDataLoaded(true);
+        
+        // Store as initial data for View All reset (only if we have data)
+        if (locationData.length > 0) {
+          initialDateRangeRef.current = { start: startDate, end: endDate };
+          initialDataRef.current = locationData;
+        }
         
         // Set selected date to the earliest date with data in the range (first day)
         if (locationData.length > 0) {
@@ -431,6 +452,8 @@ export default function LocationHistoryApp() {
     setSelectedDateRange({ start: startDate, end: endDate });
     
     await loadLocationDataForDateRange(startDate, endDate);
+    
+    // Initial data will be stored by loadLocationDataForDateRange
   };
 
   // Handle DateRangePicker cancel - return to previous view
@@ -451,20 +474,29 @@ export default function LocationHistoryApp() {
     }
   };
 
-  // Handle "View All" button - show all data on the map
-  const handleViewAll = async () => {
+  // Store initial date range and data for View All reset
+  const initialDateRangeRef = useRef<{start: Date, end: Date} | null>(null);
+  const initialDataRef = useRef<LocationData[]>([]);
+  
+  // Request guards to prevent duplicate calls
+  const currentRequestIdRef = useRef(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  
+  // Handle "View All" button - pure reset to initial multi-day view
+  const handleViewAll = () => {
     // Stay in map view
     setViewMode('map');
     
-    // Load ALL data by using a very wide date range (covers all possible dates)
-    const startDate = new Date('2005-01-01'); // Google location history started around 2005
-    const endDate = new Date(); // Today
-    endDate.setDate(endDate.getDate() + 30); // Add buffer for future dates
-    
-    await loadLocationDataForDateRange(startDate, endDate);
-    
-    // Set a wide date range to trigger multi-day view with all data
-    setSelectedDateRange({ start: startDate, end: endDate });
+    // Reset to initial state without refetching
+    if (initialDateRangeRef.current && initialDataRef.current.length > 0) {
+      setSelectedDateRange(initialDateRangeRef.current);
+      setLocationData(initialDataRef.current);
+      setMapDataLoaded(true);
+      
+      // Clear any single-day selection to show multi-day view
+      setHighlightedDay(null);
+      setSelectedPoint(null);
+    }
   };
 
   // Handle re-opening date range picker when already in map view
