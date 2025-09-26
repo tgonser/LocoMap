@@ -438,9 +438,17 @@ export default function MapDisplay({
           variant={viewMode === 'multi' ? 'default' : 'secondary'} 
           size="sm"
           onClick={() => {
+            console.log('🟡 VIEW ALL BUTTON CLICKED! Props available:', {
+              hasOnViewAll: !!onViewAll,
+              hasOnViewModeChange: !!onViewModeChange,
+              currentViewMode: viewMode
+            });
+            
             if (onViewAll) {
+              console.log('🟡 Calling onViewAll function...');
               onViewAll();
             } else {
+              console.log('🟡 No onViewAll prop - using fallback');
               // Fallback to old behavior if no onViewAll prop
               setViewMode('multi');
               onViewModeChange?.('multi');
