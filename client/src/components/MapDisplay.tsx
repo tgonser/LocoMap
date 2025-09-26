@@ -440,7 +440,6 @@ export default function MapDisplay({
             onViewModeChange?.('multi');
           }}
           data-testid="button-multi-day"
-          disabled={!dateRange}
           className="text-xs px-2 py-1 h-7"
         >
           View All

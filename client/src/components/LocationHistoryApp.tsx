@@ -304,28 +304,6 @@ export default function LocationHistoryApp() {
     const filtered = validLocationData.filter(loc => 
       getLocalDateKey(loc.timestamp) === selectedKey
     );
-    
-    // DEBUG: Check if we're losing data for trips that span multiple days
-    if (selectedKey === '2025-09-09') {
-      console.log('🔍 DEBUG Sept 9 locations:', {
-        selectedKey,
-        totalValidData: validLocationData.length,
-        filteredCount: filtered.length,
-        dateRange: {
-          first: filtered[0]?.timestamp,
-          last: filtered[filtered.length - 1]?.timestamp
-        },
-        // Check for locations that might be just after midnight
-        nextDayCheck: validLocationData.filter(loc => 
-          getLocalDateKey(loc.timestamp) === '2025-09-10'
-        ).slice(0, 5).map(loc => ({
-          timestamp: loc.timestamp,
-          lat: loc.lat,
-          lng: loc.lng
-        }))
-      });
-    }
-    
     return filtered;
   }, [validLocationData, selectedDate]);
 
